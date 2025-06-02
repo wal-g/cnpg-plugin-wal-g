@@ -153,7 +153,7 @@ deploy: manifests kustomize ## Deploy controller to the K8s cluster specified in
 
 .PHONY: deploy-kind
 deploy-kind: manifests kustomize ## Deploy controller to the K8s cluster specified in ~/.kube/config.
-	kind load docker-image ${IMG}:${TAG} -n cnpg-yandex-dev
+	kind load docker-image ${IMG}:${TAG} -n cnpg-wal-g
 	$(KUSTOMIZE) build config/kind | IMG=${IMG} TAG=${TAG} envsubst | $(KUBECTL) apply -f -
 	$(KUBECTL) rollout restart deployment/cnpg-plugin-wal-g-controller-manager -n cnpg-system
 	$(KUBECTL) rollout status deployment/cnpg-plugin-wal-g-controller-manager -n cnpg-system --timeout=120s

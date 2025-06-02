@@ -1,0 +1,14 @@
+# five node (4 workers) cluster config
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: cnpg-wal-g
+networking:
+  ipFamily: dual
+  disableDefaultCNI: true  # Disable default CNI, use Cilium instead
+  kubeProxyMode: "none"  # Disable kube-proxy in favor of using Cilium kube-proxy replacement
+nodes:
+- role: control-plane
+- role: worker
+- role: worker
+- role: worker
+- role: worker
