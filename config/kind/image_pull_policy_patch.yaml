@@ -1,0 +1,4 @@
+# Set up imagePullPolicy to Never for manager deployment to use with local kind images
+- op: replace
+  path: "/spec/template/spec/containers/0/imagePullPolicy"
+  value: Never

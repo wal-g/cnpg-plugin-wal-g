@@ -1,0 +1,110 @@
+/*
+Copyright 2025 YANDEX LLC.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
+package v1beta1
+
+import (
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+)
+
+// S3StorageConfig defines S3-specific configuration for object storage
+type S3StorageConfig struct {
+	// e.g. s3://bucket/path/to/folder
+	Prefix string `json:"prefix,omitempty"`
+
+	// S3 Region
+	Region string `json:"region,omitempty"`
+
+	// S3 endpoint url
+	EndpointUrl string `json:"endpointUrl,omitempty"`
+
+	// To enable path-style addressing (i.e., http://s3.amazonaws.com/BUCKET/KEY) when connecting to an S3-compatible service that lack of support for sub-domain style bucket URLs (i.e., http://BUCKET.s3.amazonaws.com/KEY)
+	ForcePathStyle bool `json:"forcePathStyle,omitempty"`
+
+	// S3 storage class used for backup files. Default is "STANDARD". Other supported values include "STANDARD_IA" for Infrequent Access and "REDUCED_REDUNDANCY" for Reduced Redundancy.
+	StorageClass string `json:"storageClass,omitempty"`
+
+	AccessKeyIDRef     *corev1.SecretKeySelector `json:"accessKeyId,omitempty"`
+	AccessKeySecretRef *corev1.SecretKeySelector `json:"accessKeySecret,omitempty"`
+}
+
+type StorageType string
+
+const (
+	StorageTypeS3 = "s3"
+)
+
+// StorageConfig defines object storage configuration for BackupConfig
+type StorageConfig struct {
+	StorageType StorageType      `json:"type"`         // Type of storage to use, currently supported "s3" only
+	S3          *S3StorageConfig `json:"s3,omitempty"` // S3-specific parameters
+}
+
+// BackupConfigSpec defines the desired state of BackupConfig.
+type BackupConfigSpec struct {
+	// How many goroutines to use during backup && wal downloading. Default: 10.
+	DownloadConcurrency int `json:"downloadConcurrency,omitempty"`
+
+	// How many times failed file will be retried during backup / wal download. Default: 15.
+	DownloadFileRetries int `json:"downloadFileRetries,omitempty"`
+
+	// Disk read rate limit during backup creation in bytes per second.
+	UploadDiskRateLimit int `json:"uploadDiskRateLimitBytesPerSecond,omitempty"`
+
+	// Network upload rate limit during backup uploading in bytes per second.
+	UploadNetworkRateLimit int `json:"uploadNetworkRateLimitBytesPerSecond,omitempty"`
+
+	// How many concurrency streams to use during backup uploading. Default: 16
+	UploadConcurrency int `json:"uploadConcurrency,omitempty"`
+
+	// How many concurrency streams are reading disk during backup uploading. Default: 1 stream
+	UploadDiskConcurrency int `json:"uploadDiskConcurrency,omitempty"`
+
+	// Determines how many delta backups can be between full backups. Defaults to 0.
+	DeltaMaxSteps int           `json:"deltaMaxSteps,omitempty"`
+	Storage       StorageConfig `json:"storage"`
+}
+
+// BackupConfigStatus defines the observed state of BackupConfig.
+type BackupConfigStatus struct {
+	// Important: Run "make" to regenerate code after modifying this file
+}
+
+// +kubebuilder:object:root=true
+// +kubebuilder:subresource:status
+
+// BackupConfig is the Schema for the backupconfigs API.
+type BackupConfig struct {
+	metav1.TypeMeta   `json:",inline"`
+	metav1.ObjectMeta `json:"metadata,omitempty"`
+
+	Spec   BackupConfigSpec   `json:"spec,omitempty"`
+	Status BackupConfigStatus `json:"status,omitempty"`
+}
+
+// +kubebuilder:object:root=true
+
+// BackupConfigList contains a list of BackupConfig.
+type BackupConfigList struct {
+	metav1.TypeMeta `json:",inline"`
+	metav1.ListMeta `json:"metadata,omitempty"`
+	Items           []BackupConfig `json:"items"`
+}
+
+func init() {
+	SchemeBuilder.Register(&BackupConfig{}, &BackupConfigList{})
+}

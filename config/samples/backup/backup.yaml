@@ -1,0 +1,10 @@
+apiVersion: postgresql.cnpg.io/v1
+kind: Backup
+metadata:
+  name: backup-example
+spec:
+  method: plugin
+  cluster:
+    name: cluster-example
+  pluginConfiguration:
+    name: cnpg-extensions.yandex.cloud

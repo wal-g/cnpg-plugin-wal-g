@@ -1,0 +1,19 @@
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    cnpg.io/pluginName: cnpg-extensions.yandex.cloud
+  annotations:
+    cnpg.io/pluginPort: "9090"
+    cnpg.io/pluginClientSecret: cnpg-plugin-wal-g-client-tls
+    cnpg.io/pluginServerSecret: cnpg-plugin-wal-g-server-tls
+  name: service
+spec:
+  type: ClusterIP
+  ports:
+  - port: 9090  # CNPG plugin
+    protocol: TCP
+    targetPort: 9090
+  selector:
+    app.kubernetes.io/name: cnpg-plugin-wal-g
+  sessionAffinity: None

@@ -1,0 +1,18 @@
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: cluster-example
+spec:
+  instances: 3
+  imagePullPolicy: Always
+  plugins:
+  - name: cnpg-extensions.yandex.cloud
+    isWALArchiver: true
+    parameters:
+      backupConfig: example-backup-config
+  storage:
+    size: 1Gi
+  postgresql:
+    pg_hba:
+      - local all all trust
+      - local replication all trust

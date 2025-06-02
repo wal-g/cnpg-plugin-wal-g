@@ -1,0 +1,19 @@
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: server
+spec:
+  secretName: cnpg-plugin-wal-g-server-tls
+  commonName: cnpg-plugin-wal-g
+  dnsNames:
+    - cnpg-plugin-wal-g
+    - cnpg-plugin-wal-g-service
+  duration: 2160h # 90d
+  renewBefore: 360h # 15d
+  isCA: false
+  usages:
+    - server auth
+  issuerRef:
+    name: cnpg-plugin-wal-g-selfsigned-issuer
+    kind: Issuer
+    group: cert-manager.io

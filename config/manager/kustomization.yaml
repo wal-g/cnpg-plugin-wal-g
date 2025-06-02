@@ -1,0 +1,11 @@
+resources:
+- manager.yaml
+- service.yaml
+- server-certificate.yaml
+- client-certificate.yaml
+- certificate-issuer.yaml
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+images:
+- name: controller
+  newName: cnpg-plugin-wal-g
