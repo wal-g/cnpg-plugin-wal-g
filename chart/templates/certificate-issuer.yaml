@@ -1,0 +1,10 @@
+{{- if .Values.cnpg.tls.certManager.createSelfSignedIssuer }} 
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: {{ include "cnpg-plugin-wal-g.fullname" . }}-selfsigned
+  labels:
+    {{- include "cnpg-plugin-wal-g.labels" . | nindent 4 }}
+spec:
+  selfSigned: {}
+{{- end }}

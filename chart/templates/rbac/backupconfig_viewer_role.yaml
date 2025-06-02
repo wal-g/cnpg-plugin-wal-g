@@ -1,0 +1,28 @@
+# This rule is not used by the project cnpg-plugin-wal-g itself.
+# It is provided to allow the cluster admin to help manage permissions for users.
+#
+# Grants read-only access to cnpg-extensions.yandex.cloud resources.
+# This role is intended for users who need visibility into these resources
+# without permissions to modify them. It is ideal for monitoring purposes and limited-access viewing.
+
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "cnpg-plugin-wal-g.fullname" . }}-backupconfig-viewer-role
+  labels:
+    {{- include "cnpg-plugin-wal-g.labels" . | nindent 4 }}
+rules:
+- apiGroups:
+  - cnpg-extensions.yandex.cloud
+  resources:
+  - backupconfigs
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - cnpg-extensions.yandex.cloud
+  resources:
+  - backupconfigs/status
+  verbs:
+  - get
