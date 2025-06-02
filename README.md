@@ -2,6 +2,8 @@
 
 This plugin adds backup and restore functionality to [CloudNativePG](https://cloudnative-pg.io/) by leveraging [WAL-G](https://github.com/wal-g/wal-g). It communicates with CloudNativePG through the `cnpg-i` interface, enabling seamless integration for managing PostgreSQL backups and restores in Kubernetes environments.
 
+> ⚠️ **Caution:** This project is currently under active development and is **not yet ready for production use**. Expect breaking changes and incomplete functionality.
+
 ## Getting Started
 
 ### Prerequisites
