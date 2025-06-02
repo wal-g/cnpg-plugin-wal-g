@@ -1,0 +1,96 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "cnpg-plugin-wal-g.fullname" . }}
+  labels:
+    {{- include "cnpg-plugin-wal-g.labels" . | nindent 4 }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "cnpg-plugin-wal-g.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      labels:
+        {{- include "cnpg-plugin-wal-g.labels" . | nindent 8 }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "cnpg-plugin-wal-g.fullname" . }}-controller-manager
+      terminationGracePeriodSeconds: 10
+      {{- with .Values.podSecurityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: manager
+          args:
+          - operator
+          - --leader-elect
+          - --health-probe-bind-address=:8081
+          - --cnpg-i-bind-address=:9090
+          - --cnpg-i-cert-path=/tls/cnpgi-server
+          - --cnpg-i-client-cert-path=/tls/cnpgi-client
+          - --cnpg-i-pg-sidecar-image=$(SIDECAR_IMAGE)
+          env:
+          - name: SIDECAR_IMAGE
+            value: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          {{- with .Values.securityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports: []
+          {{- with .Values.livenessProbe }}
+          livenessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.readinessProbe }}
+          readinessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          volumeMounts:
+          - mountPath: /tls/cnpgi-server
+            name: cnpgi-server
+          - mountPath: /tls/cnpgi-client
+            name: cnpgi-client
+      volumes:
+      - name: cnpgi-server
+        secret:
+          {{- if .Values.cnpg.tls.certManager.createServerCert }}
+          secretName: {{ include "cnpg-plugin-wal-g.fullname" . }}-server-tls
+          {{- else }}
+          secretName: {{ .Values.cnpg.tls.existingServerCertSecretName }}
+          {{- end }}
+      - name: cnpgi-client
+        secret:
+          {{- if .Values.cnpg.tls.certManager.createClientCert }}
+          secretName: {{ include "cnpg-plugin-wal-g.fullname" . }}-client-tls
+          {{- else }}
+          secretName: {{ .Values.cnpg.tls.existingClientCertSecretName }}
+          {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

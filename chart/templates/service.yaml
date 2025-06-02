@@ -1,0 +1,28 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "cnpg-plugin-wal-g.fullname" . }}
+  labels:
+    {{- include "cnpg-plugin-wal-g.labels" . | nindent 4 }}
+    cnpg.io/pluginName: cnpg-extensions.yandex.cloud
+  annotations:
+    cnpg.io/pluginPort: "9090"
+    {{- if .Values.cnpg.tls.certManager.createServerCert }}
+    cnpg.io/pluginServerSecret: {{ include "cnpg-plugin-wal-g.fullname" . }}-server-tls
+    {{- else }}
+    cnpg.io/pluginServerSecret: {{ .Values.cnpg.tls.existingServerCertSecretName }}
+    {{- end }}
+    {{- if .Values.cnpg.tls.certManager.createClientCert }}
+    cnpg.io/pluginClientSecret: {{ include "cnpg-plugin-wal-g.fullname" . }}-client-tls
+    {{- else }}
+    cnpg.io/pluginClientSecret: {{ .Values.cnpg.tls.existingClientCertSecretName }}
+    {{- end }}
+spec:
+  type: ClusterIP
+  ports:
+  - port: 9090
+    protocol: TCP
+    targetPort: 9090
+  selector:
+    {{- include "cnpg-plugin-wal-g.selectorLabels" . | nindent 4 }}
+  sessionAffinity: None

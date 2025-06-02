@@ -1,0 +1,51 @@
+{{- if .Values.cnpg.tls.certManager.createClientCert }} 
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ include "cnpg-plugin-wal-g.fullname" . }}-client
+  labels:
+    {{- include "cnpg-plugin-wal-g.labels" . | nindent 4 }}
+spec:
+  secretName: {{ include "cnpg-plugin-wal-g.fullname" . }}-client-tls
+  commonName: cnpg-plugin-wal-g-client
+  duration: {{ .Values.cnpg.tls.certManager.certsDuration }}
+  renewBefore: {{ .Values.cnpg.tls.certManager.certsRenewBefore }}
+  isCA: false
+  usages:
+    - client auth
+  issuerRef:
+    {{- if .Values.cnpg.tls.certManager.createSelfSignedIssuer }}
+    name: {{ include "cnpg-plugin-wal-g.fullname" . }}-selfsigned
+    {{- else }}
+    name: {{ .Values.cnpg.tls.certManager.existingIssuerName }}
+    {{- end }}
+    kind: Issuer
+    group: cert-manager.io
+---
+{{- end }}
+{{- if .Values.cnpg.tls.certManager.createServerCert }} 
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ include "cnpg-plugin-wal-g.fullname" . }}-server
+  labels:
+    {{- include "cnpg-plugin-wal-g.labels" . | nindent 4 }}
+spec:
+  secretName: {{ include "cnpg-plugin-wal-g.fullname" . }}-server-tls
+  commonName: cnpg-plugin-wal-g
+  dnsNames:
+    - {{ include "cnpg-plugin-wal-g.fullname" . }}
+  duration: {{ .Values.cnpg.tls.certManager.certsDuration }}
+  renewBefore: {{ .Values.cnpg.tls.certManager.certsRenewBefore }}
+  isCA: false
+  usages:
+    - server auth
+  issuerRef:
+    {{- if .Values.cnpg.tls.certManager.createSelfSignedIssuer }}
+    name: {{ include "cnpg-plugin-wal-g.fullname" . }}-selfsigned
+    {{- else }}
+    name: {{ .Values.cnpg.tls.certManager.existingIssuerName }}
+    {{- end }}
+    kind: Issuer
+    group: cert-manager.io
+{{- end }}
