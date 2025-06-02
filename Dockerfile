@@ -12,6 +12,7 @@ COPY go.sum go.sum
 RUN go mod download
 
 # Copy the go source
+COPY api/ api/
 COPY cmd/ cmd/
 COPY internal/ internal/
 
@@ -22,6 +23,10 @@ RUN GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} go build -a -o cnpg-plugin-wal-
 # WAL-G Build section
 # Need to build from sources, because binary distributions do not include necessary base OS libs
 FROM docker.io/golang:1.23-bookworm AS walg-builder
+
+LABEL org.opencontainers.image.source=https://github.com/wal-g/cnpg-plugin-wal-g
+LABEL org.opencontainers.image.description="CloudNativePG WAL-G Backup Plugin"
+LABEL org.opencontainers.image.licenses="Apache-2.0"
 
 ARG TARGETOS
 ARG TARGETARCH
