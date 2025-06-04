@@ -1,5 +1,5 @@
 # Image URL to use all building/pushing image targets
-IMG ?= cnpg-plugin-wal-g
+IMG ?= ghcr.io/wal-g/cnpg-plugin-wal-g
 TAG ?= latest
 
 # Get the currently used golang install path (in GOPATH/bin, unless GOBIN is set)
