@@ -18,66 +18,132 @@ package controller
 
 import (
 	"context"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	v1beta1 "github.com/wal-g/cnpg-plugin-wal-g/api/v1beta1"
-	"k8s.io/apimachinery/pkg/api/errors"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	v1beta1 "github.com/wal-g/cnpg-plugin-wal-g/api/v1beta1"
 )
 
 var _ = Describe("BackupConfig Controller", func() {
-	Context("When reconciling a resource", func() {
-		const resourceName = "test-resource"
+	Context("When reconciling a BackupConfig resource", func() {
+		const (
+			BackupConfigName      = "test-backupconfig"
+			BackupConfigNamespace = "default"
+			timeout               = time.Second * 10
+			interval              = time.Millisecond * 250
+		)
 
 		ctx := context.Background()
 
-		typeNamespacedName := types.NamespacedName{
-			Name:      resourceName,
-			Namespace: "default", // TODO(user):Modify as needed
+		// Create a BackupConfig object with S3 storage configuration
+		backupConfig := &v1beta1.BackupConfig{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      BackupConfigName,
+				Namespace: BackupConfigNamespace,
+			},
+			Spec: v1beta1.BackupConfigSpec{
+				DownloadConcurrency:    10,
+				DownloadFileRetries:    15,
+				UploadDiskRateLimit:    1024 * 1024,     // 1MB/s
+				UploadNetworkRateLimit: 2 * 1024 * 1024, // 2MB/s
+				UploadConcurrency:      16,
+				UploadDiskConcurrency:  1,
+				DeltaMaxSteps:          5,
+				Storage: v1beta1.StorageConfig{
+					StorageType: v1beta1.StorageTypeS3,
+					S3: &v1beta1.S3StorageConfig{
+						Prefix:         "s3://test-bucket/backups",
+						Region:         "us-east-1",
+						EndpointUrl:    "https://storage.example.com",
+						ForcePathStyle: true,
+						StorageClass:   "STANDARD",
+						AccessKeyIDRef: &corev1.SecretKeySelector{
+							LocalObjectReference: corev1.LocalObjectReference{
+								Name: "s3-credentials",
+							},
+							Key: "access-key-id",
+						},
+						AccessKeySecretRef: &corev1.SecretKeySelector{
+							LocalObjectReference: corev1.LocalObjectReference{
+								Name: "s3-credentials",
+							},
+							Key: "secret-access-key",
+						},
+					},
+				},
+			},
 		}
-		backupconfig := &v1beta1.BackupConfig{}
+
+		// Create the S3 credentials secret
+		s3CredentialsSecret := &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "s3-credentials",
+				Namespace: BackupConfigNamespace,
+			},
+			Data: map[string][]byte{
+				"access-key-id":     []byte("test-access-key-id"),
+				"secret-access-key": []byte("test-secret-access-key"),
+			},
+		}
 
 		BeforeEach(func() {
-			By("creating the custom resource for the Kind BackupConfig")
-			err := k8sClient.Get(ctx, typeNamespacedName, backupconfig)
-			if err != nil && errors.IsNotFound(err) {
-				resource := &v1beta1.BackupConfig{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      resourceName,
-						Namespace: "default",
-					},
-					// TODO(user): Specify other spec details if needed.
-				}
-				Expect(k8sClient.Create(ctx, resource)).To(Succeed())
-			}
+			// Create the S3 credentials secret
+			Expect(k8sClient.Create(ctx, s3CredentialsSecret)).Should(Succeed())
+
+			// Create the BackupConfig
+			Expect(k8sClient.Create(ctx, backupConfig)).Should(Succeed())
+
+			// Verify that the BackupConfig was created
+			createdBackupConfig := &v1beta1.BackupConfig{}
+			Eventually(func() error {
+				return k8sClient.Get(ctx, types.NamespacedName{
+					Name:      BackupConfigName,
+					Namespace: BackupConfigNamespace,
+				}, createdBackupConfig)
+			}, timeout, interval).Should(Succeed())
 		})
 
 		AfterEach(func() {
-			// TODO(user): Cleanup logic after each test, like removing the resource instance.
-			resource := &v1beta1.BackupConfig{}
-			err := k8sClient.Get(ctx, typeNamespacedName, resource)
-			Expect(err).NotTo(HaveOccurred())
+			// Clean up the BackupConfig
+			Expect(k8sClient.Delete(ctx, backupConfig)).Should(Succeed())
 
-			By("Cleanup the specific resource instance BackupConfig")
-			Expect(k8sClient.Delete(ctx, resource)).To(Succeed())
+			// Clean up the S3 credentials secret
+			Expect(k8sClient.Delete(ctx, s3CredentialsSecret)).Should(Succeed())
 		})
+
 		It("should successfully reconcile the resource", func() {
-			By("Reconciling the created resource")
-			controllerReconciler := &BackupConfigReconciler{
+			// Create a BackupConfigReconciler
+			reconciler := &BackupConfigReconciler{
 				Client: k8sClient,
 				Scheme: k8sClient.Scheme(),
 			}
 
-			_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{
-				NamespacedName: typeNamespacedName,
+			// Reconcile the BackupConfig
+			_, err := reconciler.Reconcile(ctx, reconcile.Request{
+				NamespacedName: types.NamespacedName{
+					Name:      BackupConfigName,
+					Namespace: BackupConfigNamespace,
+				},
 			})
 			Expect(err).NotTo(HaveOccurred())
-			// TODO(user): Add more specific assertions depending on your controller's reconciliation logic.
-			// Example: If you expect a certain status condition after reconciliation, verify it here.
+
+			// Verify that the BackupConfig still exists
+			existingBackupConfig := &v1beta1.BackupConfig{}
+			Expect(k8sClient.Get(ctx, types.NamespacedName{
+				Name:      BackupConfigName,
+				Namespace: BackupConfigNamespace,
+			}, existingBackupConfig)).Should(Succeed())
+
+			// Verify the BackupConfig spec
+			Expect(existingBackupConfig.Spec.DownloadConcurrency).To(Equal(int(10)))
+			Expect(existingBackupConfig.Spec.Storage.StorageType).To(Equal(v1beta1.StorageTypeS3))
+			Expect(existingBackupConfig.Spec.Storage.S3.Prefix).To(Equal("s3://test-bucket/backups"))
 		})
 	})
 })
