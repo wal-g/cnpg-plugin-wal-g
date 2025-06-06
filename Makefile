@@ -1,6 +1,6 @@
 # Image URL to use all building/pushing image targets
 IMG ?= ghcr.io/wal-g/cnpg-plugin-wal-g
-TAG ?= latest
+TAG ?= 0.0.0
 
 # Get the currently used golang install path (in GOPATH/bin, unless GOBIN is set)
 ifeq (,$(shell go env GOBIN))
@@ -116,6 +116,10 @@ helm-package: manifests
 .PHONY: helm-push
 helm-push: manifests
 	$(HELM) push ${CHART} oci://ghcr.io/wal-g
+
+.PHONY: release
+release: docker-buildx helm-package helm-push ## Build and push multi-platform images and helm chart for release
+	@echo "Release completed successfully"
 
 # PLATFORMS defines the target platforms for the manager image be built to provide support to multiple
 # architectures. (i.e. make docker-buildx IMG=myregistry/mypoperator:0.0.1). To use this option you need to:
