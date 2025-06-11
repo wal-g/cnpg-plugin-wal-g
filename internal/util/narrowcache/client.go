@@ -7,27 +7,61 @@ import (
 	"sync"
 
 	"k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/runtime/serializer"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/watch"
-	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/rest"
 	"k8s.io/client-go/util/workqueue"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/apiutil"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	"sigs.k8s.io/controller-runtime/pkg/source"
 )
 
 type Client struct {
 	client.Client
-	liveClient     kubernetes.Interface
-	watchedGVKs    map[string]GVKInfo        // read only once init
+	scheme         *runtime.Scheme
+	config         *rest.Config
+	mapper         meta.RESTMapper
+	watchedGVKs    map[string]bool           // read only once init
 	watchedObjects map[string]*watchedObject // mutex'ed
 	wmut           sync.RWMutex              // for watchedObjects map
+}
+
+// CreateClient creates a new client layer that sits on top of the provided `underlying` client.
+// This client implements Get for the provided GVKs, using a specific cache.
+//
+// Other kinds of requests (ie. non-get and non-managed GVKs) are forwarded to the `underlying`
+// client.
+//
+// Furthermore, cached objects are also available as `source.Source`.
+func CreateClient(mgr manager.Manager, cachedObjectTypes []client.Object) (*Client, error) {
+	watchedGVKs := make(map[string]bool)
+
+	for _, obj := range cachedObjectTypes {
+		gvk, err := mgr.GetClient().GroupVersionKindFor(obj)
+		if err != nil {
+			return nil, err
+		}
+		watchedGVKs[gvk.String()] = true
+	}
+
+	return &Client{
+		Client:         mgr.GetClient(),
+		watchedGVKs:    watchedGVKs,
+		scheme:         mgr.GetScheme(),
+		config:         mgr.GetConfig(),
+		mapper:         mgr.GetRESTMapper(),
+		watchedObjects: make(map[string]*watchedObject),
+	}, nil
 }
 
 type watchedObject struct {
@@ -46,13 +80,9 @@ func (c *Client) Get(ctx context.Context, key client.ObjectKey, out client.Objec
 		return err
 	}
 	strGVK := gvk.String()
-	if info, managed := c.watchedGVKs[strGVK]; managed {
+	if _, managed := c.watchedGVKs[strGVK]; managed {
 		// Kind is managed by this cache layer => check for watch
-		obj, _, err := c.getAndCreateWatchIfNeeded(ctx, info, gvk, key)
-		if err != nil {
-			return err
-		}
-		err = copyInto(obj, out)
+		_, err := c.getAndCreateWatchIfNeeded(ctx, out, gvk, key)
 		if err != nil {
 			return err
 		}
@@ -62,45 +92,96 @@ func (c *Client) Get(ctx context.Context, key client.ObjectKey, out client.Objec
 	return c.Client.Get(ctx, key, out, opts...)
 }
 
-func (c *Client) getAndCreateWatchIfNeeded(ctx context.Context, info GVKInfo, gvk schema.GroupVersionKind, key client.ObjectKey) (client.Object, string, error) {
+func (c *Client) getAndCreateWatchIfNeeded(ctx context.Context, obj client.Object, gvk schema.GroupVersionKind, key client.ObjectKey) (string, error) {
 	strGVK := gvk.String()
 	objKey := strGVK + "|" + key.String()
 
+	// Checking if object presented in cache
 	c.wmut.RLock()
 	ca := c.watchedObjects[objKey]
 	c.wmut.RUnlock()
 	if ca != nil {
 		if ca.cached == nil {
-			return nil, objKey, errors.NewNotFound(schema.GroupResource{Group: gvk.Group, Resource: gvk.Kind}, key.Name)
+			return objKey, errors.NewNotFound(schema.GroupResource{Group: gvk.Group, Resource: gvk.Kind}, key.Name)
 		}
 		// Return from cache
-		return ca.cached, objKey, nil
+		err := copyInto(ca.cached, obj)
+		if err != nil {
+			return objKey, err
+		}
+		return objKey, nil
 	}
 
 	// Live query
 	rlog := log.FromContext(ctx).WithName("narrowcache").WithValues("objKey", objKey)
 	rlog.Info("Cache miss, doing live query")
-	fetched, err := info.Getter(ctx, c.liveClient, key)
+
+	// Get mapping
+	mapping, err := c.mapper.RESTMapping(gvk.GroupKind(), gvk.Version)
 	if err != nil {
-		return nil, objKey, err
+		return objKey, err
+	}
+
+	err = c.typedGet(ctx, mapping, key, obj)
+	if err != nil {
+		return objKey, err
 	}
 
 	// Create watch for later calls
-	w, err := info.Watcher(ctx, c.liveClient, key)
+	w, err := c.typedWatch(ctx, mapping, key)
 	if err != nil {
-		return nil, objKey, err
+		return objKey, err
 	}
 
 	// Store fetched object
-	err = c.setToCache(objKey, fetched)
+	err = c.setToCache(objKey, obj)
 	if err != nil {
-		return nil, objKey, err
+		return objKey, err
 	}
 
 	// Start updating goroutine
 	go c.updateCache(ctx, objKey, w)
+	return objKey, nil
+}
 
-	return fetched.(client.Object), objKey, nil
+func (c *Client) restClientForMapping(mapping *meta.RESTMapping) (rest.Interface, error) {
+	httpClient, err := rest.HTTPClientFor(c.config)
+	if err != nil {
+		return nil, fmt.Errorf("while creating HTTPClientFor typed watch: %w", err)
+	}
+
+	restClient, err := apiutil.RESTClientForGVK(mapping.GroupVersionKind, false, c.config, serializer.NewCodecFactory(c.scheme), httpClient)
+
+	if err != nil {
+		return nil, fmt.Errorf("while creating RESTClientForGVK %s: %w", mapping.GroupVersionKind.String(), err)
+	}
+
+	return restClient, nil
+}
+
+func (c *Client) typedGet(ctx context.Context, mapping *meta.RESTMapping, key client.ObjectKey, obj client.Object) error {
+	restClient, err := c.restClientForMapping(mapping)
+	if err != nil {
+		return err
+	}
+
+	return restClient.Get().
+		Namespace(key.Namespace).
+		Resource(mapping.Resource.Resource).
+		Name(key.Name).Do(ctx).Into(obj)
+}
+
+func (c *Client) typedWatch(ctx context.Context, mapping *meta.RESTMapping, key client.ObjectKey) (watch.Interface, error) {
+	restClient, err := c.restClientForMapping(mapping)
+	if err != nil {
+		return nil, err
+	}
+
+	return restClient.Get().
+		Namespace(key.Namespace).
+		Resource(mapping.Resource.Resource).
+		Name(key.Name).
+		Watch(ctx)
 }
 
 // "Terrible hack" cc directxman12 / sigs.k8s.io/controller-runtime/pkg/cache/internal/cache_reader.go
@@ -213,12 +294,12 @@ func (c *Client) GetSource(ctx context.Context, obj client.Object, h handler.Eve
 		return nil, err
 	}
 	strGVK := gvk.String()
-	info, managed := c.watchedGVKs[strGVK]
+	_, managed := c.watchedGVKs[strGVK]
 	if !managed {
 		return nil, fmt.Errorf("called 'GetSource' on unmanaged GVK: %s", strGVK)
 	}
 
-	_, key, err := c.getAndCreateWatchIfNeeded(ctx, info, gvk, client.ObjectKeyFromObject(obj))
+	key, err := c.getAndCreateWatchIfNeeded(ctx, obj, gvk, client.ObjectKeyFromObject(obj))
 	if err != nil {
 		return nil, err
 	}
