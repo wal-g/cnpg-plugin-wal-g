@@ -26,6 +26,7 @@ import (
 	"github.com/spf13/viper"
 	"github.com/wal-g/cnpg-plugin-wal-g/api/v1beta1"
 	"github.com/wal-g/cnpg-plugin-wal-g/internal/util/cmd"
+	"github.com/wal-g/cnpg-plugin-wal-g/internal/util/narrowcache"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
@@ -85,7 +86,21 @@ func Start(ctx context.Context) error {
 
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), controllerOptions)
 	if err != nil {
-		setupLog.Error(err, "unable to start manager")
+		setupLog.Error(err, "unable to create manager")
+		return err
+	}
+
+	client, err := narrowcache.CreateClient(
+		mgr,
+		[]client.Object{
+			&corev1.Secret{},
+			&v1beta1.BackupConfig{},
+			&cnpgv1.Cluster{},
+			&cnpgv1.Backup{},
+		},
+	)
+	if err != nil {
+		setupLog.Error(err, "unable to create cache client")
 		return err
 	}
 
@@ -95,7 +110,7 @@ func Start(ctx context.Context) error {
 	}
 
 	if err := mgr.Add(&CNPGI{
-		Client:       mgr.GetClient(),
+		Client:       client,
 		InstanceName: podName,
 		PGDataPath:   viper.GetString("pgdata"),
 		PGWALPath:    path.Join(viper.GetString("pgdata"), "pg_wal"),
