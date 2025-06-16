@@ -141,17 +141,17 @@ func (r ReconcilerImplementation) ensureRole(
 	backupConfigs []v1beta1.BackupConfig,
 ) error {
 	contextLogger := log.FromContext(ctx)
-	newRole := controller.BuildRoleForBackupConfigs(cluster, backupConfigs)
 
 	var role rbacv1.Role
 	if err := r.Client.Get(ctx, client.ObjectKey{
-		Namespace: newRole.Namespace,
-		Name:      newRole.Name,
+		Namespace: cluster.Namespace,
+		Name:      controller.GetRoleNameForBackupConfig(cluster.Name),
 	}, &role); err != nil {
 		if !apierrs.IsNotFound(err) {
 			return err
 		}
 
+		newRole := controller.BuildRoleForBackupConfigs(nil, cluster, backupConfigs)
 		contextLogger.Info(
 			"Creating role",
 			"name", newRole.Name,
@@ -165,19 +165,21 @@ func (r ReconcilerImplementation) ensureRole(
 		return r.Client.Create(ctx, newRole)
 	}
 
-	if equality.Semantic.DeepEqual(newRole.Rules, role.Rules) {
+	// Role already exists, need to calculate changes and update
+	updatedRole := controller.BuildRoleForBackupConfigs(role.DeepCopy(), cluster, backupConfigs)
+	if equality.Semantic.DeepEqual(updatedRole, role) {
 		// There's no need to hit the API server again
 		return nil
 	}
 
 	contextLogger.Info(
 		"Patching role",
-		"name", newRole.Name,
-		"namespace", newRole.Namespace,
-		"rules", newRole.Rules,
+		"role_name", updatedRole.Name,
+		"role_namespace", updatedRole.Namespace,
+		"role_rules", updatedRole.Rules,
 	)
 
-	return r.Client.Patch(ctx, newRole, client.MergeFrom(&role))
+	return r.Client.Patch(ctx, updatedRole, client.MergeFrom(&role))
 }
 
 func (r ReconcilerImplementation) ensureRoleBinding(
@@ -187,7 +189,7 @@ func (r ReconcilerImplementation) ensureRoleBinding(
 	var role rbacv1.RoleBinding
 	if err := r.Client.Get(ctx, client.ObjectKey{
 		Namespace: cluster.Namespace,
-		Name:      controller.GetRoleBindingNameForBackupConfig(cluster.Name),
+		Name:      controller.GetRoleNameForBackupConfig(cluster.Name),
 	}, &role); err != nil {
 		if apierrs.IsNotFound(err) {
 			return r.createRoleBinding(ctx, cluster)

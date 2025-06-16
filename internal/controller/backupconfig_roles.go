@@ -30,16 +30,19 @@ import (
 // It collects all BackupConfig objects used by cluster and grants read/watch permissions on them only
 // It also finds all secrets referenced by these BackupConfig and grants read permission on them
 func BuildRoleForBackupConfigs(
+	role *rbacv1.Role,
 	cluster *cnpgv1.Cluster,
 	backupConfigs []v1beta1.BackupConfig,
 ) *rbacv1.Role {
-	role := &rbacv1.Role{
-		ObjectMeta: metav1.ObjectMeta{
-			Namespace: cluster.Namespace,
-			Name:      GetRoleBindingNameForBackupConfig(cluster.Name),
-		},
+	if role == nil {
+		role = &rbacv1.Role{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: cluster.Namespace,
+				Name:      GetRoleNameForBackupConfig(cluster.Name),
+			},
 
-		Rules: []rbacv1.PolicyRule{},
+			Rules: []rbacv1.PolicyRule{},
+		}
 	}
 
 	backupConfigNames := stringset.New()
@@ -53,27 +56,28 @@ func BuildRoleForBackupConfigs(
 		}
 	}
 
-	role.Rules = append(
-		role.Rules,
-		rbacv1.PolicyRule{
+	role.Rules = []rbacv1.PolicyRule{
+		// It is safe to grant list permission restricted by resourceNames
+		// (https://kubernetes.io/docs/reference/access-authn-authz/rbac/#referring-to-resources)
+		{
 			APIGroups:     []string{"cnpg-extensions.yandex.cloud"},
-			Verbs:         []string{"watch", "get"},
+			Verbs:         []string{"watch", "get", "list"},
 			Resources:     []string{"backupconfigs"},
 			ResourceNames: backupConfigNames.ToSortedList(),
 		},
-		rbacv1.PolicyRule{
+		{
 			APIGroups:     []string{"cnpg-extensions.yandex.cloud"},
 			Verbs:         []string{"update"},
 			Resources:     []string{"backupconfigs/status"},
 			ResourceNames: backupConfigNames.ToSortedList(),
 		},
-		rbacv1.PolicyRule{
+		{
 			APIGroups:     []string{""},
-			Verbs:         []string{"watch", "get"},
+			Verbs:         []string{"watch", "get", "list"},
 			Resources:     []string{"secrets"},
 			ResourceNames: secretsNames.ToSortedList(),
 		},
-	)
+	}
 	return role
 }
 
@@ -84,7 +88,7 @@ func BuildRoleBindingForBackupConfig(
 	return &rbacv1.RoleBinding{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: cluster.Namespace,
-			Name:      GetRoleBindingNameForBackupConfig(cluster.Name),
+			Name:      GetRoleNameForBackupConfig(cluster.Name),
 		},
 		Subjects: []rbacv1.Subject{
 			{
@@ -97,13 +101,12 @@ func BuildRoleBindingForBackupConfig(
 		RoleRef: rbacv1.RoleRef{
 			APIGroup: "rbac.authorization.k8s.io",
 			Kind:     "Role",
-			Name:     GetRoleBindingNameForBackupConfig(cluster.Name),
+			Name:     GetRoleNameForBackupConfig(cluster.Name),
 		},
 	}
 }
 
-// GetRBACName returns the name of the RBAC entities for the
-// barman cloud plugin
-func GetRoleBindingNameForBackupConfig(clusterName string) string {
+// GetRBACName returns the name of the RBAC entities for the wal-g backup configs
+func GetRoleNameForBackupConfig(clusterName string) string {
 	return fmt.Sprintf("%s-backups", clusterName)
 }
