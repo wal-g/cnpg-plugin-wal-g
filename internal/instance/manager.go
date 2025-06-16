@@ -26,7 +26,7 @@ import (
 	"github.com/spf13/viper"
 	"github.com/wal-g/cnpg-plugin-wal-g/api/v1beta1"
 	"github.com/wal-g/cnpg-plugin-wal-g/internal/util/cmd"
-	"github.com/wal-g/cnpg-plugin-wal-g/internal/util/narrowcache"
+	"github.com/wal-g/cnpg-plugin-wal-g/internal/util/resourcecachingclient"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
@@ -90,7 +90,8 @@ func Start(ctx context.Context) error {
 		return err
 	}
 
-	client, err := narrowcache.CreateClient(
+	client, err := resourcecachingclient.CreateClient(
+		childrenCtx,
 		mgr,
 		[]client.Object{
 			&corev1.Secret{},

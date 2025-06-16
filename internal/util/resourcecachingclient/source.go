@@ -1,4 +1,4 @@
-package narrowcache
+package resourcecachingclient
 
 import (
 	"context"

@@ -1,4 +1,4 @@
-package narrowcache
+package resourcecachingclient
 
 import (
 	"context"
@@ -8,6 +8,8 @@ import (
 
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/runtime/serializer"
@@ -34,6 +36,7 @@ type Client struct {
 	watchedGVKs    map[string]bool           // read only once init
 	watchedObjects map[string]*watchedObject // mutex'ed
 	wmut           sync.RWMutex              // for watchedObjects map
+	ctx            context.Context           // context for long-running operations (ex. Watch requests)
 }
 
 // CreateClient creates a new client layer that sits on top of the provided `underlying` client.
@@ -43,7 +46,7 @@ type Client struct {
 // client.
 //
 // Furthermore, cached objects are also available as `source.Source`.
-func CreateClient(mgr manager.Manager, cachedObjectTypes []client.Object) (*Client, error) {
+func CreateClient(ctx context.Context, mgr manager.Manager, cachedObjectTypes []client.Object) (*Client, error) {
 	watchedGVKs := make(map[string]bool)
 
 	for _, obj := range cachedObjectTypes {
@@ -61,6 +64,7 @@ func CreateClient(mgr manager.Manager, cachedObjectTypes []client.Object) (*Clie
 		config:         mgr.GetConfig(),
 		mapper:         mgr.GetRESTMapper(),
 		watchedObjects: make(map[string]*watchedObject),
+		ctx:            ctx,
 	}, nil
 }
 
@@ -128,7 +132,7 @@ func (c *Client) getAndCreateWatchIfNeeded(ctx context.Context, obj client.Objec
 	}
 
 	// Create watch for later calls
-	w, err := c.typedWatch(ctx, mapping, key)
+	w, err := c.typedWatch(c.ctx, mapping, key)
 	if err != nil {
 		return objKey, err
 	}
@@ -140,7 +144,7 @@ func (c *Client) getAndCreateWatchIfNeeded(ctx context.Context, obj client.Objec
 	}
 
 	// Start updating goroutine
-	go c.updateCache(ctx, objKey, w)
+	go c.updateCache(c.ctx, objKey, w)
 	return objKey, nil
 }
 
@@ -172,16 +176,25 @@ func (c *Client) typedGet(ctx context.Context, mapping *meta.RESTMapping, key cl
 }
 
 func (c *Client) typedWatch(ctx context.Context, mapping *meta.RESTMapping, key client.ObjectKey) (watch.Interface, error) {
+	logger := log.FromContext(ctx).WithName("narrowcache").V(1) // Debug logs only for this method
 	restClient, err := c.restClientForMapping(mapping)
 	if err != nil {
 		return nil, err
 	}
 
-	return restClient.Get().
+	// ListOption with FieldSelector to authorize watch with resourceName scoped permissions
+	opts := metav1.ListOptions{
+		FieldSelector: fields.OneTermEqualSelector(metav1.ObjectNameField, key.Name).String(),
+		Watch:         true,
+	}
+
+	r := restClient.Get().
 		Namespace(key.Namespace).
 		Resource(mapping.Resource.Resource).
-		Name(key.Name).
-		Watch(ctx)
+		VersionedParams(&opts, runtime.NewParameterCodec(c.scheme))
+
+	logger.Info("performing watch request", "url", r.URL().String())
+	return r.Watch(ctx)
 }
 
 // "Terrible hack" cc directxman12 / sigs.k8s.io/controller-runtime/pkg/cache/internal/cache_reader.go
@@ -201,20 +214,20 @@ func copyInto(obj runtime.Object, out client.Object) error {
 }
 
 func (c *Client) updateCache(ctx context.Context, key string, watcher watch.Interface) {
-	rlog := log.FromContext(ctx).WithName("narrowcache")
+	logger := log.FromContext(ctx).WithName("narrowcache").V(1) // Debug logs only for this method
 	for watchEvent := range watcher.ResultChan() {
-		rlog.WithValues("key", key, "event type", watchEvent.Type).Info("Event received")
+		logger.WithValues("key", key, "event type", watchEvent.Type, "event data", watchEvent.Object).Info("Event received")
 		if watchEvent.Type == watch.Added || watchEvent.Type == watch.Modified {
 			err := c.setToCache(key, watchEvent.Object)
 			if err != nil {
-				rlog.WithValues("key", key).Error(err, "Error while updating cache")
+				logger.WithValues("key", key).Error(err, "Error while updating cache")
 			}
 		} else if watchEvent.Type == watch.Deleted {
 			c.removeFromCache(key)
 		}
 		c.callHandlers(ctx, key, watchEvent)
 	}
-	rlog.WithValues("key", key).Info("Watch terminated. Clearing cache entry.")
+	logger.WithValues("key", key).Info("Watch terminated. Clearing cache entry.")
 	c.clearEntryByKey(key)
 }
 
