@@ -26,7 +26,7 @@ import (
 	"github.com/spf13/viper"
 	"github.com/wal-g/cnpg-plugin-wal-g/api/v1beta1"
 	"github.com/wal-g/cnpg-plugin-wal-g/internal/util/cmd"
-	"github.com/wal-g/cnpg-plugin-wal-g/internal/util/resourcecachingclient"
+	"github.com/wal-g/cnpg-plugin-wal-g/pkg/resourcecachingclient"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"

@@ -15,6 +15,7 @@ RUN go mod download
 COPY api/ api/
 COPY cmd/ cmd/
 COPY internal/ internal/
+COPY pkg/ pkg/
 
 # Build extensions binary
 RUN GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} go build -a -o cnpg-plugin-wal-g cmd/main.go
