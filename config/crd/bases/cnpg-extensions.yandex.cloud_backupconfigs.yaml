@@ -51,9 +51,40 @@ spec:
                 description: 'How many times failed file will be retried during backup
                   / wal download. Default: 15.'
                 type: integer
+              retention:
+                description: Backups retention configuration
+                properties:
+                  deleteBackupsAfter:
+                    description: |-
+                      DeleteBackupsAfter is the retention policy to be used for backups
+                      and WALs (i.e. '60d'). It is expressed in the form
+                      of `XXu` where `XX` is a positive integer and `u` is in `[dwm]` -
+                      days, weeks, months (i.e. '7d', '4w', '1m').
+                      Different units should not be used at the same time
+                      If not specified - backups will not be deleted automatically
+                    pattern: ^[1-9][0-9]*[dwm]$
+                    type: string
+                  ignoreForManualBackups:
+                    default: false
+                    description: |-
+                      Whether to ignore manually created backups in retention policy
+
+                      IMPORTANT: Automatically created backups should have OwnerReference with
+                      ScheduledBackup or Cluster resource to be treated as auto backups!
+                      (.spec.backupOwnerReference: "self" or "cluster" in ScheduledBackup resource)
+                    type: boolean
+                  minBackupsToKeep:
+                    default: 5
+                    description: |-
+                      Minimal number of full backups to keep, this will keep backups
+                      even if backup should be deleted due to DeleteBackupsAfter policy
+                      Default is 5 backups
+                    maximum: 99
+                    minimum: 0
+                    type: integer
+                type: object
               storage:
-                description: StorageConfig defines object storage configuration for
-                  BackupConfig
+                description: Backups storage configuration
                 properties:
                   s3:
                     description: S3StorageConfig defines S3-specific configuration
@@ -150,6 +181,7 @@ spec:
                   bytes per second.
                 type: integer
             required:
+            - retention
             - storage
             type: object
           status:

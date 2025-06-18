@@ -75,8 +75,43 @@ type BackupConfigSpec struct {
 	UploadDiskConcurrency int `json:"uploadDiskConcurrency,omitempty"`
 
 	// Determines how many delta backups can be between full backups. Defaults to 0.
-	DeltaMaxSteps int           `json:"deltaMaxSteps,omitempty"`
-	Storage       StorageConfig `json:"storage"`
+	DeltaMaxSteps int `json:"deltaMaxSteps,omitempty"`
+
+	// Backups retention configuration
+	Retention BackupRetentionConfig `json:"retention"`
+
+	// Backups storage configuration
+	Storage StorageConfig `json:"storage"`
+}
+
+type BackupRetentionConfig struct {
+	// Whether to ignore manually created backups in retention policy
+	//
+	// IMPORTANT: Automatically created backups should have OwnerReference with
+	// ScheduledBackup or Cluster resource to be treated as auto backups!
+	// (.spec.backupOwnerReference: "self" or "cluster" in ScheduledBackup resource)
+	// +kubebuilder:default:=false
+	// +optional
+	IgnoreForManualBackups bool `json:"ignoreForManualBackups,omitempty"`
+
+	// Minimal number of full backups to keep, this will keep backups
+	// even if backup should be deleted due to DeleteBackupsAfter policy
+	// Default is 5 backups
+	// +kubebuilder:default:=5
+	// +kubebuilder:validation:Minimum=0
+	// +kubebuilder:validation:Maximum=99
+	// +optional
+	MinBackupsToKeep int `json:"minBackupsToKeep,omitempty"`
+
+	// DeleteBackupsAfter is the retention policy to be used for backups
+	// and WALs (i.e. '60d'). It is expressed in the form
+	// of `XXu` where `XX` is a positive integer and `u` is in `[dwm]` -
+	// days, weeks, months (i.e. '7d', '4w', '1m').
+	// Different units should not be used at the same time
+	// If not specified - backups will not be deleted automatically
+	// +kubebuilder:validation:Pattern=^[1-9][0-9]*[dwm]$
+	// +optional
+	DeleteBackupsAfter string `json:"deleteBackupsAfter,omitempty"`
 }
 
 // BackupConfigStatus defines the observed state of BackupConfig.
