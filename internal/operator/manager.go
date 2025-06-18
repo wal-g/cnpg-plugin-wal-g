@@ -22,6 +22,7 @@ import (
 	"flag"
 	"os"
 	"path/filepath"
+	"time"
 
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
 	// to ensure that exec-entrypoint and run can make use of them.
@@ -202,6 +203,16 @@ func Start(ctx context.Context) error {
 		Scheme: mgr.GetScheme(),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "BackupConfigReconciler")
+		return err
+	}
+
+	// Create and add the RetentionController
+	retentionController := controller.NewRetentionController(
+		mgr.GetClient(),
+		3*time.Hour, // Run retention check once per 3 hours
+	)
+	if err := mgr.Add(retentionController); err != nil {
+		setupLog.Error(err, "unable to add controller", "controller", "RetentionController")
 		return err
 	}
 
