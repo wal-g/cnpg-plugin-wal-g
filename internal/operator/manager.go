@@ -45,6 +45,7 @@ import (
 	cnpgv1 "github.com/cloudnative-pg/cloudnative-pg/api/v1"
 	"github.com/wal-g/cnpg-plugin-wal-g/api/v1beta1"
 	"github.com/wal-g/cnpg-plugin-wal-g/internal/controller"
+	"github.com/wal-g/cnpg-plugin-wal-g/internal/util/cmd"
 )
 
 var (
@@ -191,11 +192,25 @@ func Start(ctx context.Context) error {
 		return err
 	}
 
+	if err := mgr.Add(&cmd.ZombieProcessReaper{}); err != nil {
+		setupLog.Error(err, "unable to create zombie process reaper runnable")
+		return err
+	}
+
 	if err = (&controller.BackupConfigReconciler{
 		Client: mgr.GetClient(),
 		Scheme: mgr.GetScheme(),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "BackupConfigReconciler")
+		return err
+	}
+
+	// Register the BackupReconciler
+	if err = (&controller.BackupReconciler{
+		Client: mgr.GetClient(),
+		Scheme: mgr.GetScheme(),
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "BackupReconciler")
 		return err
 	}
 

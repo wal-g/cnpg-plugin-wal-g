@@ -24,11 +24,10 @@ import (
 	"strconv"
 	"time"
 
-	v1beta1 "github.com/wal-g/cnpg-plugin-wal-g/api/v1beta1"
-	"github.com/wal-g/cnpg-plugin-wal-g/internal/util/cmd"
-
 	"github.com/go-logr/logr"
 	"github.com/samber/lo"
+	v1beta1 "github.com/wal-g/cnpg-plugin-wal-g/api/v1beta1"
+	"github.com/wal-g/cnpg-plugin-wal-g/internal/util/cmd"
 )
 
 // WalgBackupMetadata represents single backup metadata returned by wal-g
@@ -143,4 +142,16 @@ func GetBackupByName(ctx context.Context, backupList []WalgBackupMetadata, name 
 	}
 
 	return &backup, nil
+}
+
+// DeleteBackup deletes a backup using WAL-G
+func DeleteBackup(
+	ctx context.Context,
+	backupConfig v1beta1.BackupConfigWithSecrets,
+	backupName string,
+) (*cmd.CmdRunResult, error) {
+	return cmd.New("wal-g", "delete", "target", backupName, "--confirm").
+		WithContext(ctx).
+		WithEnv(NewWalgConfigFromBackupConfig(backupConfig).ToEnvMap()).
+		Run()
 }
