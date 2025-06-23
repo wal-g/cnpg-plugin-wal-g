@@ -79,33 +79,36 @@ func (r *RetentionController) runBackupsRetentionCheck(ctx context.Context) {
 		}
 
 		// Process the BackupConfig
-		if err := r.processBackupConfig(ctx, backupConfig, backupConfigLogger); err != nil {
+		if err := r.runRetentionForBackupConfig(ctx, backupConfig, backupConfigLogger); err != nil {
 			backupConfigLogger.Error(err, "Failed to process BackupConfig")
 		}
 	}
 }
 
-// processBackupConfig applies the retention policy for a single BackupConfig
-func (r *RetentionController) processBackupConfig(
+// runRetentionForBackupConfig applies the retention policy for a single BackupConfig
+func (r *RetentionController) runRetentionForBackupConfig(
 	ctx context.Context,
 	backupConfig v1beta1.BackupConfig,
 	logger logr.Logger,
 ) error {
 	// List all Backup resources in the same namespace
 	backupList := &cnpgv1.BackupList{}
-	if err := r.client.List(ctx, backupList, client.InNamespace(backupConfig.Namespace)); err != nil {
-		return fmt.Errorf("failed to list Backup resources: %w", err)
+	opts := &client.ListOptions{
+		Namespace: backupConfig.Namespace,
 	}
 
-	if len(backupList.Items) == 0 {
-		logger.Info("No backups found")
-		return nil
+	if err := r.client.List(ctx, backupList, opts); err != nil {
+		return fmt.Errorf("failed to list Backup resources: %w", err)
 	}
 
 	// Filter backups that are owned by this BackupConfig
 	var relevantBackups []cnpgv1.Backup
 	for i := range backupList.Items {
 		backup := backupList.Items[i].DeepCopy()
+		if len(backup.OwnerReferences) == 0 {
+			continue
+		}
+
 		if lo.ContainsBy(backup.OwnerReferences, func(ref metav1.OwnerReference) bool {
 			return ref.Kind == backupConfig.Kind && ref.Name == backupConfig.Name
 		}) {
@@ -118,24 +121,8 @@ func (r *RetentionController) processBackupConfig(
 		return nil
 	}
 
-	// Sort backups by start time (oldest first)
-	sort.Slice(relevantBackups, func(i, j int) bool {
-		timeI := relevantBackups[i].Status.StartedAt
-		timeJ := relevantBackups[j].Status.StartedAt
-
-		// If StartedAt is nil, use creation timestamp
-		if timeI == nil {
-			return relevantBackups[i].CreationTimestamp.Before(&relevantBackups[j].CreationTimestamp)
-		}
-		if timeJ == nil {
-			return relevantBackups[i].CreationTimestamp.Before(&relevantBackups[j].CreationTimestamp)
-		}
-
-		return timeI.Before(timeJ)
-	})
-
 	// Get backups to delete based on retention policy
-	backupsToDelete, err := r.getBackupsToDelete(backupConfig, relevantBackups, logger)
+	backupsToDelete, err := r.getBackupsToDelete(ctx, backupConfig, relevantBackups)
 	if err != nil {
 		return fmt.Errorf("failed to determine backups to delete: %w", err)
 	}
@@ -154,10 +141,11 @@ func (r *RetentionController) processBackupConfig(
 
 // getBackupsToDelete determines which backups should be deleted based on retention policy
 func (r *RetentionController) getBackupsToDelete(
+	ctx context.Context,
 	backupConfig v1beta1.BackupConfig,
 	backupList []cnpgv1.Backup,
-	logger logr.Logger,
 ) ([]cnpgv1.Backup, error) {
+	logger := logr.FromContextOrDiscard(ctx)
 	var backupsToDelete []cnpgv1.Backup
 	retention := backupConfig.Spec.Retention
 
@@ -165,6 +153,21 @@ func (r *RetentionController) getBackupsToDelete(
 	if retention.DeleteBackupsAfter == "" && retention.MinBackupsToKeep == 0 {
 		return backupsToDelete, nil
 	}
+
+	// Sort backups by start time (oldest first). If StartedAt not specified - use CreationTimestamp
+	sort.Slice(backupList, func(i, j int) bool {
+		timeI := backupList[i].Status.StartedAt
+		if timeI == nil {
+			return backupList[i].CreationTimestamp.Before(&backupList[j].CreationTimestamp)
+		}
+
+		timeJ := backupList[j].Status.StartedAt
+		if timeJ == nil {
+			return backupList[i].CreationTimestamp.Before(&backupList[j].CreationTimestamp)
+		}
+
+		return timeI.Before(timeJ)
+	})
 
 	// Calculate retention threshold time if DeleteBackupsAfter is set
 	var retentionThreshold *time.Time
@@ -200,21 +203,13 @@ func (r *RetentionController) getBackupsToDelete(
 		}
 
 		// Check if backup is a manual backup and should be ignored
-		if retention.IgnoreForManualBackups {
-			// Check if this is a manual backup (not owned by a ScheduledBackup)
-			// This is a simplified check - adjust based on your actual implementation
-			isManualBackup := true
-			for _, ownerRef := range backup.OwnerReferences {
-				if ownerRef.Kind == "ScheduledBackup" {
-					isManualBackup = false
-					break
-				}
-			}
-
-			if isManualBackup {
-				logger.Info("Skipping manual backup", "backupName", backup.Name)
-				continue
-			}
+		// Manual backup is a backup not owned by anything except BackupConfig
+		// (for automated backups owner is either Cluster or ScheduledBackup resource)
+		// We assume that all backups passed there are owned by BackupConfig,
+		// so it is enough to check that there's only 1 OwnerReference
+		if retention.IgnoreForManualBackups && len(backup.OwnerReferences) == 1 {
+			logger.Info("Skipping manual backup", "backupName", backup.Name)
+			continue
 		}
 
 		// Check if backup is older than retention threshold
@@ -242,9 +237,10 @@ func (r *RetentionController) getBackupsToDelete(
 }
 
 // calculateRetentionThreshold calculates the retention threshold time based on the retention policy
+// Exported for testing purposes
 func calculateRetentionThreshold(retentionPolicy string) (time.Time, error) {
 	// Parse the retention policy string (e.g., "7d", "4w", "1m")
-	re := regexp.MustCompile(`^(\d+)([dwm])$`)
+	re := regexp.MustCompile(`^(\d+)([a-zA-Z]+)$`)
 	matches := re.FindStringSubmatch(retentionPolicy)
 	if len(matches) != 3 {
 		return time.Time{}, fmt.Errorf("invalid retention policy format: %s", retentionPolicy)
@@ -265,6 +261,8 @@ func calculateRetentionThreshold(retentionPolicy string) (time.Time, error) {
 		return now.AddDate(0, 0, -value*7), nil
 	case "m":
 		return now.AddDate(0, -value, 0), nil
+	case "min": // Mostly for debug/testing purposes, should not be used in real-life scenario
+		return now.Add(-time.Minute * time.Duration(value)), nil
 	default:
 		return time.Time{}, fmt.Errorf("invalid retention policy unit: %s", unit)
 	}
