@@ -73,7 +73,7 @@ func (r *RetentionController) runBackupsRetentionCheck(ctx context.Context) {
 		backupConfigLogger.Info("Processing BackupConfig")
 
 		// Skip if retention policy is not configured
-		if backupConfig.Spec.Retention.DeleteBackupsAfter == "" && backupConfig.Spec.Retention.MinBackupsToKeep == 0 {
+		if backupConfig.Spec.Retention.DeleteBackupsAfter == "" {
 			backupConfigLogger.Info("No retention policy configured, skipping")
 			continue
 		}
@@ -150,7 +150,7 @@ func (r *RetentionController) getBackupsToDelete(
 	retention := backupConfig.Spec.Retention
 
 	// If no retention policy is configured, return empty list
-	if retention.DeleteBackupsAfter == "" && retention.MinBackupsToKeep == 0 {
+	if retention.DeleteBackupsAfter == "" {
 		return backupsToDelete, nil
 	}
 
@@ -181,7 +181,7 @@ func (r *RetentionController) getBackupsToDelete(
 
 	// Filter backups that should be kept based on MinBackupsToKeep
 	minBackupsToKeep := 5 // Default value
-	if retention.MinBackupsToKeep > 0 {
+	if retention.MinBackupsToKeep >= 0 {
 		minBackupsToKeep = retention.MinBackupsToKeep
 	}
 
