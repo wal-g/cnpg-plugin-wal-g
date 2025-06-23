@@ -240,7 +240,7 @@ func (r *RetentionController) getBackupsToDelete(
 // Exported for testing purposes
 func calculateRetentionThreshold(retentionPolicy string) (time.Time, error) {
 	// Parse the retention policy string (e.g., "7d", "4w", "1m")
-	re := regexp.MustCompile(`^(\d+)([a-zA-Z]+)$`)
+	re := regexp.MustCompile(`^(\d+)([dwm])$`)
 	matches := re.FindStringSubmatch(retentionPolicy)
 	if len(matches) != 3 {
 		return time.Time{}, fmt.Errorf("invalid retention policy format: %s", retentionPolicy)
@@ -261,8 +261,6 @@ func calculateRetentionThreshold(retentionPolicy string) (time.Time, error) {
 		return now.AddDate(0, 0, -value*7), nil
 	case "m":
 		return now.AddDate(0, -value, 0), nil
-	case "min": // Mostly for debug/testing purposes, should not be used in real-life scenario
-		return now.Add(-time.Minute * time.Duration(value)), nil
 	default:
 		return time.Time{}, fmt.Errorf("invalid retention policy unit: %s", unit)
 	}

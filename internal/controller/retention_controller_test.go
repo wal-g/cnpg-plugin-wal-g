@@ -166,11 +166,6 @@ var _ = Describe("RetentionController", func() {
 				expectError:    false,
 				expectedDiff:   30 * 24 * time.Hour, // Approximate
 			}),
-			Entry("valid minutes retention (for testing)", testCase{
-				retentionValue: "30min",
-				expectError:    false,
-				expectedDiff:   30 * time.Minute,
-			}),
 			Entry("invalid format", testCase{
 				retentionValue: "invalid",
 				expectError:    true,
