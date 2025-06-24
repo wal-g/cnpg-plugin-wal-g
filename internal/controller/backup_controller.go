@@ -113,28 +113,15 @@ func (r *BackupReconciler) deleteWALGBackup(ctx context.Context, backup *cnpgv1.
 		return nil
 	}
 
-	// Get the cluster
-	cluster := &cnpgv1.Cluster{}
-	if err := r.Get(ctx, client.ObjectKey{Namespace: backup.Namespace, Name: backup.Spec.Cluster.Name}, cluster); err != nil {
-		return client.IgnoreNotFound(err)
-	}
-
-	// Get the BackupConfig for this cluster
-	backupConfig, err := v1beta1.GetBackupConfigForCluster(ctx, r.Client, *cluster)
-	if err != nil || backupConfig == nil {
-		logger.Info("No BackupConfig found for cluster, skipping WAL-G deletion", "error", err)
-		return nil
-	}
-
 	// Get BackupConfig with secrets
-	backupConfigWithSecrets, err := backupConfig.PrefetchSecretsData(ctx, r.Client)
+	backupConfigWithSecrets, err := r.getBackupConfigForBackup(ctx, backup)
 	if err != nil {
 		return err
 	}
 
 	// Delete the backup using WAL-G
 	logger.Info("Deleting backup from WAL-G", "backupID", backup.Status.BackupID)
-	result, err := walg.DeleteBackup(ctx, backupConfigWithSecrets, backup.Status.BackupID)
+	result, err := walg.DeleteBackup(ctx, *backupConfigWithSecrets, backup.Status.BackupID)
 	if err != nil {
 		logger.Error(err, "Failed to delete backup from WAL-G",
 			"backupID", backup.Status.BackupID,
@@ -143,10 +130,7 @@ func (r *BackupReconciler) deleteWALGBackup(ctx context.Context, backup *cnpgv1.
 		return err
 	}
 
-	logger.Info("Successfully deleted backup from WAL-G",
-		"backupID", backup.Status.BackupID,
-		"stdout", string(result.Stdout()),
-		"stderr", string(result.Stderr()))
+	logger.Info("Successfully deleted backup from WAL-G", "backupID", backup.Status.BackupID)
 	return nil
 }
 
@@ -175,4 +159,97 @@ func removeString(slice []string, s string) []string {
 		}
 	}
 	return result
+}
+
+func (r *BackupReconciler) getBackupConfigForBackup(ctx context.Context, backup *cnpgv1.Backup) (*v1beta1.BackupConfigWithSecrets, error) {
+	logger := logr.FromContextOrDiscard(ctx).WithValues("backup.Name", backup.Name, "backup.Namespace", backup.Namespace)
+
+	// Get the cluster
+	cluster := &cnpgv1.Cluster{}
+	if err := r.Get(ctx, client.ObjectKey{Namespace: backup.Namespace, Name: backup.Spec.Cluster.Name}, cluster); err != nil {
+		logger.Error(err, "while getting Cluster")
+		return nil, client.IgnoreNotFound(err)
+	}
+
+	// Get the BackupConfig for this cluster
+	backupConfig, err := v1beta1.GetBackupConfigForCluster(ctx, r.Client, *cluster)
+	if err != nil || backupConfig == nil {
+		logger.Info("No BackupConfig found for cluster", "error", err)
+		return nil, err
+	}
+
+	// Get BackupConfig with secrets
+	backupConfigWithSecrets, err := backupConfig.PrefetchSecretsData(ctx, r.Client)
+	if err != nil {
+		logger.Error(err, "while prefetching secrets data")
+		return nil, err
+	}
+
+	return &backupConfigWithSecrets, nil
+}
+
+func (r *BackupReconciler) GetDependantBackups(ctx context.Context, backup *cnpgv1.Backup) ([]*cnpgv1.Backup, error) {
+	logger := logr.FromContextOrDiscard(ctx).WithValues("backup.Name", backup.Name, "backup.Namespace", backup.Namespace).V(1) // Only debug logs for this method
+
+	// Nothing to do with backups without BackupID
+	if backup.Status.BackupID == "" {
+		return make([]*cnpgv1.Backup, 0), nil
+	}
+
+	// Get BackupConfig with secrets
+	backupConfigWithSecrets, err := r.getBackupConfigForBackup(ctx, backup)
+	if err != nil {
+		logger.Error(err, "while prefetching secrets data")
+		return nil, err
+	}
+
+	// List all backups in the same namespace
+	backupsList := cnpgv1.BackupList{}
+	err = r.Client.List(ctx, &backupsList, &client.ListOptions{Namespace: backup.Namespace})
+	if err != nil {
+		logger.Error(err, "while getting Backup list")
+		return nil, err
+	}
+
+	// Get all WAL-G backups
+	walgBackups, err := walg.GetBackupsList(ctx, *backupConfigWithSecrets)
+	if err != nil {
+		logger.Error(err, "while getting WAL-G backups list")
+		return nil, err
+	}
+
+	// Find the WAL-G backup metadata for the current backup
+	currentWalgBackup, err := walg.GetBackupByName(ctx, walgBackups, backup.Status.BackupID)
+	if err != nil {
+		logger.Error(err, "while finding current backup in WAL-G")
+		return nil, err
+	}
+
+	if currentWalgBackup == nil {
+		logger.Info("Current backup not found in WAL-G", "backupID", backup.Status.BackupID)
+		return make([]*cnpgv1.Backup, 0), nil
+	}
+
+	// Find all dependent backups (including indirect ones)
+	dependentWalgBackups := currentWalgBackup.GetDependantBackups(ctx, walgBackups, true)
+	logger.Info("Found dependent WAL-G backups", "count", len(dependentWalgBackups))
+
+	// Create a map of backupID -> Backup for quick lookup
+	backupIDMap := make(map[string]*cnpgv1.Backup)
+	for _, backup := range backupsList.Items {
+		if backup.Status.BackupID != "" {
+			backupIDMap[backup.Status.BackupID] = &backup
+		}
+	}
+
+	// Match WAL-G dependant backups with Backup resources
+	result := make([]*cnpgv1.Backup, 0, len(dependentWalgBackups))
+	for _, walgBackup := range dependentWalgBackups {
+		if k8sBackup, exists := backupIDMap[walgBackup.BackupName]; exists {
+			result = append(result, k8sBackup)
+		}
+	}
+
+	logger.Info("Found dependent Backup resources", "count", len(result))
+	return result, nil
 }
