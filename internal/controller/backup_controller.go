@@ -28,8 +28,10 @@ import (
 	"github.com/wal-g/cnpg-plugin-wal-g/internal/common"
 	"github.com/wal-g/cnpg-plugin-wal-g/internal/util/walg"
 	"k8s.io/apimachinery/pkg/api/equality"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/utils/ptr"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
@@ -43,7 +45,8 @@ type BackupReconciler struct {
 
 const backupFinalizerName = "cnpg-plugin-wal-g.yandex.cloud/backup-cleanup"
 const backupTypeAnnotationName = "cnpg-plugin-wal-g.yandex.cloud/backup-type"
-const backupDependentsAnnotationName = "cnpg-plugin-wal-g.yandex.cloud/dependent-backups"
+const backupAllDependentsAnnotationName = "cnpg-plugin-wal-g.yandex.cloud/dependent-backups-all"
+const backupDirectDependentsAnnotationName = "cnpg-plugin-wal-g.yandex.cloud/dependent-backups-direct"
 
 type BackupType string
 
@@ -78,7 +81,14 @@ func (r *BackupReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 		return ctrl.Result{}, nil
 	}
 
-	err := r.reconcileRelatedBackupsAnnotations(ctx, backup)
+	// Set owner reference to BackupConfig
+	err := r.reconcileOwnerReference(ctx, backup)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+
+	// Update backup annotations
+	err = r.reconcileRelatedBackupsAnnotations(ctx, backup)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
@@ -93,6 +103,50 @@ func (r *BackupReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 	}
 
 	return ctrl.Result{}, nil
+}
+
+// reconcileOwnerReference sets the BackupConfig as the owner of the Backup resource
+// This is needed to properly track which backups belong to which BackupConfig
+// for retention policy and other operations
+func (r *BackupReconciler) reconcileOwnerReference(ctx context.Context, backup *cnpgv1.Backup) error {
+	logger := logr.FromContextOrDiscard(ctx).WithValues("backup.Name", backup.Name, "backup.Namespace", backup.Namespace)
+
+	// Skip if backup already has an owner reference to a BackupConfig
+	for _, ownerRef := range backup.OwnerReferences {
+		if ownerRef.Kind == "BackupConfig" {
+			logger.V(1).Info("Backup already has BackupConfig owner reference", "ownerRef", ownerRef)
+			return nil
+		}
+	}
+
+	// Get the cluster
+	cluster := &cnpgv1.Cluster{}
+	if err := r.Get(ctx, client.ObjectKey{Namespace: backup.Namespace, Name: backup.Spec.Cluster.Name}, cluster); err != nil {
+		logger.Error(err, "Failed to get Cluster for Backup")
+		return client.IgnoreNotFound(err)
+	}
+
+	// Get the BackupConfig for this cluster
+	backupConfig, err := v1beta1.GetBackupConfigForCluster(ctx, r.Client, *cluster)
+	if err != nil || backupConfig == nil {
+		logger.Info("No BackupConfig found for cluster", "error", err)
+		return err
+	}
+
+	// Set the BackupConfig as the owner of the Backup
+	backup.OwnerReferences = append(backup.OwnerReferences, metav1.OwnerReference{
+		APIVersion:         "cnpg-extensions.yandex.cloud/v1beta1",
+		Kind:               "BackupConfig",
+		Name:               backupConfig.Name,
+		UID:                backupConfig.UID,
+		BlockOwnerDeletion: ptr.To(true),
+	})
+
+	logger.Info("Setting BackupConfig as owner of Backup",
+		"backupConfig.Name", backupConfig.Name,
+		"backup.Name", backup.Name)
+
+	return r.Update(ctx, backup)
 }
 
 func (r *BackupReconciler) reconcileRelatedBackupsAnnotations(ctx context.Context, backup *cnpgv1.Backup) error {
@@ -112,7 +166,7 @@ func (r *BackupReconciler) reconcileRelatedBackupsAnnotations(ctx context.Contex
 		return err
 	}
 
-	updated, err := r.reconcileSignleBackupAnnotations(ctx, backup, backupConfigWithSecrets, walgBackups)
+	updated, err := r.reconcileBackupAnnotations(ctx, backup, backupConfigWithSecrets, walgBackups)
 	if err != nil {
 		return fmt.Errorf("while reconciling backup %s annotations: %w", backup.Name, err)
 	}
@@ -121,8 +175,11 @@ func (r *BackupReconciler) reconcileRelatedBackupsAnnotations(ctx context.Contex
 		if err != nil {
 			return err
 		}
-		for _, backup := range backupsToReconcile {
-			r.reconcileSignleBackupAnnotations(ctx, &backup, backupConfigWithSecrets, walgBackups)
+		for _, otherBackup := range backupsToReconcile {
+			if otherBackup.Name == backup.Name {
+				continue
+			}
+			r.reconcileBackupAnnotations(ctx, &otherBackup, backupConfigWithSecrets, walgBackups)
 		}
 	}
 
@@ -147,7 +204,7 @@ func (r *BackupReconciler) listBackupsOwnedByBackupConfig(ctx context.Context, b
 	return backups, nil
 }
 
-func (r *BackupReconciler) reconcileSignleBackupAnnotations(
+func (r *BackupReconciler) reconcileBackupAnnotations(
 	ctx context.Context,
 	backup *cnpgv1.Backup,
 	backupConfig *v1beta1.BackupConfigWithSecrets,
@@ -173,16 +230,23 @@ func (r *BackupReconciler) reconcileSignleBackupAnnotations(
 		return false, err
 	}
 
-	dependentBackups, err := buildDependentBackupsForBackup(ctx, backup, backups, walgBackups)
+	directDependentBackups, err := buildDependentBackupsForBackup(ctx, backup, backups, walgBackups, false)
 	if err != nil {
 		return false, err
 	}
-
-	dependentBackupsNames := lo.Map(dependentBackups, func(b cnpgv1.Backup, _ int) string {
+	dependentBackupsNames := lo.Map(directDependentBackups, func(b cnpgv1.Backup, _ int) string {
 		return b.Name
 	})
+	changedBackup.Annotations[backupDirectDependentsAnnotationName] = strings.Join(dependentBackupsNames, "; ")
 
-	changedBackup.Annotations[backupDependentsAnnotationName] = strings.Join(dependentBackupsNames, "; ")
+	allDependentBackups, err := buildDependentBackupsForBackup(ctx, backup, backups, walgBackups, true)
+	if err != nil {
+		return false, err
+	}
+	allDependentBackupsNames := lo.Map(allDependentBackups, func(b cnpgv1.Backup, _ int) string {
+		return b.Name
+	})
+	changedBackup.Annotations[backupAllDependentsAnnotationName] = strings.Join(allDependentBackupsNames, "; ")
 
 	if equality.Semantic.DeepEqual(changedBackup, backup) {
 		// There's no need to hit the API server again
@@ -314,8 +378,9 @@ func buildDependentBackupsForBackup(
 	backup *cnpgv1.Backup,
 	backups []cnpgv1.Backup,
 	walgBackups []walg.WalgBackupMetadata,
+	includeIndirect bool,
 ) ([]cnpgv1.Backup, error) {
-	logger := logr.FromContextOrDiscard(ctx).WithValues("backup.Name", backup.Name, "backup.Namespace", backup.Namespace).V(1) // Only debug logs for this method
+	logger := logr.FromContextOrDiscard(ctx).WithValues("backup.Name", backup.Name, "backup.Namespace", backup.Namespace) // Only debug logs for this method
 
 	// Nothing to do with backups without BackupID
 	if backup.Status.BackupID == "" {
@@ -328,30 +393,16 @@ func buildDependentBackupsForBackup(
 	}
 
 	// Find all dependent backups (including indirect ones)
-	dependentWalgBackups := currentWalgBackup.GetDependentBackups(ctx, walgBackups, true)
-	logger.Info("Found dependent WAL-G backups", "count", len(dependentWalgBackups))
+	dependentWalgBackups := currentWalgBackup.GetDependentBackups(ctx, walgBackups, includeIndirect)
+	logger.V(1).Info("Found dependent WAL-G backups", "backups", dependentWalgBackups)
 
-	// Create a map of backupID -> Backup for quick lookup
-	backupIDMap := make(map[string]cnpgv1.Backup)
-	for _, backup := range backups {
-		if backup.Status.BackupID != "" {
-			backupIDMap[backup.Status.BackupID] = backup
-		}
-	}
+	// Filter Backup resources - leave only some of them, matching dependent wal-g backups
+	result := lo.Filter(backups, func(candidate cnpgv1.Backup, _ int) bool {
+		return lo.ContainsBy(dependentWalgBackups, func(walgBackup walg.WalgBackupMetadata) bool {
+			return walgBackup.BackupName == candidate.Status.BackupID
+		})
+	})
 
-	// Match WAL-G dependent backups with Backup resources
-	result := make([]cnpgv1.Backup, 0, len(dependentWalgBackups))
-	for _, walgBackup := range dependentWalgBackups {
-		cnpgBackupName, exists := walgBackup.UserData["cnpg-backup-name"]
-		if !exists {
-			continue
-		}
-
-		if cnpgBackup, exists := backupIDMap[cnpgBackupName.(string)]; exists {
-			result = append(result, cnpgBackup)
-		}
-	}
-
-	logger.Info("Found dependent Backup resources", "count", len(result))
+	logger.V(1).Info("Found dependent Backup resources", "backups", result)
 	return result, nil
 }
