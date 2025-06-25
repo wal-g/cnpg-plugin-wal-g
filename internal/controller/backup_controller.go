@@ -29,7 +29,6 @@ import (
 	"github.com/wal-g/cnpg-plugin-wal-g/internal/util/walg"
 	"k8s.io/apimachinery/pkg/api/equality"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/utils/ptr"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -57,6 +56,13 @@ const BackupTypeIncremental BackupType = "INCREMENTAL"
 // +kubebuilder:rbac:groups=postgresql.cnpg.io,resources=backups,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=postgresql.cnpg.io,resources=backups/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=postgresql.cnpg.io,resources=backups/finalizers,verbs=update
+
+// SetupWithManager sets up the controller with the Manager.
+func (r *BackupReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	return ctrl.NewControllerManagedBy(mgr).
+		For(&cnpgv1.Backup{}).
+		Complete(r)
+}
 
 // Reconcile handles Backup resource events
 func (r *BackupReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -196,7 +202,7 @@ func (r *BackupReconciler) listBackupsOwnedByBackupConfig(ctx context.Context, b
 
 	// Filter only backups owned by backupConfig
 	backups := lo.Filter(backupsList.Items, func(b cnpgv1.Backup, _ int) bool {
-		return lo.ContainsBy(b.OwnerReferences, func(o v1.OwnerReference) bool {
+		return lo.ContainsBy(b.OwnerReferences, func(o metav1.OwnerReference) bool {
 			return o.Kind == "BackupConfig" && o.Name == backupConfig.Name
 		})
 	})
@@ -275,10 +281,32 @@ func (r *BackupReconciler) handleBackupDeletion(ctx context.Context, backup *cnp
 		return
 	}
 
+	// Delete physical backup from storage
 	if err := r.deleteWALGBackup(ctx, backup); err != nil {
 		// If there's an error, don't remove the finalizer so we can retry
 		logger.Error(err, "while deleting Backup via wal-g")
 		return
+	}
+
+	backupConfigWithSecrets, err := r.getBackupConfigForBackup(ctx, backup)
+	if err != nil {
+		logger.Error(err, "while prefetching secrets data")
+		return
+	}
+
+	walgBackups, err := walg.GetBackupsList(ctx, *backupConfigWithSecrets)
+	if err != nil {
+		logger.Error(err, "while getting WAL-G backups list")
+		return
+	}
+
+	backups, err := r.listBackupsOwnedByBackupConfig(ctx, backupConfigWithSecrets)
+	if err != nil {
+		return
+	}
+
+	for _, otherBackup := range backups {
+		r.reconcileBackupAnnotations(ctx, &otherBackup, backupConfigWithSecrets, walgBackups)
 	}
 
 	// Remove our finalizer from the list and update
@@ -319,33 +347,6 @@ func (r *BackupReconciler) deleteWALGBackup(ctx context.Context, backup *cnpgv1.
 	return nil
 }
 
-// SetupWithManager sets up the controller with the Manager.
-func (r *BackupReconciler) SetupWithManager(mgr ctrl.Manager) error {
-	return ctrl.NewControllerManagedBy(mgr).
-		For(&cnpgv1.Backup{}).
-		Complete(r)
-}
-
-// Helper functions to check and remove string from a slice of strings.
-func containsString(slice []string, s string) bool {
-	for _, item := range slice {
-		if item == s {
-			return true
-		}
-	}
-	return false
-}
-
-func removeString(slice []string, s string) []string {
-	result := make([]string, 0, len(slice))
-	for _, item := range slice {
-		if item != s {
-			result = append(result, item)
-		}
-	}
-	return result
-}
-
 func (r *BackupReconciler) getBackupConfigForBackup(ctx context.Context, backup *cnpgv1.Backup) (*v1beta1.BackupConfigWithSecrets, error) {
 	logger := logr.FromContextOrDiscard(ctx).WithValues("backup.Name", backup.Name, "backup.Namespace", backup.Namespace)
 
@@ -373,6 +374,26 @@ func (r *BackupReconciler) getBackupConfigForBackup(ctx context.Context, backup 
 	return &backupConfigWithSecrets, nil
 }
 
+// Helper functions to check and remove string from a slice of strings.
+func containsString(slice []string, s string) bool {
+	for _, item := range slice {
+		if item == s {
+			return true
+		}
+	}
+	return false
+}
+
+func removeString(slice []string, s string) []string {
+	result := make([]string, 0, len(slice))
+	for _, item := range slice {
+		if item != s {
+			result = append(result, item)
+		}
+	}
+	return result
+}
+
 func buildDependentBackupsForBackup(
 	ctx context.Context,
 	backup *cnpgv1.Backup,
@@ -396,9 +417,9 @@ func buildDependentBackupsForBackup(
 	dependentWalgBackups := currentWalgBackup.GetDependentBackups(ctx, walgBackups, includeIndirect)
 	logger.V(1).Info("Found dependent WAL-G backups", "backups", dependentWalgBackups)
 
-	// Filter Backup resources - leave only some of them, matching dependent wal-g backups
+	// Filter Backup resources - leave only some of them, matching dependent wal-g backups && not being deleted
 	result := lo.Filter(backups, func(candidate cnpgv1.Backup, _ int) bool {
-		return lo.ContainsBy(dependentWalgBackups, func(walgBackup walg.WalgBackupMetadata) bool {
+		return candidate.DeletionTimestamp.IsZero() && lo.ContainsBy(dependentWalgBackups, func(walgBackup walg.WalgBackupMetadata) bool {
 			return walgBackup.BackupName == candidate.Status.BackupID
 		})
 	})
