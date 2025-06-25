@@ -123,6 +123,10 @@ func extractValueFromSecret(
 	secretReference *v1.SecretKeySelector,
 	namespace string,
 ) ([]byte, error) {
+	if secretReference == nil {
+		return nil, fmt.Errorf("secretReference is nil")
+	}
+
 	secret := &v1.Secret{}
 	err := c.Get(ctx, client.ObjectKey{Namespace: namespace, Name: secretReference.Name}, secret)
 	if err != nil {

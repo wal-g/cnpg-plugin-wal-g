@@ -347,7 +347,7 @@ func (r *BackupReconciler) getBackupConfigForBackup(ctx context.Context, backup 
 	cluster := &cnpgv1.Cluster{}
 	if err := r.Get(ctx, client.ObjectKey{Namespace: backup.Namespace, Name: backup.Spec.Cluster.Name}, cluster); err != nil {
 		logger.Error(err, "while getting Cluster")
-		return nil, client.IgnoreNotFound(err)
+		return nil, err
 	}
 
 	// Get the BackupConfig for this cluster
