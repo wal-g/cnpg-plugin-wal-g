@@ -33,18 +33,7 @@ func BuildRoleForBackupConfigs(
 	role *rbacv1.Role,
 	cluster *cnpgv1.Cluster,
 	backupConfigs []v1beta1.BackupConfig,
-) *rbacv1.Role {
-	if role == nil {
-		role = &rbacv1.Role{
-			ObjectMeta: metav1.ObjectMeta{
-				Namespace: cluster.Namespace,
-				Name:      GetRoleNameForBackupConfig(cluster.Name),
-			},
-
-			Rules: []rbacv1.PolicyRule{},
-		}
-	}
-
+) {
 	backupConfigNames := stringset.New()
 	secretsNames := stringset.New()
 
@@ -78,7 +67,6 @@ func BuildRoleForBackupConfigs(
 			ResourceNames: secretsNames.ToSortedList(),
 		},
 	}
-	return role
 }
 
 // BuildRoleBinding builds the role binding object for this cluster
