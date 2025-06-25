@@ -151,10 +151,17 @@ func DeleteBackup(
 	backupConfig v1beta1.BackupConfigWithSecrets,
 	backupName string,
 ) (*cmd.CmdRunResult, error) {
-	return cmd.New("wal-g", "delete", "target", backupName, "--confirm").
+	result, err := cmd.New("wal-g", "delete", "target", backupName, "--confirm").
 		WithContext(ctx).
 		WithEnv(NewWalgConfigFromBackupConfig(backupConfig).ToEnvMap()).
 		Run()
+
+	backupDoesNotExistStr := fmt.Sprintf("Backup '%s' does not exist.", backupName)
+	// If backup already not exists in storage - do not treat this as an error, return success
+	if err != nil && strings.Contains(string(result.Stderr()), backupDoesNotExistStr) {
+		err = nil
+	}
+	return result, err
 }
 
 // GetDependentBackups returns a list of backups that depend on the current backup.
