@@ -207,12 +207,12 @@ func (r *BackupReconciler) reconcileBackupAnnotations(
 		return false, nil
 	}
 
-	changedBackup := backup.DeepCopy()
+	oldBackup := backup.DeepCopy()
 
-	if strings.Contains(changedBackup.Status.BackupID, "_D_") {
-		changedBackup.Annotations[backupTypeAnnotationName] = string(BackupTypeIncremental)
+	if strings.Contains(backup.Status.BackupID, "_D_") {
+		backup.Annotations[backupTypeAnnotationName] = string(BackupTypeIncremental)
 	} else {
-		changedBackup.Annotations[backupTypeAnnotationName] = string(BackupTypeFull)
+		backup.Annotations[backupTypeAnnotationName] = string(BackupTypeFull)
 	}
 
 	backups, err := r.listBackupsOwnedByBackupConfig(ctx, backupConfig)
@@ -227,7 +227,7 @@ func (r *BackupReconciler) reconcileBackupAnnotations(
 	dependentBackupsNames := lo.Map(directDependentBackups, func(b cnpgv1.Backup, _ int) string {
 		return b.Name
 	})
-	changedBackup.Annotations[backupDirectDependentsAnnotationName] = strings.Join(dependentBackupsNames, "; ")
+	backup.Annotations[backupDirectDependentsAnnotationName] = strings.Join(dependentBackupsNames, "; ")
 
 	allDependentBackups, err := buildDependentBackupsForBackup(ctx, backup, backups, walgBackups, true)
 	if err != nil {
@@ -236,21 +236,22 @@ func (r *BackupReconciler) reconcileBackupAnnotations(
 	allDependentBackupsNames := lo.Map(allDependentBackups, func(b cnpgv1.Backup, _ int) string {
 		return b.Name
 	})
-	changedBackup.Annotations[backupAllDependentsAnnotationName] = strings.Join(allDependentBackupsNames, "; ")
+	backup.Annotations[backupAllDependentsAnnotationName] = strings.Join(allDependentBackupsNames, "; ")
 
-	if equality.Semantic.DeepEqual(changedBackup, backup) {
+	if equality.Semantic.DeepEqual(backup, oldBackup) {
 		// There's no need to hit the API server again
 		return false, nil
 	}
 
 	logger.V(1).Info(
 		"Patching CNPG Backup annotations",
-		"backup.Name", changedBackup.Name,
-		"backup.Namespace", changedBackup.Namespace,
-		"backup.Annotations", changedBackup.Annotations,
+		"backup.Name", backup.Name,
+		"backup.Namespace", backup.Namespace,
+		"backup.Annotations", backup.Annotations,
 	)
 
-	return true, r.Client.Patch(ctx, changedBackup, client.MergeFrom(backup))
+	err = r.Client.Patch(ctx, backup, client.MergeFrom(oldBackup))
+	return true, err
 }
 
 // handleBackupDeletion removes actual backup from storage via wal-g

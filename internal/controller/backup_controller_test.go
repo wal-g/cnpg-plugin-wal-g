@@ -458,4 +458,479 @@ var _ = Describe("BackupReconciler", func() {
 			Expect(dependentBackups).To(BeEmpty())
 		})
 	})
+
+	Describe("reconcileBackupAnnotations", func() {
+		It("should do nothing for backup without BackupID", func() {
+			// Create test objects
+			backupConfig, s3Secret := createTestBackupConfig("test-backupconfig", "default")
+			backup := createTestBackup("test-backup", "default", "test-cluster", "", true)
+
+			// Create a mock BackupConfigWithSecrets
+			backupConfigWithSecrets := &v1beta1.BackupConfigWithSecrets{
+				BackupConfig: *backupConfig,
+				Spec: v1beta1.BackupConfigSpecWithSecrets{
+					BackupConfigSpec: backupConfig.Spec,
+					Storage: v1beta1.StorageConfigWithSecrets{
+						StorageConfig: backupConfig.Spec.Storage,
+						S3: &v1beta1.S3StorageConfigWithSecrets{
+							S3StorageConfig: *backupConfig.Spec.Storage.S3,
+							AccessKeyID:     "test-access-key-id",
+							AccessKeySecret: "test-access-key-secret",
+						},
+					},
+				},
+			}
+
+			// Create WAL-G backups
+			walgBackups := []walg.WalgBackupMetadata{}
+
+			// Create fake client with objects
+			fakeClient := setupFakeBackupClient(backupConfig, s3Secret, backup)
+
+			// Create reconciler with fake client
+			reconciler = &BackupReconciler{
+				Client: fakeClient,
+				Scheme: runtime.NewScheme(),
+			}
+
+			// Call reconcileBackupAnnotations
+			updated, err := reconciler.reconcileBackupAnnotations(testCtx, backup, backupConfigWithSecrets, walgBackups)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(updated).To(BeFalse())
+
+			// Verify backup was not updated
+			updatedBackup := &cnpgv1.Backup{}
+			err = fakeClient.Get(testCtx, client.ObjectKey{Namespace: "default", Name: "test-backup"}, updatedBackup)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(updatedBackup.Annotations).NotTo(HaveKey(backupTypeAnnotationName))
+			Expect(updatedBackup.Annotations).NotTo(HaveKey(backupDirectDependentsAnnotationName))
+			Expect(updatedBackup.Annotations).NotTo(HaveKey(backupAllDependentsAnnotationName))
+		})
+
+		It("should set full backup type annotation for full backup", func() {
+			// Create test objects
+			backupConfig, s3Secret := createTestBackupConfig("test-backupconfig", "default")
+			backup := createTestBackup("test-backup", "default", "test-cluster", "base_000000010000000100000001", true)
+
+			// Create a mock BackupConfigWithSecrets
+			backupConfigWithSecrets := &v1beta1.BackupConfigWithSecrets{
+				BackupConfig: *backupConfig,
+				Spec: v1beta1.BackupConfigSpecWithSecrets{
+					BackupConfigSpec: backupConfig.Spec,
+					Storage: v1beta1.StorageConfigWithSecrets{
+						StorageConfig: backupConfig.Spec.Storage,
+						S3: &v1beta1.S3StorageConfigWithSecrets{
+							S3StorageConfig: *backupConfig.Spec.Storage.S3,
+							AccessKeyID:     "test-access-key-id",
+							AccessKeySecret: "test-access-key-secret",
+						},
+					},
+				},
+			}
+
+			// Create WAL-G backups
+			walgBackup := createWalgBackupMetadata("base_000000010000000100000001", false)
+			walgBackups := []walg.WalgBackupMetadata{walgBackup}
+
+			// Create fake client with objects
+			fakeClient := setupFakeBackupClient(backupConfig, s3Secret, backup)
+
+			// Create reconciler with fake client
+			reconciler = &BackupReconciler{
+				Client: fakeClient,
+				Scheme: runtime.NewScheme(),
+			}
+
+			// Call reconcileBackupAnnotations
+			updated, err := reconciler.reconcileBackupAnnotations(testCtx, backup, backupConfigWithSecrets, walgBackups)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(updated).To(BeTrue())
+			Expect(backup.Annotations).To(HaveKeyWithValue(backupTypeAnnotationName, string(BackupTypeFull)))
+			Expect(backup.Annotations).To(HaveKeyWithValue(backupDirectDependentsAnnotationName, ""))
+			Expect(backup.Annotations).To(HaveKeyWithValue(backupAllDependentsAnnotationName, ""))
+
+			// Verify backup was updated with correct annotations
+			updatedBackup := &cnpgv1.Backup{}
+			err = fakeClient.Get(testCtx, client.ObjectKey{Namespace: "default", Name: "test-backup"}, updatedBackup)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(updatedBackup.Annotations).To(HaveKeyWithValue(backupTypeAnnotationName, string(BackupTypeFull)))
+			Expect(updatedBackup.Annotations).To(HaveKeyWithValue(backupDirectDependentsAnnotationName, ""))
+			Expect(updatedBackup.Annotations).To(HaveKeyWithValue(backupAllDependentsAnnotationName, ""))
+		})
+
+		It("should set incremental backup type annotation for incremental backup", func() {
+			// Create test objects
+			backupConfig, s3Secret := createTestBackupConfig("test-backupconfig", "default")
+			backup := createTestBackup("test-backup", "default", "test-cluster", "base_000000010000000100000002_D_000000010000000100000001", true)
+
+			// Create a mock BackupConfigWithSecrets
+			backupConfigWithSecrets := &v1beta1.BackupConfigWithSecrets{
+				BackupConfig: *backupConfig,
+				Spec: v1beta1.BackupConfigSpecWithSecrets{
+					BackupConfigSpec: backupConfig.Spec,
+					Storage: v1beta1.StorageConfigWithSecrets{
+						StorageConfig: backupConfig.Spec.Storage,
+						S3: &v1beta1.S3StorageConfigWithSecrets{
+							S3StorageConfig: *backupConfig.Spec.Storage.S3,
+							AccessKeyID:     "test-access-key-id",
+							AccessKeySecret: "test-access-key-secret",
+						},
+					},
+				},
+			}
+
+			// Create WAL-G backups
+			walgBackup := createWalgBackupMetadata("base_000000010000000100000002_D_000000010000000100000001", true)
+			walgBackups := []walg.WalgBackupMetadata{walgBackup}
+
+			// Create fake client with objects
+			fakeClient := setupFakeBackupClient(backupConfig, s3Secret, backup)
+
+			// Create reconciler with fake client
+			reconciler = &BackupReconciler{
+				Client: fakeClient,
+				Scheme: runtime.NewScheme(),
+			}
+
+			// Call reconcileBackupAnnotations
+			updated, err := reconciler.reconcileBackupAnnotations(testCtx, backup, backupConfigWithSecrets, walgBackups)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(updated).To(BeTrue())
+			Expect(backup.Annotations).To(HaveKeyWithValue(backupTypeAnnotationName, string(BackupTypeIncremental)))
+			Expect(backup.Annotations).To(HaveKeyWithValue(backupDirectDependentsAnnotationName, ""))
+			Expect(backup.Annotations).To(HaveKeyWithValue(backupAllDependentsAnnotationName, ""))
+
+			// Verify backup was updated with correct annotations
+			updatedBackup := &cnpgv1.Backup{}
+			err = fakeClient.Get(testCtx, client.ObjectKey{Namespace: "default", Name: "test-backup"}, updatedBackup)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(updatedBackup.Annotations).To(HaveKeyWithValue(backupTypeAnnotationName, string(BackupTypeIncremental)))
+			Expect(updatedBackup.Annotations).To(HaveKeyWithValue(backupDirectDependentsAnnotationName, ""))
+			Expect(updatedBackup.Annotations).To(HaveKeyWithValue(backupAllDependentsAnnotationName, ""))
+		})
+
+		It("should set direct dependent backups annotation", func() {
+			// Create test objects
+			backupConfig, s3Secret := createTestBackupConfig("test-backupconfig", "default")
+			baseBackup := createTestBackup("base-backup", "default", "test-cluster", "base_000000010000000100000001", true)
+			dependentBackup := createTestBackup("dependent-backup", "default", "test-cluster", "base_000000010000000100000002_D_000000010000000100000001", true)
+
+			// Create a mock BackupConfigWithSecrets
+			backupConfigWithSecrets := &v1beta1.BackupConfigWithSecrets{
+				BackupConfig: *backupConfig,
+				Spec: v1beta1.BackupConfigSpecWithSecrets{
+					BackupConfigSpec: backupConfig.Spec,
+					Storage: v1beta1.StorageConfigWithSecrets{
+						StorageConfig: backupConfig.Spec.Storage,
+						S3: &v1beta1.S3StorageConfigWithSecrets{
+							S3StorageConfig: *backupConfig.Spec.Storage.S3,
+							AccessKeyID:     "test-access-key-id",
+							AccessKeySecret: "test-access-key-secret",
+						},
+					},
+				},
+			}
+
+			// Create WAL-G backups
+			walgBaseBackup := walg.WalgBackupMetadata{
+				BackupName:  "base_000000010000000100000001",
+				WalFileName: "000000010000000100000001",
+			}
+			walgDependentBackup := walg.WalgBackupMetadata{
+				BackupName:  "base_000000010000000100000002_D_000000010000000100000001",
+				WalFileName: "000000010000000100000002",
+			}
+			walgBackups := []walg.WalgBackupMetadata{walgBaseBackup, walgDependentBackup}
+
+			// Create fake client with objects
+			fakeClient := setupFakeBackupClient(backupConfig, s3Secret, baseBackup, dependentBackup)
+
+			// Create reconciler with fake client
+			reconciler = &BackupReconciler{
+				Client: fakeClient,
+				Scheme: runtime.NewScheme(),
+			}
+
+			// Call reconcileBackupAnnotations
+			updated, err := reconciler.reconcileBackupAnnotations(testCtx, baseBackup, backupConfigWithSecrets, walgBackups)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(updated).To(BeTrue())
+			Expect(baseBackup.Annotations).To(HaveKeyWithValue(backupTypeAnnotationName, string(BackupTypeFull)))
+			Expect(baseBackup.Annotations).To(HaveKeyWithValue(backupDirectDependentsAnnotationName, "dependent-backup"))
+			Expect(baseBackup.Annotations).To(HaveKeyWithValue(backupAllDependentsAnnotationName, "dependent-backup"))
+
+			// Verify backup was updated with correct annotations
+			updatedBackup := &cnpgv1.Backup{}
+			err = fakeClient.Get(testCtx, client.ObjectKey{Namespace: "default", Name: "base-backup"}, updatedBackup)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(updatedBackup.Annotations).To(HaveKeyWithValue(backupTypeAnnotationName, string(BackupTypeFull)))
+			Expect(updatedBackup.Annotations).To(HaveKeyWithValue(backupDirectDependentsAnnotationName, "dependent-backup"))
+			Expect(updatedBackup.Annotations).To(HaveKeyWithValue(backupAllDependentsAnnotationName, "dependent-backup"))
+		})
+
+		It("should set both direct and indirect dependent backups annotations", func() {
+			// Create test objects
+			backupConfig, s3Secret := createTestBackupConfig("test-backupconfig", "default")
+			baseBackup := createTestBackup("base-backup", "default", "test-cluster", "base_000000010000000100000001", true)
+			directDependentBackup := createTestBackup("direct-dependent", "default", "test-cluster", "base_000000010000000100000002_D_000000010000000100000001", true)
+			indirectDependentBackup := createTestBackup("indirect-dependent", "default", "test-cluster", "base_000000010000000100000003_D_000000010000000100000002", true)
+
+			// Create a mock BackupConfigWithSecrets
+			backupConfigWithSecrets := &v1beta1.BackupConfigWithSecrets{
+				BackupConfig: *backupConfig,
+				Spec: v1beta1.BackupConfigSpecWithSecrets{
+					BackupConfigSpec: backupConfig.Spec,
+					Storage: v1beta1.StorageConfigWithSecrets{
+						StorageConfig: backupConfig.Spec.Storage,
+						S3: &v1beta1.S3StorageConfigWithSecrets{
+							S3StorageConfig: *backupConfig.Spec.Storage.S3,
+							AccessKeyID:     "test-access-key-id",
+							AccessKeySecret: "test-access-key-secret",
+						},
+					},
+				},
+			}
+
+			// Create WAL-G backups
+			walgBaseBackup := walg.WalgBackupMetadata{
+				BackupName:  "base_000000010000000100000001",
+				WalFileName: "000000010000000100000001",
+			}
+			walgDirectDependentBackup := walg.WalgBackupMetadata{
+				BackupName:  "base_000000010000000100000002_D_000000010000000100000001",
+				WalFileName: "000000010000000100000002",
+			}
+			walgIndirectDependentBackup := walg.WalgBackupMetadata{
+				BackupName:  "base_000000010000000100000003_D_000000010000000100000002",
+				WalFileName: "000000010000000100000003",
+			}
+			walgBackups := []walg.WalgBackupMetadata{walgBaseBackup, walgDirectDependentBackup, walgIndirectDependentBackup}
+
+			// Create fake client with objects
+			fakeClient := setupFakeBackupClient(backupConfig, s3Secret, baseBackup, directDependentBackup, indirectDependentBackup)
+
+			// Create reconciler with fake client
+			reconciler = &BackupReconciler{
+				Client: fakeClient,
+				Scheme: runtime.NewScheme(),
+			}
+
+			// Call reconcileBackupAnnotations
+			updated, err := reconciler.reconcileBackupAnnotations(testCtx, baseBackup, backupConfigWithSecrets, walgBackups)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(updated).To(BeTrue())
+
+			// Verify backup was updated with correct annotations
+			updatedBackup := &cnpgv1.Backup{}
+			err = fakeClient.Get(testCtx, client.ObjectKey{Namespace: "default", Name: "base-backup"}, updatedBackup)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(updatedBackup.Annotations).To(HaveKeyWithValue(backupTypeAnnotationName, string(BackupTypeFull)))
+			Expect(updatedBackup.Annotations).To(HaveKeyWithValue(backupDirectDependentsAnnotationName, "direct-dependent"))
+
+			// The all dependents annotation should include both direct and indirect dependents
+			allDependents := updatedBackup.Annotations[backupAllDependentsAnnotationName]
+			Expect(allDependents).To(ContainSubstring("direct-dependent"))
+			Expect(allDependents).To(ContainSubstring("indirect-dependent"))
+		})
+
+		It("should not update backup if annotations are already correct", func() {
+			// Create test objects
+			backupConfig, s3Secret := createTestBackupConfig("test-backupconfig", "default")
+
+			// Create a backup with annotations already set
+			backup := createTestBackup("test-backup", "default", "test-cluster", "base_000000010000000100000001", true)
+			backup.Annotations = map[string]string{
+				backupTypeAnnotationName:             string(BackupTypeFull),
+				backupDirectDependentsAnnotationName: "",
+				backupAllDependentsAnnotationName:    "",
+			}
+
+			// Create a mock BackupConfigWithSecrets
+			backupConfigWithSecrets := &v1beta1.BackupConfigWithSecrets{
+				BackupConfig: *backupConfig,
+				Spec: v1beta1.BackupConfigSpecWithSecrets{
+					BackupConfigSpec: backupConfig.Spec,
+					Storage: v1beta1.StorageConfigWithSecrets{
+						StorageConfig: backupConfig.Spec.Storage,
+						S3: &v1beta1.S3StorageConfigWithSecrets{
+							S3StorageConfig: *backupConfig.Spec.Storage.S3,
+							AccessKeyID:     "test-access-key-id",
+							AccessKeySecret: "test-access-key-secret",
+						},
+					},
+				},
+			}
+
+			// Create WAL-G backups
+			walgBackup := createWalgBackupMetadata("base_000000010000000100000001", false)
+			walgBackups := []walg.WalgBackupMetadata{walgBackup}
+
+			// Create fake client with objects
+			fakeClient := setupFakeBackupClient(backupConfig, s3Secret, backup)
+
+			// Create reconciler with fake client
+			reconciler = &BackupReconciler{
+				Client: fakeClient,
+				Scheme: runtime.NewScheme(),
+			}
+
+			// Call reconcileBackupAnnotations
+			updated, err := reconciler.reconcileBackupAnnotations(testCtx, backup, backupConfigWithSecrets, walgBackups)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(updated).To(BeFalse())
+		})
+
+		It("should handle backup deletion by updating dependent backups annotations", func() {
+			// This test simulates the scenario where a backup is being deleted
+			// and we need to update the annotations of other backups
+
+			// Create test objects
+			backupConfig, s3Secret := createTestBackupConfig("test-backupconfig", "default")
+			baseBackup := createTestBackup("base-backup", "default", "test-cluster", "base_000000010000000100000001", true)
+			dependentBackup := createTestBackup("dependent-backup", "default", "test-cluster", "base_000000010000000100000002_D_000000010000000100000001", true)
+
+			// Set deletion timestamp on dependent backup
+			now := metav1.Now()
+			dependentBackup.Finalizers = append(dependentBackup.Finalizers, backupFinalizerName)
+			dependentBackup.DeletionTimestamp = &now
+
+			// Create a mock BackupConfigWithSecrets
+			backupConfigWithSecrets := &v1beta1.BackupConfigWithSecrets{
+				BackupConfig: *backupConfig,
+				Spec: v1beta1.BackupConfigSpecWithSecrets{
+					BackupConfigSpec: backupConfig.Spec,
+					Storage: v1beta1.StorageConfigWithSecrets{
+						StorageConfig: backupConfig.Spec.Storage,
+						S3: &v1beta1.S3StorageConfigWithSecrets{
+							S3StorageConfig: *backupConfig.Spec.Storage.S3,
+							AccessKeyID:     "test-access-key-id",
+							AccessKeySecret: "test-access-key-secret",
+						},
+					},
+				},
+			}
+
+			// Create WAL-G backups - only include the base backup since the dependent is being deleted
+			walgBaseBackup := walg.WalgBackupMetadata{
+				BackupName:  "base_000000010000000100000001",
+				WalFileName: "000000010000000100000001",
+			}
+			walgBackups := []walg.WalgBackupMetadata{walgBaseBackup}
+
+			// Create fake client with objects
+			fakeClient := setupFakeBackupClient(backupConfig, s3Secret, baseBackup, dependentBackup)
+
+			// Create reconciler with fake client
+			reconciler = &BackupReconciler{
+				Client: fakeClient,
+				Scheme: runtime.NewScheme(),
+			}
+
+			// Call reconcileBackupAnnotations on the base backup
+			updated, err := reconciler.reconcileBackupAnnotations(testCtx, baseBackup, backupConfigWithSecrets, walgBackups)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(updated).To(BeTrue())
+
+			// Verify base backup was updated with empty dependent annotations
+			// since the dependent backup is being deleted
+			updatedBackup := &cnpgv1.Backup{}
+			err = fakeClient.Get(testCtx, client.ObjectKey{Namespace: "default", Name: "base-backup"}, updatedBackup)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(updatedBackup.Annotations).To(HaveKeyWithValue(backupTypeAnnotationName, string(BackupTypeFull)))
+			Expect(updatedBackup.Annotations).To(HaveKeyWithValue(backupDirectDependentsAnnotationName, ""))
+			Expect(updatedBackup.Annotations).To(HaveKeyWithValue(backupAllDependentsAnnotationName, ""))
+		})
+
+		It("should update parent backup annotations when new dependent backup is created", func() {
+			// Create test objects
+			backupConfig, s3Secret := createTestBackupConfig("test-backupconfig", "default")
+
+			// Create parent backup with no dependents initially
+			parentBackup := createTestBackup("parent-backup", "default", "test-cluster", "base_000000010000000100000001", true)
+			parentBackup.Annotations = map[string]string{
+				backupTypeAnnotationName:             string(BackupTypeFull),
+				backupDirectDependentsAnnotationName: "",
+				backupAllDependentsAnnotationName:    "",
+			}
+
+			// Create a new dependent backup
+			newDependentBackup := createTestBackup("new-dependent", "default", "test-cluster", "base_000000010000000100000002_D_000000010000000100000001", true)
+
+			// Create a mock BackupConfigWithSecrets
+			backupConfigWithSecrets := &v1beta1.BackupConfigWithSecrets{
+				BackupConfig: *backupConfig,
+				Spec: v1beta1.BackupConfigSpecWithSecrets{
+					BackupConfigSpec: backupConfig.Spec,
+					Storage: v1beta1.StorageConfigWithSecrets{
+						StorageConfig: backupConfig.Spec.Storage,
+						S3: &v1beta1.S3StorageConfigWithSecrets{
+							S3StorageConfig: *backupConfig.Spec.Storage.S3,
+							AccessKeyID:     "test-access-key-id",
+							AccessKeySecret: "test-access-key-secret",
+						},
+					},
+				},
+			}
+
+			// Create WAL-G backups including the new dependent backup
+			walgParentBackup := walg.WalgBackupMetadata{
+				BackupName:  "base_000000010000000100000001",
+				WalFileName: "000000010000000100000001",
+			}
+			walgDependentBackup := walg.WalgBackupMetadata{
+				BackupName:  "base_000000010000000100000002_D_000000010000000100000001",
+				WalFileName: "000000010000000100000002",
+			}
+			walgBackups := []walg.WalgBackupMetadata{walgParentBackup, walgDependentBackup}
+
+			// Create fake client with objects
+			fakeClient := setupFakeBackupClient(backupConfig, s3Secret, parentBackup, newDependentBackup)
+
+			// Create reconciler with fake client
+			reconciler = &BackupReconciler{
+				Client: fakeClient,
+				Scheme: runtime.NewScheme(),
+			}
+
+			// Call reconcileBackupAnnotations on the parent backup
+			updated, err := reconciler.reconcileBackupAnnotations(testCtx, parentBackup, backupConfigWithSecrets, walgBackups)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(updated).To(BeTrue(), "Parent backup should be updated with new dependent")
+
+			// Verify parent backup was updated with the new dependent in its annotations
+			updatedParent := &cnpgv1.Backup{}
+			err = fakeClient.Get(testCtx, client.ObjectKey{Namespace: "default", Name: "parent-backup"}, updatedParent)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(updatedParent.Annotations).To(HaveKeyWithValue(backupTypeAnnotationName, string(BackupTypeFull)))
+			Expect(updatedParent.Annotations).To(HaveKeyWithValue(backupDirectDependentsAnnotationName, "new-dependent"))
+			Expect(updatedParent.Annotations).To(HaveKeyWithValue(backupAllDependentsAnnotationName, "new-dependent"))
+
+			// Also test the scenario where we add a second level dependent (indirect dependent)
+			secondLevelBackup := createTestBackup("second-level", "default", "test-cluster", "base_000000010000000100000003_D_000000010000000100000002", true)
+			walgSecondLevel := walg.WalgBackupMetadata{
+				BackupName:  "base_000000010000000100000003_D_000000010000000100000002",
+				WalFileName: "000000010000000100000003",
+			}
+			walgBackups = append(walgBackups, walgSecondLevel)
+
+			// Update the fake client with the new backup
+			fakeClient = setupFakeBackupClient(backupConfig, s3Secret, parentBackup, newDependentBackup, secondLevelBackup)
+			reconciler.Client = fakeClient
+
+			// Call reconcileBackupAnnotations again on the parent backup
+			updated, err = reconciler.reconcileBackupAnnotations(testCtx, parentBackup, backupConfigWithSecrets, walgBackups)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(updated).To(BeTrue(), "Parent backup should be updated with indirect dependent")
+
+			// Verify parent backup was updated with both direct and indirect dependents
+			err = fakeClient.Get(testCtx, client.ObjectKey{Namespace: "default", Name: "parent-backup"}, updatedParent)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(updatedParent.Annotations).To(HaveKeyWithValue(backupDirectDependentsAnnotationName, "new-dependent"))
+
+			// The all dependents annotation should include both direct and indirect dependents
+			allDependents := updatedParent.Annotations[backupAllDependentsAnnotationName]
+			Expect(allDependents).To(ContainSubstring("new-dependent"))
+			Expect(allDependents).To(ContainSubstring("second-level"))
+		})
+	})
 })
