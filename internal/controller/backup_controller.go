@@ -18,12 +18,17 @@ package controller
 
 import (
 	"context"
+	"fmt"
+	"strings"
 
 	cnpgv1 "github.com/cloudnative-pg/cloudnative-pg/api/v1"
 	"github.com/go-logr/logr"
+	"github.com/samber/lo"
 	v1beta1 "github.com/wal-g/cnpg-plugin-wal-g/api/v1beta1"
 	"github.com/wal-g/cnpg-plugin-wal-g/internal/common"
 	"github.com/wal-g/cnpg-plugin-wal-g/internal/util/walg"
+	"k8s.io/apimachinery/pkg/api/equality"
+	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -37,6 +42,13 @@ type BackupReconciler struct {
 }
 
 const backupFinalizerName = "cnpg-plugin-wal-g.yandex.cloud/backup-cleanup"
+const backupTypeAnnotationName = "cnpg-plugin-wal-g.yandex.cloud/backup-type"
+const backupDependentsAnnotationName = "cnpg-plugin-wal-g.yandex.cloud/dependent-backups"
+
+type BackupType string
+
+const BackupTypeFull BackupType = "FULL"
+const BackupTypeIncremental BackupType = "INCREMENTAL"
 
 // +kubebuilder:rbac:groups=postgresql.cnpg.io,resources=clusters,verbs=get;list;watch
 // +kubebuilder:rbac:groups=postgresql.cnpg.io,resources=backups,verbs=get;list;watch;create;update;patch;delete
@@ -66,6 +78,11 @@ func (r *BackupReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 		return ctrl.Result{}, nil
 	}
 
+	err := r.reconcileRelatedBackupsAnnotations(ctx, backup)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+
 	// Add finalizer if it doesn't exist
 	if !containsString(backup.ObjectMeta.Finalizers, backupFinalizerName) {
 		logger.Info("Detected new Backup managed by plugin, setting up finalizer")
@@ -76,6 +93,110 @@ func (r *BackupReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 	}
 
 	return ctrl.Result{}, nil
+}
+
+func (r *BackupReconciler) reconcileRelatedBackupsAnnotations(ctx context.Context, backup *cnpgv1.Backup) error {
+	logger := logr.FromContextOrDiscard(ctx).WithValues("backup.Name", backup.Name, "backup.Namespace", backup.Namespace)
+
+	// Get BackupConfig with secrets
+	backupConfigWithSecrets, err := r.getBackupConfigForBackup(ctx, backup)
+	if err != nil {
+		logger.Error(err, "while prefetching secrets data")
+		return err
+	}
+
+	// Get all WAL-G backups
+	walgBackups, err := walg.GetBackupsList(ctx, *backupConfigWithSecrets)
+	if err != nil {
+		logger.Error(err, "while getting WAL-G backups list")
+		return err
+	}
+
+	updated, err := r.reconcileSignleBackupAnnotations(ctx, backup, backupConfigWithSecrets, walgBackups)
+	if err != nil {
+		return fmt.Errorf("while reconciling backup %s annotations: %w", backup.Name, err)
+	}
+	if updated {
+		backupsToReconcile, err := r.listBackupsOwnedByBackupConfig(ctx, backupConfigWithSecrets)
+		if err != nil {
+			return err
+		}
+		for _, backup := range backupsToReconcile {
+			r.reconcileSignleBackupAnnotations(ctx, &backup, backupConfigWithSecrets, walgBackups)
+		}
+	}
+
+	return nil
+}
+
+func (r *BackupReconciler) listBackupsOwnedByBackupConfig(ctx context.Context, backupConfig *v1beta1.BackupConfigWithSecrets) ([]cnpgv1.Backup, error) {
+	// List all backups in the same namespace
+	backupsList := cnpgv1.BackupList{}
+	err := r.Client.List(ctx, &backupsList, &client.ListOptions{Namespace: backupConfig.Namespace})
+	if err != nil {
+		return make([]cnpgv1.Backup, 0), fmt.Errorf("while getting Backup List: %w", err)
+	}
+
+	// Filter only backups owned by backupConfig
+	backups := lo.Filter(backupsList.Items, func(b cnpgv1.Backup, _ int) bool {
+		return lo.ContainsBy(b.OwnerReferences, func(o v1.OwnerReference) bool {
+			return o.Kind == "BackupConfig" && o.Name == backupConfig.Name
+		})
+	})
+
+	return backups, nil
+}
+
+func (r *BackupReconciler) reconcileSignleBackupAnnotations(
+	ctx context.Context,
+	backup *cnpgv1.Backup,
+	backupConfig *v1beta1.BackupConfigWithSecrets,
+	walgBackups []walg.WalgBackupMetadata,
+) (bool, error) {
+	logger := logr.FromContextOrDiscard(ctx).WithValues("backup.Name", backup.Name, "backup.Namespace", backup.Namespace)
+
+	// If backup has not BackupID - skipping
+	if backup.Status.BackupID == "" {
+		return false, nil
+	}
+
+	changedBackup := backup.DeepCopy()
+
+	if strings.Contains(changedBackup.Status.BackupID, "_D_") {
+		changedBackup.Annotations[backupTypeAnnotationName] = string(BackupTypeIncremental)
+	} else {
+		changedBackup.Annotations[backupTypeAnnotationName] = string(BackupTypeFull)
+	}
+
+	backups, err := r.listBackupsOwnedByBackupConfig(ctx, backupConfig)
+	if err != nil {
+		return false, err
+	}
+
+	dependentBackups, err := buildDependentBackupsForBackup(ctx, backup, backups, walgBackups)
+	if err != nil {
+		return false, err
+	}
+
+	dependentBackupsNames := lo.Map(dependentBackups, func(b cnpgv1.Backup, _ int) string {
+		return b.Name
+	})
+
+	changedBackup.Annotations[backupDependentsAnnotationName] = strings.Join(dependentBackupsNames, "; ")
+
+	if equality.Semantic.DeepEqual(changedBackup, backup) {
+		// There's no need to hit the API server again
+		return false, nil
+	}
+
+	logger.V(1).Info(
+		"Patching CNPG Backup annotations",
+		"backup.Name", changedBackup.Name,
+		"backup.Namespace", changedBackup.Namespace,
+		"backup.Annotations", changedBackup.Annotations,
+	)
+
+	return true, r.Client.Patch(ctx, changedBackup, client.MergeFrom(backup))
 }
 
 // handleBackupDeletion removes actual backup from storage via wal-g
@@ -188,65 +309,46 @@ func (r *BackupReconciler) getBackupConfigForBackup(ctx context.Context, backup 
 	return &backupConfigWithSecrets, nil
 }
 
-func (r *BackupReconciler) GetDependantBackups(ctx context.Context, backup *cnpgv1.Backup) ([]*cnpgv1.Backup, error) {
+func buildDependentBackupsForBackup(
+	ctx context.Context,
+	backup *cnpgv1.Backup,
+	backups []cnpgv1.Backup,
+	walgBackups []walg.WalgBackupMetadata,
+) ([]cnpgv1.Backup, error) {
 	logger := logr.FromContextOrDiscard(ctx).WithValues("backup.Name", backup.Name, "backup.Namespace", backup.Namespace).V(1) // Only debug logs for this method
 
 	// Nothing to do with backups without BackupID
 	if backup.Status.BackupID == "" {
-		return make([]*cnpgv1.Backup, 0), nil
+		return make([]cnpgv1.Backup, 0), nil
 	}
 
-	// Get BackupConfig with secrets
-	backupConfigWithSecrets, err := r.getBackupConfigForBackup(ctx, backup)
-	if err != nil {
-		logger.Error(err, "while prefetching secrets data")
-		return nil, err
-	}
-
-	// List all backups in the same namespace
-	backupsList := cnpgv1.BackupList{}
-	err = r.Client.List(ctx, &backupsList, &client.ListOptions{Namespace: backup.Namespace})
-	if err != nil {
-		logger.Error(err, "while getting Backup list")
-		return nil, err
-	}
-
-	// Get all WAL-G backups
-	walgBackups, err := walg.GetBackupsList(ctx, *backupConfigWithSecrets)
-	if err != nil {
-		logger.Error(err, "while getting WAL-G backups list")
-		return nil, err
-	}
-
-	// Find the WAL-G backup metadata for the current backup
-	currentWalgBackup, err := walg.GetBackupByName(ctx, walgBackups, backup.Status.BackupID)
-	if err != nil {
-		logger.Error(err, "while finding current backup in WAL-G")
-		return nil, err
-	}
-
-	if currentWalgBackup == nil {
-		logger.Info("Current backup not found in WAL-G", "backupID", backup.Status.BackupID)
-		return make([]*cnpgv1.Backup, 0), nil
+	// For getting dependent backups it is enough to have backupName only
+	currentWalgBackup := walg.WalgBackupMetadata{
+		BackupName: backup.Status.BackupID,
 	}
 
 	// Find all dependent backups (including indirect ones)
-	dependentWalgBackups := currentWalgBackup.GetDependantBackups(ctx, walgBackups, true)
+	dependentWalgBackups := currentWalgBackup.GetDependentBackups(ctx, walgBackups, true)
 	logger.Info("Found dependent WAL-G backups", "count", len(dependentWalgBackups))
 
 	// Create a map of backupID -> Backup for quick lookup
-	backupIDMap := make(map[string]*cnpgv1.Backup)
-	for _, backup := range backupsList.Items {
+	backupIDMap := make(map[string]cnpgv1.Backup)
+	for _, backup := range backups {
 		if backup.Status.BackupID != "" {
-			backupIDMap[backup.Status.BackupID] = &backup
+			backupIDMap[backup.Status.BackupID] = backup
 		}
 	}
 
-	// Match WAL-G dependant backups with Backup resources
-	result := make([]*cnpgv1.Backup, 0, len(dependentWalgBackups))
+	// Match WAL-G dependent backups with Backup resources
+	result := make([]cnpgv1.Backup, 0, len(dependentWalgBackups))
 	for _, walgBackup := range dependentWalgBackups {
-		if k8sBackup, exists := backupIDMap[walgBackup.BackupName]; exists {
-			result = append(result, k8sBackup)
+		cnpgBackupName, exists := walgBackup.UserData["cnpg-backup-name"]
+		if !exists {
+			continue
+		}
+
+		if cnpgBackup, exists := backupIDMap[cnpgBackupName.(string)]; exists {
+			result = append(result, cnpgBackup)
 		}
 	}
 

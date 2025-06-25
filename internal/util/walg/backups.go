@@ -157,7 +157,7 @@ func DeleteBackup(
 		Run()
 }
 
-// GetDependantBackups returns a list of backups that depend on the current backup.
+// GetDependentBackups returns a list of backups that depend on the current backup.
 // This is determined by analyzing backup names, where delta backups include their base backup's WAL ID.
 // For example:
 // - base_000000010000000100000040 (full backup)
@@ -167,13 +167,13 @@ func DeleteBackup(
 // If includeIndirect is true, it will also include indirect dependencies (dependencies of dependencies).
 // For example, if A depends on the current backup, and B depends on A, then B is an indirect dependency
 // of the current backup and will be included in the result if includeIndirect is true.
-func (m *WalgBackupMetadata) GetDependantBackups(ctx context.Context, backupList []WalgBackupMetadata, includeIndirect bool) []WalgBackupMetadata {
+func (m *WalgBackupMetadata) GetDependentBackups(ctx context.Context, backupList []WalgBackupMetadata, includeIndirect bool) []WalgBackupMetadata {
 	logger := logr.FromContextOrDiscard(ctx)
-	logger.V(1).Info("Finding dependant backups", "backupName", m.BackupName, "includeIndirect", includeIndirect)
+	logger.V(1).Info("Finding dependent backups", "backupName", m.BackupName, "includeIndirect", includeIndirect)
 
 	// Find direct dependencies
 	directDependencies := findDirectDependencies(*m, backupList)
-	logger.V(1).Info("Found direct dependants", "backupName", m.BackupName, "dependants", directDependencies)
+	logger.V(1).Info("Found direct dependents", "backupName", m.BackupName, "dependents", directDependencies)
 
 	// If we don't need indirect dependencies, return just the direct ones
 	if !includeIndirect {
@@ -228,7 +228,7 @@ func findDirectDependencies(parent WalgBackupMetadata, backupList []WalgBackupMe
 			continue
 		}
 
-		// Skipping non-delta backups, they cannot be dependant
+		// Skipping non-delta backups, they cannot be dependent
 		if !strings.Contains(b.BackupName, "_D_") {
 			continue
 		}

@@ -32,3 +32,13 @@ func CnpgClusterFromJSON(clusterJSON []byte) (cnpgv1.Cluster, error) {
 
 	return result, nil
 }
+
+// CnpgBackupFromJSON decodes a JSON representation of a CNPG Backup.
+func CnpgBackupFromJSON(backupJSON []byte) (cnpgv1.Backup, error) {
+	result := cnpgv1.Backup{}
+	if err := json.Unmarshal(backupJSON, &result); err != nil {
+		return result, fmt.Errorf("error unmarshalling object JSON: %w", err)
+	}
+
+	return result, nil
+}
