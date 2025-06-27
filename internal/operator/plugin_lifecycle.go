@@ -258,7 +258,8 @@ func reconcilePodSpecWithPluginSidecar(
 	}
 
 	// merge the main container envs if they aren't already set
-	for _, container := range spec.Containers {
+	for i := range spec.Containers {
+		container := &spec.Containers[i]
 		if container.Name == jobRole {
 			for _, env := range container.Env {
 				found := false

@@ -172,8 +172,8 @@ func createTestBackup(name, namespace, clusterName string, backupID string, with
 }
 
 // Helper function to create WAL-G backup metadata
-func createWalgBackupMetadata(backupName string, isIncremental bool) walg.WalgBackupMetadata {
-	metadata := walg.WalgBackupMetadata{
+func createBackupMetadata(backupName string, isIncremental bool) walg.BackupMetadata {
+	metadata := walg.BackupMetadata{
 		BackupName:       backupName,
 		StartTimeString:  time.Now().Format(time.RFC3339Nano),
 		FinishTimeString: time.Now().Add(time.Minute).Format(time.RFC3339Nano),
@@ -399,15 +399,14 @@ var _ = Describe("BackupReconciler", func() {
 			backups := []cnpgv1.Backup{*backup, *backup2, *backup3}
 
 			// Create WAL-G backups
-			walgBackup1 := createWalgBackupMetadata("base_000000010000000100000001", false)
-			walgBackup2 := createWalgBackupMetadata("base_000000010000000100000002_D_000000010000000100000001", true)
-			walgBackup3 := createWalgBackupMetadata("base_000000010000000100000003", false)
+			walgBackup1 := createBackupMetadata("base_000000010000000100000001", false)
+			walgBackup2 := createBackupMetadata("base_000000010000000100000002_D_000000010000000100000001", true)
+			walgBackup3 := createBackupMetadata("base_000000010000000100000003", false)
 
-			walgBackups := []walg.WalgBackupMetadata{walgBackup1, walgBackup2, walgBackup3}
+			walgBackups := []walg.BackupMetadata{walgBackup1, walgBackup2, walgBackup3}
 
 			// Call buildDependentBackupsForBackup
-			dependentBackups, err := buildDependentBackupsForBackup(testCtx, backup, backups, walgBackups, false)
-			Expect(err).NotTo(HaveOccurred())
+			dependentBackups := buildDependentBackupsForBackup(testCtx, backup, backups, walgBackups, false)
 			Expect(dependentBackups).To(HaveLen(1))
 			Expect(dependentBackups[0].Name).To(Equal("test-backup-2"))
 		})
@@ -421,24 +420,23 @@ var _ = Describe("BackupReconciler", func() {
 			backups := []cnpgv1.Backup{*backup1, *backup2, *backup3}
 
 			// Create WAL-G backups
-			walgBackup1 := walg.WalgBackupMetadata{
+			walgBackup1 := walg.BackupMetadata{
 				BackupName:  "base_000000010000000100000001",
 				WalFileName: "000000010000000100000001",
 			}
-			walgBackup2 := walg.WalgBackupMetadata{
+			walgBackup2 := walg.BackupMetadata{
 				BackupName:  "base_000000010000000100000002_D_000000010000000100000001",
 				WalFileName: "000000010000000100000002",
 			}
-			walgBackup3 := walg.WalgBackupMetadata{
+			walgBackup3 := walg.BackupMetadata{
 				BackupName:  "base_000000010000000100000003_D_000000010000000100000002",
 				WalFileName: "000000010000000100000003",
 			}
 
-			walgBackups := []walg.WalgBackupMetadata{walgBackup1, walgBackup2, walgBackup3}
+			walgBackups := []walg.BackupMetadata{walgBackup1, walgBackup2, walgBackup3}
 
 			// Call buildDependentBackupsForBackup with includeIndirect=true
-			dependentBackups, err := buildDependentBackupsForBackup(testCtx, backup1, backups, walgBackups, true)
-			Expect(err).NotTo(HaveOccurred())
+			dependentBackups := buildDependentBackupsForBackup(testCtx, backup1, backups, walgBackups, true)
 			Expect(dependentBackups).To(HaveLen(2))
 
 			// Check that both dependent backups are returned
@@ -450,11 +448,10 @@ var _ = Describe("BackupReconciler", func() {
 			// Create test objects
 			backup := createTestBackup("test-backup-1", "default", "test-cluster", "", true)
 			backups := []cnpgv1.Backup{*backup}
-			walgBackups := []walg.WalgBackupMetadata{}
+			walgBackups := []walg.BackupMetadata{}
 
 			// Call buildDependentBackupsForBackup
-			dependentBackups, err := buildDependentBackupsForBackup(testCtx, backup, backups, walgBackups, false)
-			Expect(err).NotTo(HaveOccurred())
+			dependentBackups := buildDependentBackupsForBackup(testCtx, backup, backups, walgBackups, false)
 			Expect(dependentBackups).To(BeEmpty())
 		})
 	})
@@ -482,7 +479,7 @@ var _ = Describe("BackupReconciler", func() {
 			}
 
 			// Create WAL-G backups
-			walgBackups := []walg.WalgBackupMetadata{}
+			walgBackups := []walg.BackupMetadata{}
 
 			// Create fake client with objects
 			fakeClient := setupFakeBackupClient(backupConfig, s3Secret, backup)
@@ -529,8 +526,8 @@ var _ = Describe("BackupReconciler", func() {
 			}
 
 			// Create WAL-G backups
-			walgBackup := createWalgBackupMetadata("base_000000010000000100000001", false)
-			walgBackups := []walg.WalgBackupMetadata{walgBackup}
+			walgBackup := createBackupMetadata("base_000000010000000100000001", false)
+			walgBackups := []walg.BackupMetadata{walgBackup}
 
 			// Create fake client with objects
 			fakeClient := setupFakeBackupClient(backupConfig, s3Secret, backup)
@@ -580,8 +577,8 @@ var _ = Describe("BackupReconciler", func() {
 			}
 
 			// Create WAL-G backups
-			walgBackup := createWalgBackupMetadata("base_000000010000000100000002_D_000000010000000100000001", true)
-			walgBackups := []walg.WalgBackupMetadata{walgBackup}
+			walgBackup := createBackupMetadata("base_000000010000000100000002_D_000000010000000100000001", true)
+			walgBackups := []walg.BackupMetadata{walgBackup}
 
 			// Create fake client with objects
 			fakeClient := setupFakeBackupClient(backupConfig, s3Secret, backup)
@@ -632,15 +629,15 @@ var _ = Describe("BackupReconciler", func() {
 			}
 
 			// Create WAL-G backups
-			walgBaseBackup := walg.WalgBackupMetadata{
+			walgBaseBackup := walg.BackupMetadata{
 				BackupName:  "base_000000010000000100000001",
 				WalFileName: "000000010000000100000001",
 			}
-			walgDependentBackup := walg.WalgBackupMetadata{
+			walgDependentBackup := walg.BackupMetadata{
 				BackupName:  "base_000000010000000100000002_D_000000010000000100000001",
 				WalFileName: "000000010000000100000002",
 			}
-			walgBackups := []walg.WalgBackupMetadata{walgBaseBackup, walgDependentBackup}
+			walgBackups := []walg.BackupMetadata{walgBaseBackup, walgDependentBackup}
 
 			// Create fake client with objects
 			fakeClient := setupFakeBackupClient(backupConfig, s3Secret, baseBackup, dependentBackup)
@@ -692,19 +689,19 @@ var _ = Describe("BackupReconciler", func() {
 			}
 
 			// Create WAL-G backups
-			walgBaseBackup := walg.WalgBackupMetadata{
+			walgBaseBackup := walg.BackupMetadata{
 				BackupName:  "base_000000010000000100000001",
 				WalFileName: "000000010000000100000001",
 			}
-			walgDirectDependentBackup := walg.WalgBackupMetadata{
+			walgDirectDependentBackup := walg.BackupMetadata{
 				BackupName:  "base_000000010000000100000002_D_000000010000000100000001",
 				WalFileName: "000000010000000100000002",
 			}
-			walgIndirectDependentBackup := walg.WalgBackupMetadata{
+			walgIndirectDependentBackup := walg.BackupMetadata{
 				BackupName:  "base_000000010000000100000003_D_000000010000000100000002",
 				WalFileName: "000000010000000100000003",
 			}
-			walgBackups := []walg.WalgBackupMetadata{walgBaseBackup, walgDirectDependentBackup, walgIndirectDependentBackup}
+			walgBackups := []walg.BackupMetadata{walgBaseBackup, walgDirectDependentBackup, walgIndirectDependentBackup}
 
 			// Create fake client with objects
 			fakeClient := setupFakeBackupClient(backupConfig, s3Secret, baseBackup, directDependentBackup, indirectDependentBackup)
@@ -762,8 +759,8 @@ var _ = Describe("BackupReconciler", func() {
 			}
 
 			// Create WAL-G backups
-			walgBackup := createWalgBackupMetadata("base_000000010000000100000001", false)
-			walgBackups := []walg.WalgBackupMetadata{walgBackup}
+			walgBackup := createBackupMetadata("base_000000010000000100000001", false)
+			walgBackups := []walg.BackupMetadata{walgBackup}
 
 			// Create fake client with objects
 			fakeClient := setupFakeBackupClient(backupConfig, s3Secret, backup)
@@ -811,11 +808,11 @@ var _ = Describe("BackupReconciler", func() {
 			}
 
 			// Create WAL-G backups - only include the base backup since the dependent is being deleted
-			walgBaseBackup := walg.WalgBackupMetadata{
+			walgBaseBackup := walg.BackupMetadata{
 				BackupName:  "base_000000010000000100000001",
 				WalFileName: "000000010000000100000001",
 			}
-			walgBackups := []walg.WalgBackupMetadata{walgBaseBackup}
+			walgBackups := []walg.BackupMetadata{walgBaseBackup}
 
 			// Create fake client with objects
 			fakeClient := setupFakeBackupClient(backupConfig, s3Secret, baseBackup, dependentBackup)
@@ -873,15 +870,15 @@ var _ = Describe("BackupReconciler", func() {
 			}
 
 			// Create WAL-G backups including the new dependent backup
-			walgParentBackup := walg.WalgBackupMetadata{
+			walgParentBackup := walg.BackupMetadata{
 				BackupName:  "base_000000010000000100000001",
 				WalFileName: "000000010000000100000001",
 			}
-			walgDependentBackup := walg.WalgBackupMetadata{
+			walgDependentBackup := walg.BackupMetadata{
 				BackupName:  "base_000000010000000100000002_D_000000010000000100000001",
 				WalFileName: "000000010000000100000002",
 			}
-			walgBackups := []walg.WalgBackupMetadata{walgParentBackup, walgDependentBackup}
+			walgBackups := []walg.BackupMetadata{walgParentBackup, walgDependentBackup}
 
 			// Create fake client with objects
 			fakeClient := setupFakeBackupClient(backupConfig, s3Secret, parentBackup, newDependentBackup)
@@ -907,7 +904,7 @@ var _ = Describe("BackupReconciler", func() {
 
 			// Also test the scenario where we add a second level dependent (indirect dependent)
 			secondLevelBackup := createTestBackup("second-level", "default", "test-cluster", "base_000000010000000100000003_D_000000010000000100000002", true)
-			walgSecondLevel := walg.WalgBackupMetadata{
+			walgSecondLevel := walg.BackupMetadata{
 				BackupName:  "base_000000010000000100000003_D_000000010000000100000002",
 				WalFileName: "000000010000000100000003",
 			}

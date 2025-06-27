@@ -104,31 +104,29 @@ func (b BackupServiceImplementation) Backup(
 
 	result, err := cmd.New("wal-g", "backup-push", pgdata, "--add-user-data", string(backupParamsJSON)).
 		WithContext(logr.NewContext(ctx, logger)).
-		WithEnv(walg.NewWalgConfigFromBackupConfig(backupConfigWithSecrets).ToEnvMap()).
+		WithEnv(walg.NewConfigFromBackupConfig(backupConfigWithSecrets).ToEnvMap()).
 		Run()
 
 	if err != nil {
 		logger.Error(err, "Error on wal-g backup-push", "stdout", string(result.Stdout()), "stderr", string(result.Stderr()))
 		return nil, fmt.Errorf("failed to do wal-g backup-push: %w", err)
-	} else {
-		logger.Info("Finished wal-g backup-push", "stdout", string(result.Stdout()), "stderr", string(result.Stderr()))
 	}
-
+	logger.Info("Finished wal-g backup-push", "stdout", string(result.Stdout()), "stderr", string(result.Stderr()))
 	return b.buildBackupResult(ctx, backupHumanName, backupConfigWithSecrets, backupParams)
 }
 
 func (b BackupServiceImplementation) getBackupConfig(
 	ctx context.Context,
-	cluster cnpgv1.Cluster,
-) (v1beta1.BackupConfigWithSecrets, error) {
+	cluster *cnpgv1.Cluster,
+) (*v1beta1.BackupConfigWithSecrets, error) {
 	backupConfig, err := v1beta1.GetBackupConfigForCluster(ctx, b.Client, cluster)
 	if err != nil {
-		return v1beta1.BackupConfigWithSecrets{}, fmt.Errorf("failed to fetch BackupConfig object: %w", err)
+		return nil, fmt.Errorf("failed to fetch BackupConfig object: %w", err)
 	}
 
 	backupConfigWithSecrets, err := backupConfig.PrefetchSecretsData(ctx, b.Client)
 	if err != nil {
-		return v1beta1.BackupConfigWithSecrets{}, fmt.Errorf("failed to fetch BackupConfig secrets: %w", err)
+		return nil, fmt.Errorf("failed to fetch BackupConfig secrets: %w", err)
 	}
 
 	return backupConfigWithSecrets, nil
@@ -137,10 +135,9 @@ func (b BackupServiceImplementation) getBackupConfig(
 func (b BackupServiceImplementation) buildBackupResult(
 	ctx context.Context,
 	backupHumanName string,
-	config v1beta1.BackupConfigWithSecrets,
+	config *v1beta1.BackupConfigWithSecrets,
 	backupParams map[string]any,
 ) (*cnpgbackup.BackupResult, error) {
-
 	walgBackupList, err := walg.GetBackupsList(ctx, config)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list wal-g backups: %w", err)

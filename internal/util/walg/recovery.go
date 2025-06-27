@@ -19,7 +19,6 @@ package walg
 import (
 	"context"
 	"fmt"
-	"strconv"
 
 	cnpgv1 "github.com/cloudnative-pg/cloudnative-pg/api/v1"
 	"github.com/cloudnative-pg/machinery/pkg/types"
@@ -29,10 +28,9 @@ import (
 // a PITR request via target parameters specified within `RecoveryTarget`
 func FindMostSuitableBackupForRecovery(
 	ctx context.Context,
-	backupList []WalgBackupMetadata,
+	backupList []BackupMetadata,
 	recoveryTarget cnpgv1.RecoveryTarget,
-) (*WalgBackupMetadata, error) {
-
+) (*BackupMetadata, error) {
 	// Check that BackupID is not empty. In such case, always use the
 	// backup ID provided by the user.
 	if recoveryTarget.GetBackupID() != "" {
@@ -57,60 +55,44 @@ func FindMostSuitableBackupForRecovery(
 }
 
 func findClosestBackupFromTargetLSN(
-	backups []WalgBackupMetadata,
+	backups []BackupMetadata,
 	targetLSNString string,
 	targetTLI string,
-) (*WalgBackupMetadata, error) {
+) (*BackupMetadata, error) {
 	targetLSN := types.LSN(targetLSNString)
 	if _, err := targetLSN.Parse(); err != nil {
 		return nil, fmt.Errorf("while parsing recovery target targetLSN: %s", err.Error())
 	}
 	for i := len(backups) - 1; i >= 0; i-- {
-		backup := backups[i]
-		if backupHasMatchingTimeline(backup, targetTLI) && types.Int64ToLSN(backup.FinishLSN).Less(targetLSN) {
-			return &backup, nil
+		if backups[i].HasMatchingTimeline(targetTLI) && types.Int64ToLSN(backups[i].FinishLSN).Less(targetLSN) {
+			return &backups[i], nil
 		}
 	}
 	return nil, nil
 }
 
-func findClosestBackupFromTargetTime(backups []WalgBackupMetadata, targetTime string, targetTLI string) (*WalgBackupMetadata, error) {
+func findClosestBackupFromTargetTime(backups []BackupMetadata, targetTime string, targetTLI string) (*BackupMetadata, error) {
 	target, err := types.ParseTargetTime(nil, targetTime)
 	if err != nil {
 		return nil, fmt.Errorf("while parsing recovery target targetTime: %s", err.Error())
 	}
 	for i := len(backups) - 1; i >= 0; i-- {
-		backup := backups[i]
-		backupFinishTime, err := backup.FinishTime()
+		backupFinishTime, err := backups[i].FinishTime()
 		if err != nil {
 			continue
 		}
-		if backupHasMatchingTimeline(backup, targetTLI) && !backupFinishTime.After(target) {
-			return &backup, nil
+		if backups[i].HasMatchingTimeline(targetTLI) && !backupFinishTime.After(target) {
+			return &backups[i], nil
 		}
 	}
 	return nil, nil
 }
 
-func findLatestBackupFromTimeline(backups []WalgBackupMetadata, targetTLI string) *WalgBackupMetadata {
+func findLatestBackupFromTimeline(backups []BackupMetadata, targetTLI string) *BackupMetadata {
 	for i := len(backups) - 1; i >= 0; i-- {
-		backup := backups[i]
-		if backupHasMatchingTimeline(backup, targetTLI) {
-			return &backup
+		if backups[i].HasMatchingTimeline(targetTLI) {
+			return &backups[i]
 		}
 	}
 	return nil
-}
-
-func backupHasMatchingTimeline(backup WalgBackupMetadata, targetTimeline string) bool {
-	if targetTimeline == "" || targetTimeline == "latest" {
-		return true // Any timeline will match, if we do not specify targetTimeline
-	}
-
-	targetTimelineId, err := strconv.ParseInt(targetTimeline, 16, 64)
-	if err != nil {
-		return true // Passed incorrect timeline - allowing any timeline
-	}
-
-	return backup.Timeline() <= int(targetTimelineId)
 }

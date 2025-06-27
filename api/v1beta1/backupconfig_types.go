@@ -30,12 +30,17 @@ type S3StorageConfig struct {
 	Region string `json:"region,omitempty"`
 
 	// S3 endpoint url
-	EndpointUrl string `json:"endpointUrl,omitempty"`
+	EndpointURL string `json:"EndpointUrl,omitempty"`
 
-	// To enable path-style addressing (i.e., http://s3.amazonaws.com/BUCKET/KEY) when connecting to an S3-compatible service that lack of support for sub-domain style bucket URLs (i.e., http://BUCKET.s3.amazonaws.com/KEY)
+	// To enable path-style addressing (i.e., http://s3.amazonaws.com/BUCKET/KEY)
+	// when connecting to an S3-compatible service that lack of support for
+	// sub-domain style bucket URLs (i.e., http://BUCKET.s3.amazonaws.com/KEY)
 	ForcePathStyle bool `json:"forcePathStyle,omitempty"`
 
-	// S3 storage class used for backup files. Default is "STANDARD". Other supported values include "STANDARD_IA" for Infrequent Access and "REDUCED_REDUNDANCY" for Reduced Redundancy.
+	// S3 storage class used for backup files.
+	// Default is "STANDARD". Other supported values include
+	// "STANDARD_IA" for Infrequent Access and
+	// "REDUCED_REDUNDANCY" for Reduced Redundancy.
 	StorageClass string `json:"storageClass,omitempty"`
 
 	AccessKeyIDRef     *corev1.SecretKeySelector `json:"accessKeyId,omitempty"`
