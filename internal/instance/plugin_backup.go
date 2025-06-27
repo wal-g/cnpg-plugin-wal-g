@@ -72,6 +72,11 @@ func (b BackupServiceImplementation) Backup(
 		return nil, fmt.Errorf("backup request failed: no PGDATA env variable specified")
 	}
 
+	backup, err := common.CnpgBackupFromJSON(request.BackupDefinition)
+	if err != nil {
+		return nil, fmt.Errorf("backup request failed: cannot parse cnpg backup: %w", err)
+	}
+
 	cluster, err := common.CnpgClusterFromJSON(request.ClusterDefinition)
 	if err != nil {
 		return nil, fmt.Errorf("backup request failed: cannot parse cnpg cluster: %w", err)
@@ -85,8 +90,11 @@ func (b BackupServiceImplementation) Backup(
 	backupHumanName := fmt.Sprintf("backup-%v", pgTime.ToCompactISO8601(time.Now()))
 
 	backupParams := map[string]any{
+		"cnpg-backup-name":       backup.Name,
+		"cnpg-backup-namespace":  backup.Namespace,
 		"cnpg-backup-human-name": backupHumanName,
 	}
+
 	backupParamsJSON, err := json.Marshal(backupParams)
 	if err != nil {
 		return nil, fmt.Errorf("backup request failed: cannot marshal backup params: %w", err)

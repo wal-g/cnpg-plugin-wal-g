@@ -22,13 +22,13 @@ import (
 	"fmt"
 	"maps"
 	"strconv"
+	"strings"
 	"time"
-
-	v1beta1 "github.com/wal-g/cnpg-plugin-wal-g/api/v1beta1"
-	"github.com/wal-g/cnpg-plugin-wal-g/internal/util/cmd"
 
 	"github.com/go-logr/logr"
 	"github.com/samber/lo"
+	v1beta1 "github.com/wal-g/cnpg-plugin-wal-g/api/v1beta1"
+	"github.com/wal-g/cnpg-plugin-wal-g/internal/util/cmd"
 )
 
 // WalgBackupMetadata represents single backup metadata returned by wal-g
@@ -143,4 +143,108 @@ func GetBackupByName(ctx context.Context, backupList []WalgBackupMetadata, name 
 	}
 
 	return &backup, nil
+}
+
+// DeleteBackup deletes a backup using WAL-G
+func DeleteBackup(
+	ctx context.Context,
+	backupConfig v1beta1.BackupConfigWithSecrets,
+	backupName string,
+) (*cmd.CmdRunResult, error) {
+	result, err := cmd.New("wal-g", "delete", "target", backupName, "--confirm").
+		WithContext(ctx).
+		WithEnv(NewWalgConfigFromBackupConfig(backupConfig).ToEnvMap()).
+		Run()
+
+	backupDoesNotExistStr := fmt.Sprintf("Backup '%s' does not exist.", backupName)
+	// If backup already not exists in storage - do not treat this as an error, return success
+	if err != nil && strings.Contains(string(result.Stderr()), backupDoesNotExistStr) {
+		err = nil
+	}
+	return result, err
+}
+
+// GetDependentBackups returns a list of backups that depend on the current backup.
+// This is determined by analyzing backup names, where delta backups include their base backup's WAL ID.
+// For example:
+// - base_000000010000000100000040 (full backup)
+// - base_000000010000000100000046_D_000000010000000100000040 (delta backup depending on the full backup)
+// - base_000000010000000100000061_D_000000010000000100000046 (delta backup depending on the previous delta)
+//
+// If includeIndirect is true, it will also include indirect dependencies (dependencies of dependencies).
+// For example, if A depends on the current backup, and B depends on A, then B is an indirect dependency
+// of the current backup and will be included in the result if includeIndirect is true.
+func (m *WalgBackupMetadata) GetDependentBackups(ctx context.Context, backupList []WalgBackupMetadata, includeIndirect bool) []WalgBackupMetadata {
+	logger := logr.FromContextOrDiscard(ctx)
+	logger.V(1).Info("Finding dependent backups", "backupName", m.BackupName, "includeIndirect", includeIndirect)
+
+	// Find direct dependencies
+	directDependencies := findDirectDependencies(*m, backupList)
+	logger.V(1).Info("Found direct dependents", "backupName", m.BackupName, "dependents", directDependencies)
+
+	// If we don't need indirect dependencies, return just the direct ones
+	if !includeIndirect {
+		return directDependencies
+	}
+
+	// Find also indirect dependencies via queue by processing each of "new" dependency
+	depsQueue := make([]WalgBackupMetadata, 0, len(directDependencies))
+	knownDependencies := make(map[string]WalgBackupMetadata)
+
+	// Add direct dependencies to the result map and to the processing queue
+	for _, backup := range directDependencies {
+		depsQueue = append(depsQueue, backup)
+		knownDependencies[backup.BackupName] = backup
+	}
+
+	for len(depsQueue) > 0 {
+		dependencyBackup := depsQueue[0] // Getting first from queue
+		depsQueue = depsQueue[1:]        // Removing first element from queue
+		newDependencyBackups := findDirectDependencies(dependencyBackup, backupList)
+		for _, newDepBackup := range newDependencyBackups {
+			_, alreadyKnown := knownDependencies[newDepBackup.BackupName]
+			if !alreadyKnown {
+				knownDependencies[newDepBackup.BackupName] = newDepBackup
+				depsQueue = append(depsQueue, newDepBackup)
+			}
+		}
+	}
+
+	// Convert map to slice
+	result := make([]WalgBackupMetadata, 0, len(knownDependencies))
+	for _, backup := range knownDependencies {
+		result = append(result, backup)
+	}
+
+	return result
+}
+
+// findDirectDependencies finds all direct dependencies of the given backup
+func findDirectDependencies(parent WalgBackupMetadata, backupList []WalgBackupMetadata) []WalgBackupMetadata {
+	// Extract the WAL ID from the backup name
+	parentWalID := strings.TrimPrefix(parent.BackupName, "base_")
+	if strings.Contains(parentWalID, "_D_") {
+		parentWalID = strings.Split(parentWalID, "_D_")[0]
+	}
+
+	// Find direct dependencies of this backup
+	result := make([]WalgBackupMetadata, 0)
+	for _, b := range backupList {
+		// Skip if this is the current backup
+		if b.BackupName == parent.BackupName {
+			continue
+		}
+
+		// Skipping non-delta backups, they cannot be dependent
+		if !strings.Contains(b.BackupName, "_D_") {
+			continue
+		}
+
+		parts := strings.Split(b.BackupName, "_D_")
+		if len(parts) == 2 && parts[1] == parentWalID {
+			result = append(result, b)
+		}
+	}
+
+	return result
 }

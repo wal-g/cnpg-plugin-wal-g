@@ -27,6 +27,7 @@ import (
 	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	apierrs "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/wal-g/cnpg-plugin-wal-g/api/v1beta1"
@@ -151,35 +152,46 @@ func (r ReconcilerImplementation) ensureRole(
 			return err
 		}
 
-		newRole := controller.BuildRoleForBackupConfigs(nil, cluster, backupConfigs)
+		newRole := rbacv1.Role{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: cluster.Namespace,
+				Name:      controller.GetRoleNameForBackupConfig(cluster.Name),
+			},
+
+			Rules: []rbacv1.PolicyRule{},
+		}
+
+		controller.BuildRoleForBackupConfigs(&newRole, cluster, backupConfigs)
 		contextLogger.Info(
 			"Creating role",
 			"name", newRole.Name,
 			"namespace", newRole.Namespace,
 		)
 
-		if err := setOwnerReference(cluster, newRole); err != nil {
+		if err := setOwnerReference(cluster, &newRole); err != nil {
 			return err
 		}
 
-		return r.Client.Create(ctx, newRole)
+		return r.Client.Create(ctx, &newRole)
 	}
 
 	// Role already exists, need to calculate changes and update
-	updatedRole := controller.BuildRoleForBackupConfigs(role.DeepCopy(), cluster, backupConfigs)
-	if equality.Semantic.DeepEqual(updatedRole, role) {
+	oldRole := role.DeepCopy()
+
+	controller.BuildRoleForBackupConfigs(&role, cluster, backupConfigs)
+	if equality.Semantic.DeepEqual(role, oldRole) {
 		// There's no need to hit the API server again
 		return nil
 	}
 
 	contextLogger.Info(
 		"Patching role",
-		"role_name", updatedRole.Name,
-		"role_namespace", updatedRole.Namespace,
-		"role_rules", updatedRole.Rules,
+		"role_name", role.Name,
+		"role_namespace", role.Namespace,
+		"role_rules", role.Rules,
 	)
 
-	return r.Client.Patch(ctx, updatedRole, client.MergeFrom(&role))
+	return r.Client.Patch(ctx, &role, client.MergeFrom(&role))
 }
 
 func (r ReconcilerImplementation) ensureRoleBinding(
