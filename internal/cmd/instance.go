@@ -31,7 +31,7 @@ func NewInstanceSubcommand() *cobra.Command {
 	// logFlags := &log.Flags{}
 	cmd := &cobra.Command{
 		Use:   "instance",
-		Short: "Starts the CNPG Yandex Extentions instance-plugin acting as a sidecar for PostgreSQL instances",
+		Short: "Starts the CNPG Yandex Extensions instance-plugin acting as a sidecar for PostgreSQL instances",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return instance.Start(cmd.Context())
 		},
@@ -44,7 +44,10 @@ func NewInstanceSubcommand() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().String("mode", "normal", "instance plugin mode: 'normal' (use standard settings for backups and WAL fetch/store) or 'recovery' (use recovery settings for backups and WAL fetching)")
+	modeParamUsage := "instance plugin mode: " +
+		"'normal' (use standard settings for backups and WAL fetch/store) or " +
+		"'recovery' (use recovery settings for backups and WAL fetching)`)"
+	cmd.Flags().String("mode", "normal", modeParamUsage)
 	_ = viper.BindPFlag("mode", cmd.Flags().Lookup("mode"))
 
 	cmd.Flags().String("cnpg-i-socket-path", "/plugins/cnpg-extensions.yandex.cloud",

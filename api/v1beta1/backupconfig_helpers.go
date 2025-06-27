@@ -30,7 +30,7 @@ const backupConfigNameParameter = "backupConfig"
 
 // BackupConfigIsUsedForArchivation checks whether BackupConfig with specified name
 // is used by CNPG Cluster as configuration for new backups && wal archive
-func BackupConfigIsUsedForArchivation(backupConfigName types.NamespacedName, cluster cnpgv1.Cluster) bool {
+func BackupConfigIsUsedForArchivation(backupConfigName types.NamespacedName, cluster *cnpgv1.Cluster) bool {
 	if backupConfigName.Namespace != cluster.Namespace {
 		return false
 	}
@@ -40,7 +40,7 @@ func BackupConfigIsUsedForArchivation(backupConfigName types.NamespacedName, clu
 
 // BackupConfigIsUsedForRecovery checks whether BackupConfig with specified name
 // is used by CNPG Cluster as recovery source
-func BackupConfigIsUsedForRecovery(backupConfigName types.NamespacedName, cluster cnpgv1.Cluster) bool {
+func BackupConfigIsUsedForRecovery(backupConfigName types.NamespacedName, cluster *cnpgv1.Cluster) bool {
 	if backupConfigName.Namespace != cluster.Namespace {
 		return false
 	}
@@ -51,7 +51,7 @@ func BackupConfigIsUsedForRecovery(backupConfigName types.NamespacedName, cluste
 // GetBackupConfigForCluster returns BackupConfig object used for making backups
 // If no BackupConfig reference specified in cluster plugin configuration - it will return (nil, nil)
 // If BackupConfig reference specified, but couldn't fetch object - will return (nil, error)
-func GetBackupConfigForCluster(ctx context.Context, c client.Client, cluster cnpgv1.Cluster) (*BackupConfig, error) {
+func GetBackupConfigForCluster(ctx context.Context, c client.Client, cluster *cnpgv1.Cluster) (*BackupConfig, error) {
 	pluginConfig := common.GetPluginConfigFromCluster(cluster)
 	return getBackupConfigFromPluginConfig(ctx, c, pluginConfig, cluster.Namespace)
 }
@@ -59,12 +59,15 @@ func GetBackupConfigForCluster(ctx context.Context, c client.Client, cluster cnp
 // GetBackupConfigForCluster returns BackupConfig object used for restoring from backups
 // If no BackupConfig reference specified in cluster plugin configuration - it will return (nil, nil)
 // If BackupConfig reference specified, but couldn't fetch object - will return (nil, error)
-func GetBackupConfigForClusterRecovery(ctx context.Context, c client.Client, cluster cnpgv1.Cluster) (*BackupConfig, error) {
+func GetBackupConfigForClusterRecovery(ctx context.Context, c client.Client, cluster *cnpgv1.Cluster) (*BackupConfig, error) {
 	pluginConfig := common.GetRecoveryPluginConfigFromCluster(cluster)
 	return getBackupConfigFromPluginConfig(ctx, c, pluginConfig, cluster.Namespace)
 }
 
-func checkBackupNameMatchesPluginConfig(backupConfigName types.NamespacedName, pluginConfig *cnpgv1.PluginConfiguration) bool {
+func checkBackupNameMatchesPluginConfig(
+	backupConfigName types.NamespacedName,
+	pluginConfig *cnpgv1.PluginConfiguration,
+) bool {
 	if pluginConfig == nil || pluginConfig.Parameters == nil {
 		return false
 	}
@@ -73,7 +76,12 @@ func checkBackupNameMatchesPluginConfig(backupConfigName types.NamespacedName, p
 	return ok && usedConfigName == backupConfigName.Name
 }
 
-func getBackupConfigFromPluginConfig(ctx context.Context, c client.Client, pluginConfig *cnpgv1.PluginConfiguration, namespace string) (*BackupConfig, error) {
+func getBackupConfigFromPluginConfig(
+	ctx context.Context,
+	c client.Client,
+	pluginConfig *cnpgv1.PluginConfiguration,
+	namespace string,
+) (*BackupConfig, error) {
 	if pluginConfig == nil || pluginConfig.Parameters == nil {
 		return nil, nil
 	}

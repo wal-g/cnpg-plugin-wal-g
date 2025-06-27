@@ -55,7 +55,6 @@ func (r *ZombieProcessReaper) Start(ctx context.Context) error {
 		// reap all the zombies
 		r.doReaping(ctx)
 	}
-
 }
 
 func (r *ZombieProcessReaper) doReaping(ctx context.Context) {

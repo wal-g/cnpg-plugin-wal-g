@@ -50,13 +50,13 @@ type BackupConfigWithSecrets struct {
 	Spec BackupConfigSpecWithSecrets `json:"spec,omitempty"`
 }
 
-func (b *BackupConfig) PrefetchSecretsData(ctx context.Context, c client.Client) (BackupConfigWithSecrets, error) {
+func (b *BackupConfig) PrefetchSecretsData(ctx context.Context, c client.Client) (*BackupConfigWithSecrets, error) {
 	spec, err := b.makeBackupConfigSpecWithPrefilledSecrets(ctx, c)
 	if err != nil {
-		return BackupConfigWithSecrets{}, err
+		return nil, err
 	}
 
-	return BackupConfigWithSecrets{
+	return &BackupConfigWithSecrets{
 		BackupConfig: *b.DeepCopy(),
 		Spec:         spec,
 	}, nil

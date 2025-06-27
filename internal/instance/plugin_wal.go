@@ -87,7 +87,7 @@ func (w WALServiceImplementation) Archive(
 
 	result, err := cmd.New("wal-g", "wal-push", request.SourceFileName).
 		WithContext(childrenCtx).
-		WithEnv(walg.NewWalgConfigFromBackupConfig(backupConfig).ToEnvMap()).
+		WithEnv(walg.NewConfigFromBackupConfig(backupConfig).ToEnvMap()).
 		Run()
 
 	logger = logger.WithValues("stdout", string(result.Stdout()), "stderr", string(result.Stderr()))
@@ -95,9 +95,8 @@ func (w WALServiceImplementation) Archive(
 	if err != nil {
 		logger.Error(err, fmt.Sprintf("Failed to perform wal-g wal-push %s", request.SourceFileName))
 		return nil, err
-	} else {
-		logger.Info(fmt.Sprintf("Successful run wal-g wal-push %s", request.SourceFileName))
 	}
+	logger.Info(fmt.Sprintf("Successful run wal-g wal-push %s", request.SourceFileName))
 	return &wal.WALArchiveResult{}, nil
 }
 
@@ -121,7 +120,7 @@ func (w WALServiceImplementation) Restore(
 
 	result, err := cmd.New("wal-g", "wal-fetch", request.SourceWalName, request.DestinationFileName).
 		WithContext(childrenCtx).
-		WithEnv(walg.NewWalgConfigFromBackupConfig(backupConfig).ToEnvMap()).
+		WithEnv(walg.NewConfigFromBackupConfig(backupConfig).ToEnvMap()).
 		Run()
 
 	logger = logger.WithValues("stdout", string(result.Stdout()), "stderr", string(result.Stderr()))
@@ -138,8 +137,7 @@ func (w WALServiceImplementation) Restore(
 	return &wal.WALRestoreResult{}, nil
 }
 
-func (w WALServiceImplementation) getBackupConfig(ctx context.Context, cluster cnpgv1.Cluster) (v1beta1.BackupConfigWithSecrets, error) {
-
+func (w WALServiceImplementation) getBackupConfig(ctx context.Context, cluster *cnpgv1.Cluster) (*v1beta1.BackupConfigWithSecrets, error) {
 	var backupConfig *v1beta1.BackupConfig
 	var err error
 
@@ -150,12 +148,12 @@ func (w WALServiceImplementation) getBackupConfig(ctx context.Context, cluster c
 	}
 
 	if err != nil {
-		return v1beta1.BackupConfigWithSecrets{}, fmt.Errorf("failed to fetch BackupConfig object: %w", err)
+		return nil, fmt.Errorf("failed to fetch BackupConfig object: %w", err)
 	}
 
 	backupConfigWithSecrets, err := backupConfig.PrefetchSecretsData(ctx, w.Client)
 	if err != nil {
-		return v1beta1.BackupConfigWithSecrets{}, fmt.Errorf("failed to fetch BackupConfig secrets: %w", err)
+		return nil, fmt.Errorf("failed to fetch BackupConfig secrets: %w", err)
 	}
 
 	return backupConfigWithSecrets, nil

@@ -96,7 +96,12 @@ func (c *Client) Get(ctx context.Context, key client.ObjectKey, out client.Objec
 	return c.Client.Get(ctx, key, out, opts...)
 }
 
-func (c *Client) getAndCreateWatchIfNeeded(ctx context.Context, obj client.Object, gvk schema.GroupVersionKind, key client.ObjectKey) (string, error) {
+func (c *Client) getAndCreateWatchIfNeeded(
+	ctx context.Context,
+	obj client.Object,
+	gvk schema.GroupVersionKind,
+	key client.ObjectKey,
+) (string, error) {
 	strGVK := gvk.String()
 	objKey := strGVK + "|" + key.String()
 
@@ -217,12 +222,13 @@ func (c *Client) updateCache(ctx context.Context, key string, watcher watch.Inte
 	logger := log.FromContext(ctx).WithName("narrowcache").V(1) // Debug logs only for this method
 	for watchEvent := range watcher.ResultChan() {
 		logger.WithValues("key", key, "event type", watchEvent.Type, "event data", watchEvent.Object).Info("Event received")
-		if watchEvent.Type == watch.Added || watchEvent.Type == watch.Modified {
+		switch watchEvent.Type {
+		case watch.Added, watch.Modified:
 			err := c.setToCache(key, watchEvent.Object)
 			if err != nil {
 				logger.WithValues("key", key).Error(err, "Error while updating cache")
 			}
-		} else if watchEvent.Type == watch.Deleted {
+		case watch.Deleted:
 			c.removeFromCache(key)
 		}
 		c.callHandlers(ctx, key, watchEvent)

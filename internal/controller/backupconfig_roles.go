@@ -37,11 +37,11 @@ func BuildRoleForBackupConfigs(
 	backupConfigNames := stringset.New()
 	secretsNames := stringset.New()
 
-	for _, backupConfig := range backupConfigs {
-		backupConfigNames.Put(backupConfig.Name)
-		if backupConfig.Spec.Storage.StorageType == v1beta1.StorageTypeS3 {
-			secretsNames.Put(backupConfig.Spec.Storage.S3.AccessKeyIDRef.Name)
-			secretsNames.Put(backupConfig.Spec.Storage.S3.AccessKeySecretRef.Name)
+	for i := range backupConfigs {
+		backupConfigNames.Put(backupConfigs[i].Name)
+		if backupConfigs[i].Spec.Storage.StorageType == v1beta1.StorageTypeS3 {
+			secretsNames.Put(backupConfigs[i].Spec.Storage.S3.AccessKeyIDRef.Name)
+			secretsNames.Put(backupConfigs[i].Spec.Storage.S3.AccessKeySecretRef.Name)
 		}
 	}
 

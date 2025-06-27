@@ -64,7 +64,8 @@ func (r *RetentionController) runBackupsRetentionCheck(ctx context.Context) {
 	}
 
 	// Process each BackupConfig
-	for _, backupConfig := range backupConfigList.Items {
+	for i := range backupConfigList.Items {
+		backupConfig := &backupConfigList.Items[i]
 		backupConfigLogger := logger.WithValues(
 			"backupConfig", backupConfig.Name,
 			"namespace", backupConfig.Namespace,
@@ -88,7 +89,7 @@ func (r *RetentionController) runBackupsRetentionCheck(ctx context.Context) {
 // runRetentionForBackupConfig applies the retention policy for a single BackupConfig
 func (r *RetentionController) runRetentionForBackupConfig(
 	ctx context.Context,
-	backupConfig v1beta1.BackupConfig,
+	backupConfig *v1beta1.BackupConfig,
 	logger logr.Logger,
 ) error {
 	// List all Backup resources in the same namespace
@@ -128,12 +129,11 @@ func (r *RetentionController) runRetentionForBackupConfig(
 	}
 
 	// Delete Backup resources
-	for _, backup := range backupsToDelete {
-		if err := r.client.Delete(ctx, &backup); err != nil {
+	for i := range backupsToDelete {
+		if err := r.client.Delete(ctx, &backupsToDelete[i]); err != nil {
 			return fmt.Errorf("failed to delete Backup resource: %w", err)
-		} else {
-			logger.Info("Successfully deleted Backup resource", "backupName", backup.Name)
 		}
+		logger.Info("Successfully deleted Backup resource", "backupName", backupsToDelete[i].Name)
 	}
 
 	return nil
@@ -142,7 +142,7 @@ func (r *RetentionController) runRetentionForBackupConfig(
 // getBackupsToDelete determines which backups should be deleted based on retention policy
 func (r *RetentionController) getBackupsToDelete(
 	ctx context.Context,
-	backupConfig v1beta1.BackupConfig,
+	backupConfig *v1beta1.BackupConfig,
 	backupList []cnpgv1.Backup,
 ) ([]cnpgv1.Backup, error) {
 	logger := logr.FromContextOrDiscard(ctx)
@@ -194,7 +194,8 @@ func (r *RetentionController) getBackupsToDelete(
 	}
 
 	// Process backups from oldest to newest (they're already sorted)
-	for i, backup := range backupList {
+	for i := range backupList {
+		backup := &backupList[i]
 		// Skip if this is one of the newest backups we want to keep
 		remainingBackups := len(backupList) - i
 		if remainingBackups <= minBackupsToKeep {
@@ -228,7 +229,7 @@ func (r *RetentionController) getBackupsToDelete(
 					"backupName", backup.Name,
 					"backupTime", backupTime,
 					"retentionThreshold", *retentionThreshold)
-				backupsToDelete = append(backupsToDelete, backup)
+				backupsToDelete = append(backupsToDelete, *backup)
 			}
 		}
 	}

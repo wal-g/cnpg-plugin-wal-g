@@ -24,21 +24,21 @@ import (
 )
 
 // CnpgClusterFromJSON decodes a JSON representation of a CNPG cluster.
-func CnpgClusterFromJSON(clusterJSON []byte) (cnpgv1.Cluster, error) {
+func CnpgClusterFromJSON(clusterJSON []byte) (*cnpgv1.Cluster, error) {
 	result := cnpgv1.Cluster{}
 	if err := json.Unmarshal(clusterJSON, &result); err != nil {
-		return result, fmt.Errorf("error unmarshalling object JSON: %w", err)
+		return &result, fmt.Errorf("error unmarshalling object JSON: %w", err)
 	}
 
-	return result, nil
+	return &result, nil
 }
 
 // CnpgBackupFromJSON decodes a JSON representation of a CNPG Backup.
-func CnpgBackupFromJSON(backupJSON []byte) (cnpgv1.Backup, error) {
+func CnpgBackupFromJSON(backupJSON []byte) (*cnpgv1.Backup, error) {
 	result := cnpgv1.Backup{}
 	if err := json.Unmarshal(backupJSON, &result); err != nil {
-		return result, fmt.Errorf("error unmarshalling object JSON: %w", err)
+		return &result, fmt.Errorf("error unmarshalling object JSON: %w", err)
 	}
 
-	return result, nil
+	return &result, nil
 }

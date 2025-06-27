@@ -29,7 +29,7 @@ func NewOperatorCmd() *cobra.Command {
 	// logFlags := &log.Flags{}
 	cmd := &cobra.Command{
 		Use:   "operator",
-		Short: "Starts the CNPG Yandex Extentions operator reconciler and the CNPG-i plugin",
+		Short: "Starts the CNPG Yandex Extensions operator reconciler and the CNPG-i plugin",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return operator.Start(cmd.Context())
 		},
