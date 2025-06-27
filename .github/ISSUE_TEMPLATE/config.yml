@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Documentation
+    url: https://github.com/wal-g/cnpg-plugin-wal-g/blob/main/README.md
+    about: Check the documentation before opening an issue
+  - name: CloudNativePG Documentation
+    url: https://cloudnative-pg.io/documentation/
+    about: Check the CloudNativePG documentation for integration details
+  - name: WAL-G Documentation
+    url: https://github.com/wal-g/wal-g
+    about: Check the WAL-G documentation for backup and restore details

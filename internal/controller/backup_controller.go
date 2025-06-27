@@ -80,7 +80,7 @@ func (r *BackupReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 	}
 
 	// Backup is being deleted
-	if !backup.ObjectMeta.DeletionTimestamp.IsZero() {
+	if !backup.DeletionTimestamp.IsZero() {
 		// Handle backup deletion in background, because cleaning physical backup could take long time
 		go r.handleBackupDeletion(ctx, backup)
 		return ctrl.Result{}, nil
@@ -99,9 +99,9 @@ func (r *BackupReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 	}
 
 	// Add finalizer if it doesn't exist
-	if !containsString(backup.ObjectMeta.Finalizers, backupFinalizerName) {
+	if !containsString(backup.Finalizers, backupFinalizerName) {
 		logger.Info("Detected new Backup managed by plugin, setting up finalizer")
-		backup.ObjectMeta.Finalizers = append(backup.ObjectMeta.Finalizers, backupFinalizerName)
+		backup.Finalizers = append(backup.Finalizers, backupFinalizerName)
 		if err := r.Update(ctx, backup); err != nil {
 			return ctrl.Result{}, err
 		}
@@ -132,7 +132,7 @@ func (r *BackupReconciler) reconcileOwnerReference(ctx context.Context, backup *
 	}
 
 	// Get the BackupConfig for this cluster
-	backupConfig, err := v1beta1.GetBackupConfigForCluster(ctx, r.Client, *cluster)
+	backupConfig, err := v1beta1.GetBackupConfigForCluster(ctx, r.Client, cluster)
 	if err != nil || backupConfig == nil {
 		logger.Info("No BackupConfig found for cluster", "error", err)
 		return err
@@ -165,7 +165,7 @@ func (r *BackupReconciler) reconcileRelatedBackupsAnnotations(ctx context.Contex
 	}
 
 	// Get all WAL-G backups
-	walgBackups, err := walg.GetBackupsList(ctx, *backupConfigWithSecrets)
+	walgBackups, err := walg.GetBackupsList(ctx, backupConfigWithSecrets)
 	if err != nil {
 		logger.Error(err, "while getting WAL-G backups list")
 		return err
@@ -183,11 +183,12 @@ func (r *BackupReconciler) reconcileRelatedBackupsAnnotations(ctx context.Contex
 		if err != nil {
 			return err
 		}
-		for _, otherBackup := range backupsToReconcile {
-			if otherBackup.Name == backup.Name {
+		for i := range backupsToReconcile {
+			if backupsToReconcile[i].Name == backup.Name {
 				continue
 			}
-			r.reconcileBackupAnnotations(ctx, &otherBackup, backupConfigWithSecrets, walgBackups)
+			_, err = r.reconcileBackupAnnotations(ctx, &backupsToReconcile[i], backupConfigWithSecrets, walgBackups)
+			logger.Error(err, "while reconciling backup annotations", "backup.Name", backupsToReconcile[i].Name)
 		}
 	}
 
@@ -198,7 +199,7 @@ func (r *BackupReconciler) reconcileBackupAnnotations(
 	ctx context.Context,
 	backup *cnpgv1.Backup,
 	backupConfig *v1beta1.BackupConfigWithSecrets,
-	walgBackups []walg.WalgBackupMetadata,
+	walgBackups []walg.BackupMetadata,
 ) (bool, error) {
 	logger := logr.FromContextOrDiscard(ctx).WithValues("backup.Name", backup.Name, "backup.Namespace", backup.Namespace)
 
@@ -220,19 +221,13 @@ func (r *BackupReconciler) reconcileBackupAnnotations(
 		return false, err
 	}
 
-	directDependentBackups, err := buildDependentBackupsForBackup(ctx, backup, backups, walgBackups, false)
-	if err != nil {
-		return false, err
-	}
+	directDependentBackups := buildDependentBackupsForBackup(ctx, backup, backups, walgBackups, false)
 	dependentBackupsNames := lo.Map(directDependentBackups, func(b cnpgv1.Backup, _ int) string {
 		return b.Name
 	})
 	backup.Annotations[backupDirectDependentsAnnotationName] = strings.Join(dependentBackupsNames, "; ")
 
-	allDependentBackups, err := buildDependentBackupsForBackup(ctx, backup, backups, walgBackups, true)
-	if err != nil {
-		return false, err
-	}
+	allDependentBackups := buildDependentBackupsForBackup(ctx, backup, backups, walgBackups, true)
 	allDependentBackupsNames := lo.Map(allDependentBackups, func(b cnpgv1.Backup, _ int) string {
 		return b.Name
 	})
@@ -250,7 +245,7 @@ func (r *BackupReconciler) reconcileBackupAnnotations(
 		"backup.Annotations", backup.Annotations,
 	)
 
-	err = r.Client.Patch(ctx, backup, client.MergeFrom(oldBackup))
+	err = r.Patch(ctx, backup, client.MergeFrom(oldBackup))
 	return true, err
 }
 
@@ -263,12 +258,15 @@ func (r *BackupReconciler) handleBackupDeletion(ctx context.Context, backup *cnp
 
 	if backup.Annotations[backupAllDependentsAnnotationName] != "" {
 		// TODO: emit event for backup
-		logger.Info("Cannot delete backup because it still has dependent backups", "backup", backup.Name, "dependents", backup.Annotations[backupAllDependentsAnnotationName])
+		logger.Info(
+			"Cannot delete backup because it still has dependent backups",
+			"backup", backup.Name, "dependents", backup.Annotations[backupAllDependentsAnnotationName],
+		)
 		return
 	}
 
 	// Delete physical backup from storage (if only having proper finalizer)
-	if containsString(backup.ObjectMeta.Finalizers, backupFinalizerName) {
+	if containsString(backup.Finalizers, backupFinalizerName) {
 		err := r.deleteWALGBackup(ctx, backup)
 		if err != nil {
 			// If there's an error, don't remove the finalizer so we can retry
@@ -286,7 +284,7 @@ func (r *BackupReconciler) handleBackupDeletion(ctx context.Context, backup *cnp
 			return
 		}
 
-		walgBackups, err := walg.GetBackupsList(ctx, *backupConfigWithSecrets)
+		walgBackups, err := walg.GetBackupsList(ctx, backupConfigWithSecrets)
 		if err != nil {
 			logger.Error(err, "while getting WAL-G backups list")
 			return
@@ -298,13 +296,16 @@ func (r *BackupReconciler) handleBackupDeletion(ctx context.Context, backup *cnp
 		}
 
 		// Reconcile other backups annotations for same backupConfig - some of them can have this backup as dependency
-		for _, otherBackup := range backups {
-			r.reconcileBackupAnnotations(ctx, &otherBackup, backupConfigWithSecrets, walgBackups)
+		for i := range backups {
+			_, err = r.reconcileBackupAnnotations(ctx, &backups[i], backupConfigWithSecrets, walgBackups)
+			if err != nil {
+				logger.Error(err, "while reconciling backup annotations", "backup", backups[i].Name)
+			}
 		}
 	}
 
 	// Remove our finalizer from the list and update
-	backup.ObjectMeta.Finalizers = removeString(backup.ObjectMeta.Finalizers, backupFinalizerName)
+	backup.Finalizers = removeString(backup.Finalizers, backupFinalizerName)
 	if err := r.Update(ctx, backup); err != nil {
 		logger.Error(err, "while removing cleanup finalizer from Backup")
 		return
@@ -328,7 +329,7 @@ func (r *BackupReconciler) deleteWALGBackup(ctx context.Context, backup *cnpgv1.
 
 	// Delete the backup using WAL-G
 	logger.Info("Deleting backup from WAL-G", "backupID", backup.Status.BackupID)
-	result, err := walg.DeleteBackup(ctx, *backupConfigWithSecrets, backup.Status.BackupID)
+	result, err := walg.DeleteBackup(ctx, backupConfigWithSecrets, backup.Status.BackupID)
 	if err != nil {
 		logger.Error(err, "Failed to delete backup from WAL-G",
 			"backupID", backup.Status.BackupID,
@@ -352,7 +353,7 @@ func (r *BackupReconciler) getBackupConfigForBackup(ctx context.Context, backup 
 	}
 
 	// Get the BackupConfig for this cluster
-	backupConfig, err := v1beta1.GetBackupConfigForCluster(ctx, r.Client, *cluster)
+	backupConfig, err := v1beta1.GetBackupConfigForCluster(ctx, r.Client, cluster)
 	if err != nil || backupConfig == nil {
 		logger.Info("No BackupConfig found for cluster", "error", err)
 		return nil, err
@@ -365,13 +366,16 @@ func (r *BackupReconciler) getBackupConfigForBackup(ctx context.Context, backup 
 		return nil, err
 	}
 
-	return &backupConfigWithSecrets, nil
+	return backupConfigWithSecrets, nil
 }
 
-func (r *BackupReconciler) listBackupsOwnedByBackupConfig(ctx context.Context, backupConfig *v1beta1.BackupConfigWithSecrets) ([]cnpgv1.Backup, error) {
+func (r *BackupReconciler) listBackupsOwnedByBackupConfig(
+	ctx context.Context,
+	backupConfig *v1beta1.BackupConfigWithSecrets,
+) ([]cnpgv1.Backup, error) {
 	// List all backups in the same namespace
 	backupsList := cnpgv1.BackupList{}
-	err := r.Client.List(ctx, &backupsList, &client.ListOptions{Namespace: backupConfig.Namespace})
+	err := r.List(ctx, &backupsList, &client.ListOptions{Namespace: backupConfig.Namespace})
 	if err != nil {
 		return make([]cnpgv1.Backup, 0), fmt.Errorf("while getting Backup List: %w", err)
 	}
@@ -410,18 +414,19 @@ func buildDependentBackupsForBackup(
 	ctx context.Context,
 	backup *cnpgv1.Backup,
 	backups []cnpgv1.Backup,
-	walgBackups []walg.WalgBackupMetadata,
+	walgBackups []walg.BackupMetadata,
 	includeIndirect bool,
-) ([]cnpgv1.Backup, error) {
-	logger := logr.FromContextOrDiscard(ctx).WithValues("backup.Name", backup.Name, "backup.Namespace", backup.Namespace) // Only debug logs for this method
-
+) []cnpgv1.Backup {
+	logger := logr.FromContextOrDiscard(ctx).WithValues(
+		"backup.Name", backup.Name, "backup.Namespace", backup.Namespace,
+	)
 	// Nothing to do with backups without BackupID
 	if backup.Status.BackupID == "" {
-		return make([]cnpgv1.Backup, 0), nil
+		return make([]cnpgv1.Backup, 0)
 	}
 
 	// For getting dependent backups it is enough to have backupName only
-	currentWalgBackup := walg.WalgBackupMetadata{
+	currentWalgBackup := walg.BackupMetadata{
 		BackupName: backup.Status.BackupID,
 	}
 
@@ -431,11 +436,11 @@ func buildDependentBackupsForBackup(
 
 	// Filter Backup resources - leave only some of them, matching dependent wal-g backups && not being deleted
 	result := lo.Filter(backups, func(candidate cnpgv1.Backup, _ int) bool {
-		return candidate.DeletionTimestamp.IsZero() && lo.ContainsBy(dependentWalgBackups, func(walgBackup walg.WalgBackupMetadata) bool {
+		return candidate.DeletionTimestamp.IsZero() && lo.ContainsBy(dependentWalgBackups, func(walgBackup walg.BackupMetadata) bool {
 			return walgBackup.BackupName == candidate.Status.BackupID
 		})
 	})
 
 	logger.V(1).Info("Found dependent Backup resources", "backups", result)
-	return result, nil
+	return result
 }

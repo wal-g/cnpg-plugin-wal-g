@@ -106,7 +106,7 @@ func (r RestoreJobHooksImpl) Restore(
 		return nil, fmt.Errorf("failed to list wal-g backups: %w", err)
 	}
 
-	var walgBackup *walg.WalgBackupMetadata
+	var walgBackup *walg.BackupMetadata
 	if cluster.Spec.Bootstrap.Recovery.RecoveryTarget == nil {
 		walgBackup, err = walg.GetLatestBackup(ctx, walgBackupList)
 	} else {
@@ -135,7 +135,7 @@ func (r RestoreJobHooksImpl) Restore(
 // downloadBackupIntoDir restores PGDATA from an existing backup
 func (r RestoreJobHooksImpl) downloadBackupIntoDir(
 	ctx context.Context,
-	config v1beta1.BackupConfigWithSecrets,
+	config *v1beta1.BackupConfigWithSecrets,
 	walgBackupName string,
 	targetDir string,
 ) error {
@@ -144,16 +144,14 @@ func (r RestoreJobHooksImpl) downloadBackupIntoDir(
 
 	result, err := cmd.New("wal-g", "backup-fetch", targetDir, walgBackupName).
 		WithContext(ctx).
-		WithEnv(walg.NewWalgConfigFromBackupConfig(config).ToEnvMap()).
+		WithEnv(walg.NewConfigFromBackupConfig(config).ToEnvMap()).
 		Run()
 
 	if err != nil {
 		logger.Error(err, "Error on wal-g backup-fetch", "stdout", string(result.Stdout()), "stderr", string(result.Stderr()))
 		return fmt.Errorf("failed to do wal-g backup-fetch: %w", err)
-	} else {
-		logger.Info("Finished wal-g backup-fetch", "stdout", string(result.Stdout()), "stderr", string(result.Stderr()))
 	}
-
+	logger.Info("Finished wal-g backup-fetch", "stdout", string(result.Stdout()), "stderr", string(result.Stderr()))
 	logger.Info("downloadBackupIntoDir completed")
 	return nil
 }

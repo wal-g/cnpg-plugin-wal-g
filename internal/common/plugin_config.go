@@ -21,7 +21,7 @@ import (
 	"github.com/samber/lo"
 )
 
-func GetRecoveryPluginConfigFromCluster(cluster cnpgv1.Cluster) *cnpgv1.PluginConfiguration {
+func GetRecoveryPluginConfigFromCluster(cluster *cnpgv1.Cluster) *cnpgv1.PluginConfiguration {
 	if cluster.Spec.Bootstrap.Recovery == nil {
 		return nil
 	}
@@ -41,7 +41,7 @@ func GetRecoveryPluginConfigFromCluster(cluster cnpgv1.Cluster) *cnpgv1.PluginCo
 	return clusterRecoverySource.PluginConfiguration
 }
 
-func GetPluginConfigFromCluster(cluster cnpgv1.Cluster) *cnpgv1.PluginConfiguration {
+func GetPluginConfigFromCluster(cluster *cnpgv1.Cluster) *cnpgv1.PluginConfiguration {
 	if cluster.Spec.Plugins == nil {
 		return nil
 	}

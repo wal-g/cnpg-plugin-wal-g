@@ -112,11 +112,11 @@ func (r ReconcilerImplementation) Pre(
 		backupConfigs = append(backupConfigs, *recoveryBackupConfig)
 	}
 
-	if err := r.ensureRole(ctx, &cluster, backupConfigs); err != nil {
+	if err := r.ensureRole(ctx, cluster, backupConfigs); err != nil {
 		return nil, err
 	}
 
-	if err := r.ensureRoleBinding(ctx, &cluster); err != nil {
+	if err := r.ensureRoleBinding(ctx, cluster); err != nil {
 		return nil, err
 	}
 

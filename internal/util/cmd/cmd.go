@@ -28,25 +28,25 @@ import (
 	"github.com/go-logr/logr"
 )
 
-type CmdRunResult struct {
+type RunResult struct {
 	stdout []byte
 	stderr []byte
 	state  *ProcessState
 }
 
-func (c *CmdRunResult) Stdout() []byte {
+func (c *RunResult) Stdout() []byte {
 	return c.stdout
 }
 
-func (c *CmdRunResult) Stderr() []byte {
+func (c *RunResult) Stderr() []byte {
 	return c.stderr
 }
 
-func (c *CmdRunResult) State() *ProcessState {
+func (c *RunResult) State() *ProcessState {
 	return c.state
 }
 
-type CmdBuilder struct {
+type Builder struct {
 	ctx    context.Context
 	name   string
 	envMap map[string]string
@@ -54,8 +54,8 @@ type CmdBuilder struct {
 }
 
 // Returns new command builder, which can be runned via Run() method
-func New(name string, arg ...string) CmdBuilder {
-	return CmdBuilder{
+func New(name string, arg ...string) Builder {
+	return Builder{
 		ctx:    context.Background(),
 		name:   name,
 		envMap: make(map[string]string, 0),
@@ -63,23 +63,23 @@ func New(name string, arg ...string) CmdBuilder {
 	}
 }
 
-// WithEnv returns new CmdBuilder with added environment variables for command
+// WithEnv returns new Builder with added environment variables for command
 // Added variables override existing env values with same name
-func (c CmdBuilder) WithEnv(envMap map[string]string) CmdBuilder {
+func (c Builder) WithEnv(envMap map[string]string) Builder {
 	for key, value := range envMap {
 		c.envMap[key] = value
 	}
 	return c
 }
 
-// WithContext returns new CmdBuilder with context, which will be applied to command execution
-func (c CmdBuilder) WithContext(ctx context.Context) CmdBuilder {
+// WithContext returns new Builder with context, which will be applied to command execution
+func (c Builder) WithContext(ctx context.Context) Builder {
 	c.ctx = ctx
 	return c
 }
 
 // envsList returns list of user-specified env variables according to exec.Cmd.Env structure
-func (c CmdBuilder) envsList() []string {
+func (c Builder) envsList() []string {
 	envsList := make([]string, 0, len(c.envMap))
 	for key, value := range c.envMap {
 		envsList = append(envsList, fmt.Sprintf("%s=%s", key, value))
@@ -88,10 +88,10 @@ func (c CmdBuilder) envsList() []string {
 }
 
 // Run executes a command with context, awaits completion and returnes result
-func (c CmdBuilder) Run() (result *CmdRunResult, err error) {
+func (c Builder) Run() (result *RunResult, err error) {
 	logger := logr.FromContextOrDiscard(c.ctx).WithValues("entrypoint", c.name, "args", c.args)
 
-	result = &CmdRunResult{
+	result = &RunResult{
 		stdout: make([]byte, 0),
 		stderr: make([]byte, 0),
 		state:  nil,
@@ -116,7 +116,7 @@ func (c CmdBuilder) Run() (result *CmdRunResult, err error) {
 	logger.V(1).Info("Starting subprocess")
 
 	cmdWaitStatus, err := wait(logr.NewContext(c.ctx, logger), cmd.Process.Pid, cmdExitSubscription)
-	cmd.Wait() // runnning explicit cmd.Wait to finish stdout/stderr piping && do resources cleanup
+	_ = cmd.Wait() // runnning explicit cmd.Wait to finish stdout/stderr piping && do resources cleanup
 
 	result.stdout = stdoutBuf.Bytes()
 	result.stderr = stderrBuf.Bytes()
