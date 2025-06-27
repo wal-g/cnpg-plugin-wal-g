@@ -30,7 +30,7 @@ type S3StorageConfig struct {
 	Region string `json:"region,omitempty"`
 
 	// S3 endpoint url
-	EndpointURL string `json:"EndpointUrl,omitempty"`
+	EndpointURL string `json:"endpointUrl,omitempty"`
 
 	// To enable path-style addressing (i.e., http://s3.amazonaws.com/BUCKET/KEY)
 	// when connecting to an S3-compatible service that lack of support for
