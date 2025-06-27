@@ -22,7 +22,6 @@ import (
 	cnpgv1 "github.com/cloudnative-pg/cloudnative-pg/api/v1"
 	"github.com/cloudnative-pg/cnpg-i-machinery/pkg/pluginhelper/object"
 	"github.com/cloudnative-pg/cnpg-i/pkg/reconciler"
-	"github.com/cloudnative-pg/machinery/pkg/log"
 	"github.com/go-logr/logr"
 	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
@@ -141,7 +140,7 @@ func (r ReconcilerImplementation) ensureRole(
 	cluster *cnpgv1.Cluster,
 	backupConfigs []v1beta1.BackupConfig,
 ) error {
-	contextLogger := log.FromContext(ctx)
+	logger := logr.FromContextOrDiscard(ctx)
 
 	var role rbacv1.Role
 	if err := r.Client.Get(ctx, client.ObjectKey{
@@ -162,7 +161,7 @@ func (r ReconcilerImplementation) ensureRole(
 		}
 
 		controller.BuildRoleForBackupConfigs(&newRole, cluster, backupConfigs)
-		contextLogger.Info(
+		logger.Info(
 			"Creating role",
 			"name", newRole.Name,
 			"namespace", newRole.Namespace,
@@ -184,14 +183,14 @@ func (r ReconcilerImplementation) ensureRole(
 		return nil
 	}
 
-	contextLogger.Info(
+	logger.Info(
 		"Patching role",
-		"role_name", role.Name,
-		"role_namespace", role.Namespace,
-		"role_rules", role.Rules,
+		"name", role.Name,
+		"namespace", role.Namespace,
+		"rules", role.Rules,
 	)
 
-	return r.Client.Patch(ctx, &role, client.MergeFrom(&role))
+	return r.Client.Patch(ctx, &role, client.MergeFrom(oldRole))
 }
 
 func (r ReconcilerImplementation) ensureRoleBinding(

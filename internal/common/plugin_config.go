@@ -22,7 +22,7 @@ import (
 )
 
 func GetRecoveryPluginConfigFromCluster(cluster *cnpgv1.Cluster) *cnpgv1.PluginConfiguration {
-	if cluster.Spec.Bootstrap.Recovery == nil {
+	if cluster.Spec.Bootstrap == nil || cluster.Spec.Bootstrap.Recovery == nil {
 		return nil
 	}
 
