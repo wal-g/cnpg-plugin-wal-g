@@ -81,7 +81,6 @@ func (impl LifecycleImplementation) LifecycleHook(
 	ctx context.Context,
 	request *lifecycle.OperatorLifecycleRequest,
 ) (*lifecycle.OperatorLifecycleResponse, error) {
-
 	operation := request.GetOperationType().GetType().Enum()
 	if operation == nil {
 		return nil, errors.New("no operation set")
@@ -166,7 +165,6 @@ func (impl LifecycleImplementation) reconcileJob(
 	cluster *cnpgv1.Cluster,
 	request *lifecycle.OperatorLifecycleRequest,
 ) (*lifecycle.OperatorLifecycleResponse, error) {
-
 	var job batchv1.Job
 	if err := decoder.DecodeObjectStrict(
 		request.GetObjectDefinition(),
