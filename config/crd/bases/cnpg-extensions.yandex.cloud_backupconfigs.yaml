@@ -87,6 +87,9 @@ spec:
                         - key
                         type: object
                         x-kubernetes-map-type: atomic
+                    required:
+                    - createRandom
+                    - encryptionKeySecret
                     type: object
                   method:
                     description: |-

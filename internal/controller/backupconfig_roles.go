@@ -43,6 +43,12 @@ func BuildRoleForBackupConfigs(
 			secretsNames.Put(backupConfigs[i].Spec.Storage.S3.AccessKeyIDRef.Name)
 			secretsNames.Put(backupConfigs[i].Spec.Storage.S3.AccessKeySecretRef.Name)
 		}
+
+		// Add encryption secrets to the list of secrets that need permissions
+		if backupConfigs[i].Spec.Encryption.Method == "libsodium" &&
+			backupConfigs[i].Spec.Encryption.LibsodiumConfig != nil {
+			secretsNames.Put(backupConfigs[i].Spec.Encryption.LibsodiumConfig.EncryptionKey.Name)
+		}
 	}
 
 	role.Rules = []rbacv1.PolicyRule{

@@ -52,6 +52,9 @@ type Config struct {
 	WalgFailoverStoragesCacheLifetime string `json:"WALG_FAILOVER_STORAGES_CACHE_LIFETIME,omitempty"`
 	WalgFailoverStoragesCheck         bool   `json:"WALG_FAILOVER_STORAGES_CHECK,omitempty"`
 	WalgFailoverStoragesCheckSize     string `json:"WALG_FAILOVER_STORAGES_CHECK_SIZE,omitempty"`
+	WalgLibsodiumKey                  string `json:"WALG_LIBSODIUM_KEY,omitempty"`
+	WalgLibsodiumKeyPath              string `json:"WALG_LIBSODIUM_KEY_PATH,omitempty"`
+	WalgLibsodiumKeyTransform         string `json:"WALG_LIBSODIUM_KEY_TRANSFORM,omitempty"`
 	WalgLogDestination                string `json:"WALG_LOG_DESTINATION,omitempty"`
 	WalgNetworkRateLimit              int    `json:"WALG_NETWORK_RATE_LIMIT,omitempty"`
 	WalgPgpKeyPath                    string `json:"WALG_PGP_KEY_PATH,omitempty"`
@@ -96,6 +99,16 @@ func NewConfigFromBackupConfig(backupConfig *v1beta1.BackupConfigWithSecrets) *C
 		config.AWSS3ForcePathStyle = backupConfig.Spec.Storage.S3.ForcePathStyle
 		config.WaleS3Prefix = backupConfig.Spec.Storage.S3.Prefix
 		config.WalgS3StorageClass = backupConfig.Spec.Storage.S3.StorageClass
+	}
+
+	// Configure encryption if enabled
+	if backupConfig.Spec.Encryption != nil {
+		if backupConfig.Spec.Encryption.Method == "libsodium" &&
+			backupConfig.Spec.Encryption.LibsodiumConfig != nil &&
+			backupConfig.Spec.Encryption.LibsodiumConfig.EncryptionKeyData != "" {
+			config.WalgLibsodiumKey = backupConfig.Spec.Encryption.LibsodiumConfig.EncryptionKeyData
+			config.WalgLibsodiumKeyTransform = "hex"
+		}
 	}
 
 	config.WalgDownloadConcurrency = backupConfig.Spec.DownloadConcurrency

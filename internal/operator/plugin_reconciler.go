@@ -18,11 +18,15 @@ package operator
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
+	"fmt"
 
 	cnpgv1 "github.com/cloudnative-pg/cloudnative-pg/api/v1"
 	"github.com/cloudnative-pg/cnpg-i-machinery/pkg/pluginhelper/object"
 	"github.com/cloudnative-pg/cnpg-i/pkg/reconciler"
 	"github.com/go-logr/logr"
+	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	apierrs "k8s.io/apimachinery/pkg/api/errors"
@@ -109,6 +113,16 @@ func (r ReconcilerImplementation) Pre(
 	}
 	if recoveryBackupConfig != nil {
 		backupConfigs = append(backupConfigs, *recoveryBackupConfig)
+	}
+
+	// Check and create encryption secrets if needed
+	for i := range backupConfigs {
+		if err := r.ensureEncryptionSecret(ctx, &backupConfigs[i]); err != nil {
+			logger.Error(err, "Error while ensuring encryption secret. Should requeue")
+			return &reconciler.ReconcilerHooksResult{
+				Behavior: reconciler.ReconcilerHooksResult_BEHAVIOR_REQUEUE,
+			}, nil
+		}
 	}
 
 	if err := r.ensureRole(ctx, cluster, backupConfigs); err != nil {
@@ -219,4 +233,90 @@ func (r ReconcilerImplementation) createRoleBinding(
 		return err
 	}
 	return r.Client.Create(ctx, roleBinding)
+}
+
+// ensureEncryptionSecret checks if encryption is enabled and creates the secret if needed
+func (r ReconcilerImplementation) ensureEncryptionSecret(
+	ctx context.Context,
+	backupConfig *v1beta1.BackupConfig,
+) error {
+	logger := logr.FromContextOrDiscard(ctx).WithValues(
+		"backupConfig", backupConfig.Name,
+		"namespace", backupConfig.Namespace,
+	)
+
+	// Check if encryption is enabled and configured to use libsodium
+	if backupConfig.Spec.Encryption.Method != "libsodium" {
+		return nil
+	}
+
+	// Check if we need to create a random key
+	if !backupConfig.Spec.Encryption.LibsodiumConfig.CreateRandomIfNotExists {
+		return nil
+	}
+
+	// Check if encryption key secret reference is provided
+	if backupConfig.Spec.Encryption.LibsodiumConfig.EncryptionKey == nil {
+		return fmt.Errorf("encryption key secret reference is required when encryption is enabled")
+	}
+
+	secretName := backupConfig.Spec.Encryption.LibsodiumConfig.EncryptionKey.Name
+	secretKey := backupConfig.Spec.Encryption.LibsodiumConfig.EncryptionKey.Key
+
+	// Check if the secret already exists
+	secret := &corev1.Secret{}
+	err := r.Client.Get(ctx, client.ObjectKey{
+		Namespace: backupConfig.Namespace,
+		Name:      secretName,
+	}, secret)
+
+	if err == nil {
+		// Secret exists, nothing to do
+		logger.V(1).Info("Encryption key secret already exists", "secretName", secretName)
+		return nil
+	}
+
+	if !apierrs.IsNotFound(err) {
+		return fmt.Errorf("failed to check if encryption key secret exists: %w", err)
+	}
+
+	// Secret doesn't exist, create it
+	newSecret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      secretName,
+			Namespace: backupConfig.Namespace,
+		},
+		Type: corev1.SecretTypeOpaque,
+		Data: map[string][]byte{},
+	}
+
+	// Creating 32-byte random key
+	key, err := generateRandomHexString(32)
+	if err != nil {
+		return fmt.Errorf("failed to generate random data for secret: %w", err)
+	}
+	newSecret.Data[secretKey] = []byte(key)
+
+	// Set owner reference to the backup config
+	if err := setOwnerReference(backupConfig, newSecret); err != nil {
+		return fmt.Errorf("failed to set owner reference: %w", err)
+	}
+
+	if err := r.Client.Create(ctx, newSecret); err != nil {
+		return fmt.Errorf("failed to create encryption key secret: %w", err)
+	}
+
+	logger.Info("Created new encryption secret with random key", "secretName", secretName)
+	return nil
+}
+
+// generateRandomHexString generates a random key, encodes with HEX and return via bytes slice.
+func generateRandomHexString(bytesNum int) (string, error) {
+	// Generate a random key of bytesNum length
+	keyBytes := make([]byte, bytesNum)
+	if _, err := rand.Read(keyBytes); err != nil {
+		return "", fmt.Errorf("failed to generate random key: %w", err)
+	}
+	// Convert to hex string (64 characters)
+	return hex.EncodeToString(keyBytes), nil
 }

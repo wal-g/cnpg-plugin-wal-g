@@ -38,10 +38,23 @@ type StorageConfigWithSecrets struct {
 	S3 *S3StorageConfigWithSecrets `json:"s3,omitempty"` // S3-specific parameters
 }
 
+// BackupEncryptionLibsodiumConfigWithSecrets defines libsodium encryption configuration with embedded secret data
+type BackupEncryptionLibsodiumConfigWithSecrets struct {
+	BackupEncryptionLibsodiumConfig
+	EncryptionKeyData string
+}
+
+// BackupEncryptionConfigWithSecrets defines encryption configuration with embedded secrets data
+type BackupEncryptionConfigWithSecrets struct {
+	BackupEncryptionConfig
+	LibsodiumConfig *BackupEncryptionLibsodiumConfigWithSecrets `json:"libsodium,omitempty"`
+}
+
 // backupConfigSpec defines the BackupConfigSpec extended with secrets data
 type BackupConfigSpecWithSecrets struct {
 	BackupConfigSpec
-	Storage StorageConfigWithSecrets `json:"storage"`
+	Storage    StorageConfigWithSecrets           `json:"storage"`
+	Encryption *BackupEncryptionConfigWithSecrets `json:"encryption,omitempty"`
 }
 
 // BackupConfigWithSecrets defines the BackupConfig with embedded secrets data (ex. S3 credentials)
@@ -71,9 +84,53 @@ func (b *BackupConfig) makeBackupConfigSpecWithPrefilledSecrets(
 		return BackupConfigSpecWithSecrets{}, err
 	}
 
+	encryption, err := b.makeEncryptionConfigWithPrefilledSecrets(ctx, c)
+	if err != nil {
+		return BackupConfigSpecWithSecrets{}, err
+	}
+
 	return BackupConfigSpecWithSecrets{
 		BackupConfigSpec: *b.Spec.DeepCopy(),
 		Storage:          storage,
+		Encryption:       encryption,
+	}, nil
+}
+
+func (b *BackupConfig) makeEncryptionConfigWithPrefilledSecrets(
+	ctx context.Context,
+	c client.Client,
+) (*BackupEncryptionConfigWithSecrets, error) {
+	if b.Spec.Encryption.Method == "" {
+		return nil, nil
+	}
+
+	libsodiumConfig, err := b.makeLibsodiumConfigWithPrefilledSecrets(ctx, c)
+	if err != nil {
+		return nil, err
+	}
+
+	return &BackupEncryptionConfigWithSecrets{
+		BackupEncryptionConfig: *b.Spec.Encryption.DeepCopy(),
+		LibsodiumConfig:        libsodiumConfig,
+	}, nil
+}
+
+func (b *BackupConfig) makeLibsodiumConfigWithPrefilledSecrets(
+	ctx context.Context,
+	c client.Client,
+) (*BackupEncryptionLibsodiumConfigWithSecrets, error) {
+	if b.Spec.Encryption.Method != "libsodium" || b.Spec.Encryption.LibsodiumConfig.EncryptionKey == nil {
+		return nil, nil
+	}
+
+	encryptionKey, err := extractValueFromSecret(ctx, c, b.Spec.Encryption.LibsodiumConfig.EncryptionKey, b.Namespace)
+	if err != nil {
+		return nil, err
+	}
+
+	return &BackupEncryptionLibsodiumConfigWithSecrets{
+		BackupEncryptionLibsodiumConfig: *b.Spec.Encryption.LibsodiumConfig.DeepCopy(),
+		EncryptionKeyData:               string(encryptionKey),
 	}, nil
 }
 
