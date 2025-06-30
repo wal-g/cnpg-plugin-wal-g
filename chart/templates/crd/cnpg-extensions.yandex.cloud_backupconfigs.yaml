@@ -51,6 +51,49 @@ spec:
                 description: 'How many times failed file will be retried during backup
                   / wal download. Default: 15.'
                 type: integer
+              encryption:
+                description: Backups encryption configuration
+                properties:
+                  libsodium:
+                    description: Libsodium-specific encryption params
+                    properties:
+                      createRandom:
+                        description: Create secret with random key for encryption,
+                          if secret with provided name does not exist
+                        type: boolean
+                      encryptionKeySecret:
+                        description: |-
+                          Secret with key to be used for encryption
+                          Key should be 32-bytes size and passed with HEX encoding (ex. use `openssl rand -hex 32` to create random key)
+                        properties:
+                          key:
+                            description: The key of the secret to select from.  Must
+                              be a valid secret key.
+                            type: string
+                          name:
+                            default: ""
+                            description: |-
+                              Name of the referent.
+                              This field is effectively required, but due to backwards compatibility is
+                              allowed to be empty. Instances of this type with an empty value here are
+                              almost certainly wrong.
+                              More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                            type: string
+                          optional:
+                            description: Specify whether the Secret or its key must
+                              be defined
+                            type: boolean
+                        required:
+                        - key
+                        type: object
+                        x-kubernetes-map-type: atomic
+                    type: object
+                  method:
+                    description: |-
+                      Method used for backup encryption.
+                      Currently "libsodium" method supported only
+                    type: string
+                type: object
               resources:
                 description: |-
                   Resources for wal-g sidecar configurations

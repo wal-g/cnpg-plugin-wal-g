@@ -93,6 +93,27 @@ type BackupConfigSpec struct {
 	// IMPORTANT: resource changes will NOT trigger auto-update on clusters
 	// Manual rollout with pods recreation needed instead
 	Resources corev1.ResourceRequirements `json:"resources,omitempty"`
+
+	// Backups encryption configuration
+	Encryption BackupEncryptionConfig `json:"encryption,omitempty"`
+}
+
+type BackupEncryptionConfig struct {
+	// Method used for backup encryption.
+	// Currently "libsodium" method supported only
+	Method string `json:"method,omitempty"`
+
+	// Libsodium-specific encryption params
+	LibsodiumConfig BackupEncryptionLibsodiumConfig `json:"libsodium,omitempty"`
+}
+
+type BackupEncryptionLibsodiumConfig struct {
+	// Secret with key to be used for encryption
+	// Key should be 32-bytes size and passed with HEX encoding (ex. use `openssl rand -hex 32` to create random key)
+	EncryptionKey *corev1.SecretKeySelector `json:"encryptionKeySecret,omitempty"`
+
+	// Create secret with random key for encryption, if secret with provided name does not exist
+	CreateRandomIfNotExists bool `json:"createRandom,omitempty"`
 }
 
 type BackupRetentionConfig struct {
