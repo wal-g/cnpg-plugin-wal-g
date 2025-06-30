@@ -21,14 +21,14 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-var _ = Describe("WalgBackupMetadata", func() {
+var _ = Describe("BackupMetadata", func() {
 	var (
-		backupList []WalgBackupMetadata
+		backupList []BackupMetadata
 	)
 
 	BeforeEach(func() {
 		// Create a test backup list
-		backupList = []WalgBackupMetadata{
+		backupList = []BackupMetadata{
 			{BackupName: "base_000000010000000100000040"},                            // Full backup 1
 			{BackupName: "base_000000010000000100000046_D_000000010000000100000040"}, // Delta 1 (depends on Full 1)
 			{BackupName: "base_000000010000000100000061_D_000000010000000100000046"}, // Delta 2 (depends on Delta 1)
@@ -42,20 +42,20 @@ var _ = Describe("WalgBackupMetadata", func() {
 	Describe("GetDependentBackups", func() {
 		Context("with direct dependencies only", func() {
 			It("should find direct dependencies for a full backup", func() {
-				fullBackup := WalgBackupMetadata{BackupName: "base_000000010000000100000040"}
+				fullBackup := BackupMetadata{BackupName: "base_000000010000000100000040"}
 				deps := fullBackup.GetDependentBackups(ctx, backupList, false)
 				Expect(deps).To(HaveLen(1))
 			})
 
 			It("should find direct dependencies for a delta backup", func() {
-				deltaBackup := WalgBackupMetadata{BackupName: "base_000000010000000100000046_D_000000010000000100000040"}
+				deltaBackup := BackupMetadata{BackupName: "base_000000010000000100000046_D_000000010000000100000040"}
 				deps := deltaBackup.GetDependentBackups(ctx, backupList, false)
 				Expect(deps).To(HaveLen(1))
 				Expect(deps[0].BackupName).To(Equal("base_000000010000000100000061_D_000000010000000100000046"))
 			})
 
 			It("should return empty list for a backup with no dependencies", func() {
-				noDepBackup := WalgBackupMetadata{BackupName: "base_000000010000000100000085_D_000000010000000100000080"}
+				noDepBackup := BackupMetadata{BackupName: "base_000000010000000100000085_D_000000010000000100000080"}
 				deps := noDepBackup.GetDependentBackups(ctx, backupList, false)
 				Expect(deps).To(BeEmpty())
 			})
@@ -63,7 +63,7 @@ var _ = Describe("WalgBackupMetadata", func() {
 
 		Context("with indirect dependencies included", func() {
 			It("should find all dependencies for a full backup", func() {
-				fullBackup := WalgBackupMetadata{BackupName: "base_000000010000000100000040"}
+				fullBackup := BackupMetadata{BackupName: "base_000000010000000100000040"}
 				deps := fullBackup.GetDependentBackups(ctx, backupList, true)
 				Expect(deps).To(HaveLen(2))
 
@@ -78,7 +78,7 @@ var _ = Describe("WalgBackupMetadata", func() {
 			})
 
 			It("should find all dependencies for a full backup with multiple levels", func() {
-				fullBackup := WalgBackupMetadata{BackupName: "base_000000010000000100000070"}
+				fullBackup := BackupMetadata{BackupName: "base_000000010000000100000070"}
 				deps := fullBackup.GetDependentBackups(ctx, backupList, true)
 				Expect(deps).To(HaveLen(3))
 
@@ -94,7 +94,7 @@ var _ = Describe("WalgBackupMetadata", func() {
 			})
 
 			It("should handle a backup with no dependencies", func() {
-				noDepBackup := WalgBackupMetadata{BackupName: "base_000000010000000100000085_D_000000010000000100000080"}
+				noDepBackup := BackupMetadata{BackupName: "base_000000010000000100000085_D_000000010000000100000080"}
 				deps := noDepBackup.GetDependentBackups(ctx, backupList, true)
 				Expect(deps).To(BeEmpty())
 			})

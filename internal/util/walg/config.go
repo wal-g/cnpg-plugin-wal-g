@@ -28,8 +28,8 @@ import (
 	"github.com/wal-g/cnpg-plugin-wal-g/api/v1beta1"
 )
 
-type WalgConfig struct {
-	AWSAccessKeyId                    string `json:"AWS_ACCESS_KEY_ID,omitempty"`
+type Config struct {
+	AWSAccessKeyID                    string `json:"AWS_ACCESS_KEY_ID,omitempty"`
 	AWSEndpoint                       string `json:"AWS_ENDPOINT,omitempty"`
 	AWSS3ForcePathStyle               bool   `json:"AWS_S3_FORCE_PATH_STYLE,omitempty"`
 	AWSRegion                         string `json:"AWS_REGION,omitempty"`
@@ -62,8 +62,8 @@ type WalgConfig struct {
 	WalgUploadDiskConcurrency         int    `json:"WALG_UPLOAD_DISK_CONCURRENCY,omitempty"`
 }
 
-func NewWalgConfigWithDefaults() WalgConfig {
-	return WalgConfig{
+func NewConfigWithDefaults() Config {
+	return Config{
 		GoMaxProcs:                        5,
 		PgAppName:                         "wal-g",
 		PgHost:                            "/controller/run",
@@ -85,13 +85,13 @@ func NewWalgConfigWithDefaults() WalgConfig {
 	}
 }
 
-func NewWalgConfigFromBackupConfig(backupConfig v1beta1.BackupConfigWithSecrets) WalgConfig {
-	config := NewWalgConfigWithDefaults()
+func NewConfigFromBackupConfig(backupConfig *v1beta1.BackupConfigWithSecrets) *Config {
+	config := NewConfigWithDefaults()
 
 	if backupConfig.Spec.Storage.StorageType == v1beta1.StorageTypeS3 {
-		config.AWSAccessKeyId = backupConfig.Spec.Storage.S3.AccessKeyID
+		config.AWSAccessKeyID = backupConfig.Spec.Storage.S3.AccessKeyID
 		config.AWSSecretAccessKey = backupConfig.Spec.Storage.S3.AccessKeySecret
-		config.AWSEndpoint = backupConfig.Spec.Storage.S3.EndpointUrl
+		config.AWSEndpoint = backupConfig.Spec.Storage.S3.EndpointURL
 		config.AWSRegion = backupConfig.Spec.Storage.S3.Region
 		config.AWSS3ForcePathStyle = backupConfig.Spec.Storage.S3.ForcePathStyle
 		config.WaleS3Prefix = backupConfig.Spec.Storage.S3.Prefix
@@ -105,12 +105,12 @@ func NewWalgConfigFromBackupConfig(backupConfig v1beta1.BackupConfigWithSecrets)
 	config.WalgUploadConcurrency = backupConfig.Spec.UploadConcurrency
 	config.WalgUploadDiskConcurrency = backupConfig.Spec.UploadDiskConcurrency
 	config.WalgDeltaMaxSteps = backupConfig.Spec.DeltaMaxSteps
-	return config
+	return &config
 }
 
 // ToFile dumps config to a file in JSON format acceptable by wal-g via --config param
-func (c WalgConfig) ToFile(targetFilepath string, config WalgConfig) error {
-	bytes, err := json.Marshal(config)
+func (c *Config) ToFile(targetFilepath string) error {
+	bytes, err := json.Marshal(c)
 	if err != nil {
 		return err
 	}
@@ -125,7 +125,7 @@ func (c WalgConfig) ToFile(targetFilepath string, config WalgConfig) error {
 }
 
 // ToEnvMap returns Map with environment variables acceptable by wal-g
-func (c WalgConfig) ToEnvMap() map[string]string {
+func (c *Config) ToEnvMap() map[string]string {
 	val := reflect.ValueOf(c)
 	typ := val.Type()
 
@@ -134,8 +134,8 @@ func (c WalgConfig) ToEnvMap() map[string]string {
 	for i := 0; i < val.NumField(); i++ {
 		fieldName := typ.Field(i).Name
 
-		fieldJSONTag, hasJsonTag := typ.Field(i).Tag.Lookup("json")
-		if !hasJsonTag {
+		fieldJSONTag, hasJSONTag := typ.Field(i).Tag.Lookup("json")
+		if !hasJSONTag {
 			continue
 		}
 		tagParams := strings.Split(fieldJSONTag, ",")
@@ -170,7 +170,7 @@ func (c WalgConfig) ToEnvMap() map[string]string {
 		case reflect.Bool:
 			fieldValue = strconv.FormatBool(val.Field(i).Bool())
 		default:
-			// Should panic on unknown field types, because we control all WalgConfig struct fields
+			// Should panic on unknown field types, because we control all Config struct fields
 			panic(fmt.Sprintf(
 				"cannot marshal field %s with type %s, supported only Bool,Int,String",
 				fieldName,

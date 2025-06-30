@@ -142,9 +142,10 @@ spec:
                         description: S3 endpoint url
                         type: string
                       forcePathStyle:
-                        description: To enable path-style addressing (i.e., http://s3.amazonaws.com/BUCKET/KEY)
-                          when connecting to an S3-compatible service that lack of
-                          support for sub-domain style bucket URLs (i.e., http://BUCKET.s3.amazonaws.com/KEY)
+                        description: |-
+                          To enable path-style addressing (i.e., http://s3.amazonaws.com/BUCKET/KEY)
+                          when connecting to an S3-compatible service that lack of support for
+                          sub-domain style bucket URLs (i.e., http://BUCKET.s3.amazonaws.com/KEY)
                         type: boolean
                       prefix:
                         description: e.g. s3://bucket/path/to/folder
@@ -153,10 +154,11 @@ spec:
                         description: S3 Region
                         type: string
                       storageClass:
-                        description: S3 storage class used for backup files. Default
-                          is "STANDARD". Other supported values include "STANDARD_IA"
-                          for Infrequent Access and "REDUCED_REDUNDANCY" for Reduced
-                          Redundancy.
+                        description: |-
+                          S3 storage class used for backup files.
+                          Default is "STANDARD". Other supported values include
+                          "STANDARD_IA" for Infrequent Access and
+                          "REDUCED_REDUNDANCY" for Reduced Redundancy.
                         type: string
                     type: object
                   type:

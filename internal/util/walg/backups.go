@@ -31,9 +31,9 @@ import (
 	"github.com/wal-g/cnpg-plugin-wal-g/internal/util/cmd"
 )
 
-// WalgBackupMetadata represents single backup metadata returned by wal-g
+// BackupMetadata represents single backup metadata returned by wal-g
 // on "wal-g backup-list --detail --json"
-type WalgBackupMetadata struct {
+type BackupMetadata struct {
 	BackupName       string         `json:"backup_name"`
 	Time             string         `json:"time"`
 	WalFileName      string         `json:"wal_file_name"`
@@ -53,46 +53,62 @@ type WalgBackupMetadata struct {
 	UserData         map[string]any `json:"user_data"`
 }
 
-func (m *WalgBackupMetadata) StartTime() (time.Time, error) {
+func (m *BackupMetadata) StartTime() (time.Time, error) {
 	if m == nil {
-		return time.Time{}, fmt.Errorf("WalgBackupMetadata is nil")
+		return time.Time{}, fmt.Errorf("BackupMetadata is nil")
 	}
 	return time.Parse(time.RFC3339Nano, m.StartTimeString)
 }
 
-func (m *WalgBackupMetadata) FinishTime() (time.Time, error) {
+func (m *BackupMetadata) FinishTime() (time.Time, error) {
 	if m == nil {
-		return time.Time{}, fmt.Errorf("WalgBackupMetadata is nil")
+		return time.Time{}, fmt.Errorf("BackupMetadata is nil")
 	}
 	return time.Parse(time.RFC3339Nano, m.FinishTimeString)
 }
 
-func (m *WalgBackupMetadata) Timeline() int {
+func (m *BackupMetadata) Timeline() int {
 	timelineStr := "0x" + m.WalFileName[0:8]
 	tid, _ := strconv.ParseInt(timelineStr, 16, 64)
 	return int(tid)
 }
-func (m *WalgBackupMetadata) TimelineStr() string {
+func (m *BackupMetadata) TimelineStr() string {
 	return m.WalFileName[0:8]
+}
+
+func (m *BackupMetadata) HasMatchingTimeline(targetTimeline string) bool {
+	if targetTimeline == "" || targetTimeline == "latest" {
+		return true // Any timeline will match, if we do not specify targetTimeline
+	}
+
+	targetTimelineID, err := strconv.ParseInt(targetTimeline, 16, 64)
+	if err != nil {
+		return true // Passed incorrect timeline - allowing any timeline
+	}
+
+	return m.Timeline() <= int(targetTimelineID)
 }
 
 func GetBackupsList(
 	ctx context.Context,
-	backupConfig v1beta1.BackupConfigWithSecrets,
-) ([]WalgBackupMetadata, error) {
+	backupConfig *v1beta1.BackupConfigWithSecrets,
+) ([]BackupMetadata, error) {
 	logger := logr.FromContextOrDiscard(ctx)
 	result, err := cmd.New("wal-g", "backup-list", "--detail", "--json").
 		WithContext(ctx).
-		WithEnv(NewWalgConfigFromBackupConfig(backupConfig).ToEnvMap()).
+		WithEnv(NewConfigFromBackupConfig(backupConfig).ToEnvMap()).
 		Run()
 	if err != nil {
-		logger.Error(err, "GetBackupsList: error on wal-g backup-list --detail --json", "stdout", string(result.Stdout()), "stderr", string(result.Stderr()))
+		logger.Error(
+			err, "GetBackupsList: error on wal-g backup-list --detail --json",
+			"stdout", string(result.Stdout()),
+			"stderr", string(result.Stderr()),
+		)
 		return nil, fmt.Errorf("failed to do wal-g backup-list: %w", err)
-	} else {
-		logger.Info("Finished wal-g backup-list", "stdout", string(result.Stdout()), "stderr", string(result.Stderr()))
 	}
+	logger.Info("Finished wal-g backup-list", "stdout", string(result.Stdout()), "stderr", string(result.Stderr()))
 
-	backupsMetadata := make([]WalgBackupMetadata, 0)
+	backupsMetadata := make([]BackupMetadata, 0)
 	if err = json.Unmarshal(result.Stdout(), &backupsMetadata); err != nil {
 		logger.Error(err, "GetBackupsList: cannot unmarshal wal-g backup-list stdout", string(result.Stdout()), "stderr", string(result.Stderr()))
 		return nil, fmt.Errorf("cannot unmarshal wal-g backup-list output: %w", err)
@@ -102,15 +118,15 @@ func GetBackupsList(
 }
 
 // Finds wal-g backup matching provided user data
-// If any error occured during searching for backup - returns (nil, error)
+// If any error occurred during searching for backup - returns (nil, error)
 // If no backup found - returns (nil, nil)
 // If more than one backup found - returns most recent backup matching provided user data
 func GetBackupByUserData(
 	ctx context.Context,
-	backupList []WalgBackupMetadata,
+	backupList []BackupMetadata,
 	userData map[string]any,
-) (*WalgBackupMetadata, error) {
-	backup, _, ok := lo.FindLastIndexOf(backupList, func(b WalgBackupMetadata) bool {
+) (*BackupMetadata, error) {
+	backup, _, ok := lo.FindLastIndexOf(backupList, func(b BackupMetadata) bool {
 		return maps.Equal(b.UserData, userData)
 	})
 
@@ -122,7 +138,7 @@ func GetBackupByUserData(
 }
 
 // GetLatestBackup returns the latest wal-g backup
-func GetLatestBackup(ctx context.Context, backupList []WalgBackupMetadata) (*WalgBackupMetadata, error) {
+func GetLatestBackup(ctx context.Context, backupList []BackupMetadata) (*BackupMetadata, error) {
 	if len(backupList) == 0 {
 		return nil, fmt.Errorf("no backup found on the remote object storage")
 	}
@@ -131,10 +147,10 @@ func GetLatestBackup(ctx context.Context, backupList []WalgBackupMetadata) (*Wal
 }
 
 // Finds wal-g backup matching provided name
-// If any error occured during searching for backup - returns (nil, error)
+// If any error occurred during searching for backup - returns (nil, error)
 // If no backup found - returns (nil, nil)
-func GetBackupByName(ctx context.Context, backupList []WalgBackupMetadata, name string) (*WalgBackupMetadata, error) {
-	backup, ok := lo.Find(backupList, func(b WalgBackupMetadata) bool {
+func GetBackupByName(ctx context.Context, backupList []BackupMetadata, name string) (*BackupMetadata, error) {
+	backup, ok := lo.Find(backupList, func(b BackupMetadata) bool {
 		return b.BackupName == name
 	})
 
@@ -148,12 +164,12 @@ func GetBackupByName(ctx context.Context, backupList []WalgBackupMetadata, name 
 // DeleteBackup deletes a backup using WAL-G
 func DeleteBackup(
 	ctx context.Context,
-	backupConfig v1beta1.BackupConfigWithSecrets,
+	backupConfig *v1beta1.BackupConfigWithSecrets,
 	backupName string,
-) (*cmd.CmdRunResult, error) {
+) (*cmd.RunResult, error) {
 	result, err := cmd.New("wal-g", "delete", "target", backupName, "--confirm").
 		WithContext(ctx).
-		WithEnv(NewWalgConfigFromBackupConfig(backupConfig).ToEnvMap()).
+		WithEnv(NewConfigFromBackupConfig(backupConfig).ToEnvMap()).
 		Run()
 
 	backupDoesNotExistStr := fmt.Sprintf("Backup '%s' does not exist.", backupName)
@@ -174,12 +190,12 @@ func DeleteBackup(
 // If includeIndirect is true, it will also include indirect dependencies (dependencies of dependencies).
 // For example, if A depends on the current backup, and B depends on A, then B is an indirect dependency
 // of the current backup and will be included in the result if includeIndirect is true.
-func (m *WalgBackupMetadata) GetDependentBackups(ctx context.Context, backupList []WalgBackupMetadata, includeIndirect bool) []WalgBackupMetadata {
+func (m *BackupMetadata) GetDependentBackups(ctx context.Context, backupList []BackupMetadata, includeIndirect bool) []BackupMetadata {
 	logger := logr.FromContextOrDiscard(ctx)
 	logger.V(1).Info("Finding dependent backups", "backupName", m.BackupName, "includeIndirect", includeIndirect)
 
 	// Find direct dependencies
-	directDependencies := findDirectDependencies(*m, backupList)
+	directDependencies := findDirectDependencies(m, backupList)
 	logger.V(1).Info("Found direct dependents", "backupName", m.BackupName, "dependents", directDependencies)
 
 	// If we don't need indirect dependencies, return just the direct ones
@@ -188,11 +204,12 @@ func (m *WalgBackupMetadata) GetDependentBackups(ctx context.Context, backupList
 	}
 
 	// Find also indirect dependencies via queue by processing each of "new" dependency
-	depsQueue := make([]WalgBackupMetadata, 0, len(directDependencies))
-	knownDependencies := make(map[string]WalgBackupMetadata)
+	depsQueue := make([]*BackupMetadata, 0, len(directDependencies))
+	knownDependencies := make(map[string]*BackupMetadata)
 
 	// Add direct dependencies to the result map and to the processing queue
-	for _, backup := range directDependencies {
+	for i := range directDependencies {
+		backup := &directDependencies[i]
 		depsQueue = append(depsQueue, backup)
 		knownDependencies[backup.BackupName] = backup
 	}
@@ -201,7 +218,8 @@ func (m *WalgBackupMetadata) GetDependentBackups(ctx context.Context, backupList
 		dependencyBackup := depsQueue[0] // Getting first from queue
 		depsQueue = depsQueue[1:]        // Removing first element from queue
 		newDependencyBackups := findDirectDependencies(dependencyBackup, backupList)
-		for _, newDepBackup := range newDependencyBackups {
+		for i := range newDependencyBackups {
+			newDepBackup := &newDependencyBackups[i]
 			_, alreadyKnown := knownDependencies[newDepBackup.BackupName]
 			if !alreadyKnown {
 				knownDependencies[newDepBackup.BackupName] = newDepBackup
@@ -211,16 +229,16 @@ func (m *WalgBackupMetadata) GetDependentBackups(ctx context.Context, backupList
 	}
 
 	// Convert map to slice
-	result := make([]WalgBackupMetadata, 0, len(knownDependencies))
-	for _, backup := range knownDependencies {
-		result = append(result, backup)
+	result := make([]BackupMetadata, 0, len(knownDependencies))
+	for i := range knownDependencies {
+		result = append(result, *knownDependencies[i])
 	}
 
 	return result
 }
 
 // findDirectDependencies finds all direct dependencies of the given backup
-func findDirectDependencies(parent WalgBackupMetadata, backupList []WalgBackupMetadata) []WalgBackupMetadata {
+func findDirectDependencies(parent *BackupMetadata, backupList []BackupMetadata) []BackupMetadata {
 	// Extract the WAL ID from the backup name
 	parentWalID := strings.TrimPrefix(parent.BackupName, "base_")
 	if strings.Contains(parentWalID, "_D_") {
@@ -228,21 +246,22 @@ func findDirectDependencies(parent WalgBackupMetadata, backupList []WalgBackupMe
 	}
 
 	// Find direct dependencies of this backup
-	result := make([]WalgBackupMetadata, 0)
-	for _, b := range backupList {
+	result := make([]BackupMetadata, 0)
+	for i := range backupList {
+		backup := &backupList[i]
 		// Skip if this is the current backup
-		if b.BackupName == parent.BackupName {
+		if backup.BackupName == parent.BackupName {
 			continue
 		}
 
 		// Skipping non-delta backups, they cannot be dependent
-		if !strings.Contains(b.BackupName, "_D_") {
+		if !strings.Contains(backup.BackupName, "_D_") {
 			continue
 		}
 
-		parts := strings.Split(b.BackupName, "_D_")
+		parts := strings.Split(backup.BackupName, "_D_")
 		if len(parts) == 2 && parts[1] == parentWalID {
-			result = append(result, b)
+			result = append(result, *backup)
 		}
 	}
 

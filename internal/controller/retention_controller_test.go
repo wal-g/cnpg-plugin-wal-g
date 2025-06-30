@@ -190,7 +190,7 @@ var _ = Describe("RetentionController", func() {
 
 		type testCase struct {
 			description   string
-			backupConfig  v1beta1.BackupConfig
+			backupConfig  *v1beta1.BackupConfig
 			backups       []cnpgv1.Backup
 			expectedCount int
 			expectedNames []string
@@ -217,7 +217,7 @@ var _ = Describe("RetentionController", func() {
 			},
 			Entry("no retention policy", testCase{
 				description: "no retention policy",
-				backupConfig: v1beta1.BackupConfig{
+				backupConfig: &v1beta1.BackupConfig{
 					Spec: v1beta1.BackupConfigSpec{
 						Retention: v1beta1.BackupRetentionConfig{},
 					},
@@ -231,7 +231,7 @@ var _ = Describe("RetentionController", func() {
 			}),
 			Entry("fewer backups than minBackupsToKeep", testCase{
 				description: "fewer backups than minBackupsToKeep",
-				backupConfig: v1beta1.BackupConfig{
+				backupConfig: &v1beta1.BackupConfig{
 					Spec: v1beta1.BackupConfigSpec{
 						Retention: v1beta1.BackupRetentionConfig{
 							MinBackupsToKeep: 5,
@@ -247,7 +247,7 @@ var _ = Describe("RetentionController", func() {
 			}),
 			Entry("more backups than minBackupsToKeep with time threshold", testCase{
 				description: "more backups than minBackupsToKeep with time threshold",
-				backupConfig: v1beta1.BackupConfig{
+				backupConfig: &v1beta1.BackupConfig{
 					Spec: v1beta1.BackupConfigSpec{
 						Retention: v1beta1.BackupRetentionConfig{
 							MinBackupsToKeep:   2,
@@ -265,7 +265,7 @@ var _ = Describe("RetentionController", func() {
 			}),
 			Entry("ignore manual backups", testCase{
 				description: "ignore manual backups",
-				backupConfig: v1beta1.BackupConfig{
+				backupConfig: &v1beta1.BackupConfig{
 					Spec: v1beta1.BackupConfigSpec{
 						Retention: v1beta1.BackupRetentionConfig{
 							MinBackupsToKeep:       1,
@@ -284,7 +284,7 @@ var _ = Describe("RetentionController", func() {
 			}),
 			Entry("keep minimum backups despite age", testCase{
 				description: "keep minimum backups despite age",
-				backupConfig: v1beta1.BackupConfig{
+				backupConfig: &v1beta1.BackupConfig{
 					Spec: v1beta1.BackupConfigSpec{
 						Retention: v1beta1.BackupRetentionConfig{
 							MinBackupsToKeep:   2,
@@ -338,7 +338,7 @@ var _ = Describe("RetentionController", func() {
 				}
 
 				// Run retention
-				err := controller.runRetentionForBackupConfig(ctx, *tc.backupConfig, logger)
+				err := controller.runRetentionForBackupConfig(ctx, tc.backupConfig, logger)
 				Expect(err).NotTo(HaveOccurred())
 
 				// Check that expected backups were deleted
@@ -439,13 +439,13 @@ var _ = Describe("RetentionController", func() {
 			// Run retention for each BackupConfig
 			logger := logr.Discard()
 
-			err := controller.runRetentionForBackupConfig(ctx, *backupConfig1, logger)
+			err := controller.runRetentionForBackupConfig(ctx, backupConfig1, logger)
 			Expect(err).NotTo(HaveOccurred())
 
-			err = controller.runRetentionForBackupConfig(ctx, *backupConfig2, logger)
+			err = controller.runRetentionForBackupConfig(ctx, backupConfig2, logger)
 			Expect(err).NotTo(HaveOccurred())
 
-			err = controller.runRetentionForBackupConfig(ctx, *backupConfig3, logger)
+			err = controller.runRetentionForBackupConfig(ctx, backupConfig3, logger)
 			Expect(err).NotTo(HaveOccurred())
 
 			// Check backups for config1 - backup1-3 should be deleted (older than 1d)
@@ -523,10 +523,10 @@ var _ = Describe("RetentionController", func() {
 			// Run retention for each BackupConfig
 			logger := logr.Discard()
 
-			err := controller.runRetentionForBackupConfig(ctx, *backupConfig1, logger)
+			err := controller.runRetentionForBackupConfig(ctx, backupConfig1, logger)
 			Expect(err).NotTo(HaveOccurred())
 
-			err = controller.runRetentionForBackupConfig(ctx, *backupConfig2, logger)
+			err = controller.runRetentionForBackupConfig(ctx, backupConfig2, logger)
 			Expect(err).NotTo(HaveOccurred())
 
 			// Check backups for config1 - backup-old should be deleted (older than 1d)
