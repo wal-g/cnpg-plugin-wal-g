@@ -26,9 +26,9 @@ import (
 	"github.com/cloudnative-pg/cnpg-i-machinery/pkg/pluginhelper/decoder"
 	"github.com/cloudnative-pg/cnpg-i-machinery/pkg/pluginhelper/object"
 	"github.com/cloudnative-pg/cnpg-i/pkg/lifecycle"
-	"github.com/cloudnative-pg/machinery/pkg/log"
 	"github.com/go-logr/logr"
 	"github.com/spf13/viper"
+	"github.com/wal-g/cnpg-plugin-wal-g/api/v1beta1"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/utils/ptr"
@@ -81,8 +81,6 @@ func (impl LifecycleImplementation) LifecycleHook(
 	ctx context.Context,
 	request *lifecycle.OperatorLifecycleRequest,
 ) (*lifecycle.OperatorLifecycleResponse, error) {
-	contextLogger := log.FromContext(ctx).WithName("lifecycle")
-	contextLogger.Info("Lifecycle hook reconciliation start")
 	operation := request.GetOperationType().GetType().Enum()
 	if operation == nil {
 		return nil, errors.New("no operation set")
@@ -101,13 +99,16 @@ func (impl LifecycleImplementation) LifecycleHook(
 		return nil, err
 	}
 
+	logger := logr.FromContextOrDiscard(ctx).WithName("lifecycleHook").
+		WithValues("clusterName", cluster.Name, "clusterNamespace", cluster.Namespace, "entity", kind)
+	logger.V(1).Info("Lifecycle hook reconciliation start")
+	childCtx := logr.NewContext(ctx, logger)
+
 	switch kind {
 	case "Pod":
-		contextLogger.Info("Reconciling pod")
-		return impl.reconcilePod(ctx, &cluster, request)
+		return impl.reconcilePod(childCtx, &cluster, request)
 	case "Job":
-		contextLogger.Info("Reconciling job")
-		return impl.reconcileJob(ctx, &cluster, request)
+		return impl.reconcileJob(childCtx, &cluster, request)
 	default:
 		return nil, fmt.Errorf("unsupported kind: %s", kind)
 	}
@@ -124,23 +125,28 @@ func (impl LifecycleImplementation) reconcilePod(
 		return nil, err
 	}
 
-	contextLogger := log.FromContext(ctx).WithName("plugin-yandex-extensions-lifecycle").
-		WithValues("podName", pod.Name)
+	logger := logr.FromContextOrDiscard(ctx).WithValues("podName", pod.Name, "podNamespace", pod.Namespace)
+	logger.V(1).Info("Reconciling pod")
 
 	mutatedPod := pod.DeepCopy()
 
-	// TODO: @endevir FIXME: handle cases where no need to inject sidecar !!!!
-	if true {
-		if err := reconcilePodSpecWithPluginSidecar(
-			cluster,
-			&mutatedPod.Spec,
-			"postgres",
-			make([]corev1.EnvVar, 0),
-		); err != nil {
-			return nil, fmt.Errorf("while reconciling pod spec for pod: %w", err)
-		}
-	} else {
-		contextLogger.Debug("No need to mutate instance with no backup & archiving configuration")
+	backupConfig, err := v1beta1.GetBackupConfigForCluster(ctx, impl.Client, cluster)
+	if err != nil {
+		return nil, fmt.Errorf("while getting backup configuration for cluster: %w", err)
+	}
+	if backupConfig == nil {
+		logger.V(1).Info("No need to mutate instance with no backup & archiving configuration")
+		return &lifecycle.OperatorLifecycleResponse{}, nil
+	}
+
+	if err := reconcilePodSpecWithPluginSidecar(
+		cluster,
+		backupConfig,
+		&mutatedPod.Spec,
+		"postgres",
+		make([]corev1.EnvVar, 0),
+	); err != nil {
+		return nil, fmt.Errorf("while reconciling pod spec for pod: %w", err)
 	}
 
 	patch, err := object.CreatePatch(mutatedPod, pod)
@@ -148,7 +154,7 @@ func (impl LifecycleImplementation) reconcilePod(
 		return nil, err
 	}
 
-	contextLogger.Debug("generated patch", "content", string(patch))
+	logger.V(1).Info("Generated patch for pod", "content", string(patch))
 	return &lifecycle.OperatorLifecycleResponse{
 		JsonPatch: patch,
 	}, nil
@@ -159,8 +165,6 @@ func (impl LifecycleImplementation) reconcileJob(
 	cluster *cnpgv1.Cluster,
 	request *lifecycle.OperatorLifecycleRequest,
 ) (*lifecycle.OperatorLifecycleResponse, error) {
-	logger := logr.FromContextOrDiscard(ctx)
-
 	var job batchv1.Job
 	if err := decoder.DecodeObjectStrict(
 		request.GetObjectDefinition(),
@@ -170,15 +174,27 @@ func (impl LifecycleImplementation) reconcileJob(
 		return nil, err
 	}
 
+	logger := logr.FromContextOrDiscard(ctx).WithValues("jobName", job.Name, "jobNamespace", job.Namespace, "jobRole", getCNPGJobRole(&job))
+
 	if getCNPGJobRole(&job) != "full-recovery" {
 		logger.V(1).Info("job is not a recovery job, skipping")
-		return nil, nil
+		return &lifecycle.OperatorLifecycleResponse{}, nil
+	}
+
+	recoveryBackupConfig, err := v1beta1.GetBackupConfigForClusterRecovery(ctx, impl.Client, cluster)
+	if err != nil {
+		return nil, fmt.Errorf("while getting recovery backups configuration for cluster: %w", err)
+	}
+	if recoveryBackupConfig == nil {
+		logger.V(1).Info("No need to mutate instance with no recovery backups configuration")
+		return &lifecycle.OperatorLifecycleResponse{}, nil
 	}
 
 	mutatedJob := job.DeepCopy()
 
 	if err := reconcilePodSpecWithPluginSidecar(
 		cluster,
+		recoveryBackupConfig,
 		&mutatedJob.Spec.Template.Spec,
 		"full-recovery",
 		make([]corev1.EnvVar, 0),
@@ -200,6 +216,7 @@ func (impl LifecycleImplementation) reconcileJob(
 // with appropriate volumes, environment variables and so on
 func reconcilePodSpecWithPluginSidecar(
 	cluster *cnpgv1.Cluster,
+	backupConfig *v1beta1.BackupConfig,
 	spec *corev1.PodSpec,
 	jobRole string,
 	additionalEnvs []corev1.EnvVar,
@@ -241,6 +258,8 @@ func reconcilePodSpecWithPluginSidecar(
 	} else {
 		sidecarConfig.Args = []string{"instance", "--mode", "normal"}
 	}
+
+	sidecarConfig.Resources = backupConfig.Spec.Resources
 
 	// TODO: @endevir implement me
 	// sidecarConfig.StartupProbe = baseProbe.DeepCopy()

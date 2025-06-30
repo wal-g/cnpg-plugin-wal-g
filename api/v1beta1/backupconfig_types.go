@@ -87,6 +87,12 @@ type BackupConfigSpec struct {
 
 	// Backups storage configuration
 	Storage StorageConfig `json:"storage"`
+
+	// Resources for wal-g sidecar configurations
+	//
+	// IMPORTANT: resource changes will NOT trigger auto-update on clusters
+	// Manual rollout with pods recreation needed instead
+	Resources corev1.ResourceRequirements `json:"resources,omitempty"`
 }
 
 type BackupRetentionConfig struct {
