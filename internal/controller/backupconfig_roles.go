@@ -43,6 +43,14 @@ func BuildRoleForBackupConfigs(
 			secretsNames.Put(backupConfigs[i].Spec.Storage.S3.AccessKeyIDRef.Name)
 			secretsNames.Put(backupConfigs[i].Spec.Storage.S3.AccessKeySecretRef.Name)
 		}
+
+		// Add encryption secrets to the list of secrets that need permissions
+		if backupConfigs[i].Spec.Encryption.Method != "" && backupConfigs[i].Spec.Encryption.Method != "none" {
+			encryptionSecretName := v1beta1.GetBackupConfigEncryptionSecretName(&backupConfigs[i])
+			if encryptionSecretName != "" {
+				secretsNames.Put(encryptionSecretName)
+			}
+		}
 	}
 
 	role.Rules = []rbacv1.PolicyRule{
