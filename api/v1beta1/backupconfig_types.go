@@ -100,20 +100,18 @@ type BackupConfigSpec struct {
 
 type BackupEncryptionConfig struct {
 	// Method used for backup encryption.
-	// Currently "libsodium" method supported only
+	// Currently "libsodium" method supported only.
+	// Use "none" or leave empty to disable encryption.
 	Method string `json:"method,omitempty"`
 
-	// Libsodium-specific encryption params
-	LibsodiumConfig *BackupEncryptionLibsodiumConfig `json:"libsodium,omitempty"`
-}
-
-type BackupEncryptionLibsodiumConfig struct {
-	// Secret with key to be used for encryption
-	// Key should be 32-bytes size and passed with HEX encoding (ex. use `openssl rand -hex 32` to create random key)
-	EncryptionKey *corev1.SecretKeySelector `json:"encryptionKeySecret"`
-
-	// Create secret with random key for encryption, if secret with provided name does not exist
-	CreateRandomIfNotExists bool `json:"createRandom"`
+	// Name of the existing secret with entryption keys.
+	//
+	// If empty / not provided - secret will be generated automatically
+	// with name "<backupconfig-name>-encryption" and random key
+	//
+	// For "libsodium" method secret should contain single key "libsodiumKey"
+	// containing hex-encoded 32-bytes length key i.e. created with `openssl rand -hex 32`
+	ExistingEncryptionSecretName string `json:"encryptionSecret,omitempty"`
 }
 
 type BackupRetentionConfig struct {

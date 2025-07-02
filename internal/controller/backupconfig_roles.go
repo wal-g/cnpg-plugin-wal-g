@@ -45,9 +45,11 @@ func BuildRoleForBackupConfigs(
 		}
 
 		// Add encryption secrets to the list of secrets that need permissions
-		if backupConfigs[i].Spec.Encryption.Method == "libsodium" &&
-			backupConfigs[i].Spec.Encryption.LibsodiumConfig != nil {
-			secretsNames.Put(backupConfigs[i].Spec.Encryption.LibsodiumConfig.EncryptionKey.Name)
+		if backupConfigs[i].Spec.Encryption.Method != "" && backupConfigs[i].Spec.Encryption.Method != "none" {
+			encryptionSecretName := v1beta1.GetBackupConfigEncryptionSecretName(&backupConfigs[i])
+			if encryptionSecretName != "" {
+				secretsNames.Put(encryptionSecretName)
+			}
 		}
 	}
 

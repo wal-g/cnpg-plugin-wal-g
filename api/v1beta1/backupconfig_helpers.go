@@ -64,6 +64,15 @@ func GetBackupConfigForClusterRecovery(ctx context.Context, c client.Client, clu
 	return getBackupConfigFromPluginConfig(ctx, c, pluginConfig, cluster.Namespace)
 }
 
+// GetBackupConfigEncryptionSecretName returns secret name
+func GetBackupConfigEncryptionSecretName(b *BackupConfig) string {
+	secretName := b.Spec.Encryption.ExistingEncryptionSecretName
+	if secretName == "" {
+		secretName = fmt.Sprintf("%s-encryption", b.Name)
+	}
+	return secretName
+}
+
 func checkBackupNameMatchesPluginConfig(
 	backupConfigName types.NamespacedName,
 	pluginConfig *cnpgv1.PluginConfiguration,

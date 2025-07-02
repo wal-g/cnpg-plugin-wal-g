@@ -126,11 +126,15 @@ func (r ReconcilerImplementation) Pre(
 	}
 
 	if err := r.ensureRole(ctx, cluster, backupConfigs); err != nil {
-		return nil, err
+		return &reconciler.ReconcilerHooksResult{
+			Behavior: reconciler.ReconcilerHooksResult_BEHAVIOR_REQUEUE,
+		}, err
 	}
 
 	if err := r.ensureRoleBinding(ctx, cluster); err != nil {
-		return nil, err
+		return &reconciler.ReconcilerHooksResult{
+			Behavior: reconciler.ReconcilerHooksResult_BEHAVIOR_REQUEUE,
+		}, err
 	}
 
 	logger.Info("Pre hook reconciliation completed")
@@ -250,19 +254,12 @@ func (r ReconcilerImplementation) ensureEncryptionSecret(
 		return nil
 	}
 
-	// Check if we need to create a random key
-	if !backupConfig.Spec.Encryption.LibsodiumConfig.CreateRandomIfNotExists {
+	// Check if user specified secret - we don't need to create our own one
+	if backupConfig.Spec.Encryption.ExistingEncryptionSecretName != "" {
 		return nil
 	}
 
-	// Check if encryption key secret reference is provided
-	if backupConfig.Spec.Encryption.LibsodiumConfig.EncryptionKey == nil {
-		return fmt.Errorf("encryption key secret reference is required when encryption is enabled")
-	}
-
-	secretName := backupConfig.Spec.Encryption.LibsodiumConfig.EncryptionKey.Name
-	secretKey := backupConfig.Spec.Encryption.LibsodiumConfig.EncryptionKey.Key
-
+	secretName := v1beta1.GetBackupConfigEncryptionSecretName(backupConfig)
 	// Check if the secret already exists
 	secret := &corev1.Secret{}
 	err := r.Client.Get(ctx, client.ObjectKey{
@@ -270,8 +267,8 @@ func (r ReconcilerImplementation) ensureEncryptionSecret(
 		Name:      secretName,
 	}, secret)
 
+	// Secret exists, nothing to do
 	if err == nil {
-		// Secret exists, nothing to do
 		logger.V(1).Info("Encryption key secret already exists", "secretName", secretName)
 		return nil
 	}
@@ -290,12 +287,18 @@ func (r ReconcilerImplementation) ensureEncryptionSecret(
 		Data: map[string][]byte{},
 	}
 
-	// Creating 32-byte random key
-	key, err := generateRandomHexString(32)
-	if err != nil {
-		return fmt.Errorf("failed to generate random data for secret: %w", err)
+	switch backupConfig.Spec.Encryption.Method {
+	case "libsodium":
+		{
+			secretKey := "libsodiumKey"
+			// Creating 32-byte random key
+			key, err := generateRandomHexString(32)
+			if err != nil {
+				return fmt.Errorf("failed to generate random data for secret: %w", err)
+			}
+			newSecret.Data[secretKey] = []byte(key)
+		}
 	}
-	newSecret.Data[secretKey] = []byte(key)
 
 	// Set owner reference to the backup config
 	if err := setOwnerReference(backupConfig, newSecret); err != nil {

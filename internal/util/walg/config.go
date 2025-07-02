@@ -103,10 +103,8 @@ func NewConfigFromBackupConfig(backupConfig *v1beta1.BackupConfigWithSecrets) *C
 
 	// Configure encryption if enabled
 	if backupConfig.Spec.Encryption != nil {
-		if backupConfig.Spec.Encryption.Method == "libsodium" &&
-			backupConfig.Spec.Encryption.LibsodiumConfig != nil &&
-			backupConfig.Spec.Encryption.LibsodiumConfig.EncryptionKeyData != "" {
-			config.WalgLibsodiumKey = backupConfig.Spec.Encryption.LibsodiumConfig.EncryptionKeyData
+		if backupConfig.Spec.Encryption.Method == "libsodium" {
+			config.WalgLibsodiumKey = backupConfig.Spec.Encryption.EncryptionKeyData
 			config.WalgLibsodiumKeyTransform = "hex"
 		}
 	}
@@ -139,7 +137,7 @@ func (c *Config) ToFile(targetFilepath string) error {
 
 // ToEnvMap returns Map with environment variables acceptable by wal-g
 func (c *Config) ToEnvMap() map[string]string {
-	val := reflect.ValueOf(c)
+	val := reflect.ValueOf(*c)
 	typ := val.Type()
 
 	result := make(map[string]string, val.NumField())
