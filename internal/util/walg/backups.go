@@ -110,7 +110,11 @@ func GetBackupsList(
 
 	backupsMetadata := make([]BackupMetadata, 0)
 	if err = json.Unmarshal(result.Stdout(), &backupsMetadata); err != nil {
-		logger.Error(err, "GetBackupsList: cannot unmarshal wal-g backup-list stdout", string(result.Stdout()), "stderr", string(result.Stderr()))
+		logger.Error(
+			err, "GetBackupsList: cannot unmarshal wal-g backup-list",
+			"stdout", string(result.Stdout()),
+			"stderr", string(result.Stderr()),
+		)
 		return nil, fmt.Errorf("cannot unmarshal wal-g backup-list output: %w", err)
 	}
 
