@@ -50,6 +50,7 @@ func main() {
 	rootCmd.AddCommand(
 		cmd.NewInstanceSubcommand(),
 		cmd.NewOperatorCmd(),
+		cmd.NewDumpConfigCmd(),
 	)
 
 	if err := rootCmd.ExecuteContext(ctrl.SetupSignalHandler()); err != nil {
