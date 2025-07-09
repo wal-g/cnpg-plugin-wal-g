@@ -151,6 +151,11 @@ var _ = Describe("RetentionController", func() {
 					}
 				}
 			},
+			Entry("valid hours retention", testCase{
+				retentionValue: "3h",
+				expectError:    false,
+				expectedDiff:   3 * time.Hour,
+			}),
 			Entry("valid days retention", testCase{
 				retentionValue: "7d",
 				expectError:    false,
