@@ -4,7 +4,7 @@ metadata:
   name: cluster-example-pitr
 spec:
   instances: 3
-  imagePullPolicy: Always
+  imagePullPolicy: IfNotPresent
   plugins:
   - name: cnpg-extensions.yandex.cloud
     isWALArchiver: true

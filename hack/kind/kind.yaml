@@ -5,10 +5,21 @@ name: cnpg-wal-g
 networking:
   ipFamily: dual
   disableDefaultCNI: true  # Disable default CNI, use Cilium instead
-  kubeProxyMode: "none"  # Disable kube-proxy in favor of using Cilium kube-proxy replacement
 nodes:
 - role: control-plane
 - role: worker
+  extraMounts:  # add mount with loopback device of limited capacity
+  - hostPath: /run/kind-cnpg-wal-g-volumes-mounts-1
+    containerPath: /var/local-path-provisioner  # Directory used by local-path-provisioner 
 - role: worker
+  extraMounts:  # add mount with loopback device of limited capacity
+  - hostPath: /run/kind-cnpg-wal-g-volumes-mounts-2
+    containerPath: /var/local-path-provisioner  # Directory used by local-path-provisioner 
 - role: worker
+  extraMounts:  # add mount with loopback device of limited capacity
+  - hostPath: /run/kind-cnpg-wal-g-volumes-mounts-3
+    containerPath: /var/local-path-provisioner  # Directory used by local-path-provisioner 
 - role: worker
+  extraMounts:  # add mount with loopback device of limited capacity
+  - hostPath: /run/kind-cnpg-wal-g-volumes-mounts-4
+    containerPath: /var/local-path-provisioner  # Directory used by local-path-provisioner 

@@ -83,7 +83,7 @@ type BackupConfigSpec struct {
 	DeltaMaxSteps int `json:"deltaMaxSteps,omitempty"`
 
 	// Backups retention configuration
-	Retention BackupRetentionConfig `json:"retention"`
+	Retention BackupRetentionConfig `json:"retention,omitempty"`
 
 	// Backups storage configuration
 	Storage StorageConfig `json:"storage"`
@@ -135,11 +135,11 @@ type BackupRetentionConfig struct {
 
 	// DeleteBackupsAfter is the retention policy to be used for backups
 	// and WALs (i.e. '60d'). It is expressed in the form
-	// of `XXu` where `XX` is a positive integer and `u` is in `[dwm]` -
-	// days, weeks, months (i.e. '7d', '4w', '1m').
+	// of `XXu` where `XX` is a positive integer and `u` is in `[dwmh]` -
+	// days, weeks, months, hours (i.e. '7d', '4w', '1m', '6h').
 	// Different units should not be used at the same time
 	// If not specified - backups will not be deleted automatically
-	// +kubebuilder:validation:Pattern=^[1-9][0-9]*[dwm]$
+	// +kubebuilder:validation:Pattern=^[1-9][0-9]*[dwmh]$
 	// +optional
 	DeleteBackupsAfter string `json:"deleteBackupsAfter,omitempty"`
 }

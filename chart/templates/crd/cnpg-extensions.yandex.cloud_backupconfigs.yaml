@@ -141,11 +141,11 @@ spec:
                     description: |-
                       DeleteBackupsAfter is the retention policy to be used for backups
                       and WALs (i.e. '60d'). It is expressed in the form
-                      of `XXu` where `XX` is a positive integer and `u` is in `[dwm]` -
-                      days, weeks, months (i.e. '7d', '4w', '1m').
+                      of `XXu` where `XX` is a positive integer and `u` is in `[dwmh]` -
+                      days, weeks, months, hours (i.e. '7d', '4w', '1m', '6h').
                       Different units should not be used at the same time
                       If not specified - backups will not be deleted automatically
-                    pattern: ^[1-9][0-9]*[dwm]$
+                    pattern: ^[1-9][0-9]*[dwmh]$
                     type: string
                   ignoreForManualBackups:
                     default: false
@@ -266,7 +266,6 @@ spec:
                   bytes per second.
                 type: integer
             required:
-            - retention
             - storage
             type: object
           status:

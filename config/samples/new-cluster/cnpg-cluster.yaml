@@ -4,7 +4,6 @@ metadata:
   name: cluster-example
 spec:
   instances: 3
-  imagePullPolicy: Always
   plugins:
   - name: cnpg-extensions.yandex.cloud
     isWALArchiver: true
@@ -16,3 +15,18 @@ spec:
     pg_hba:
       - local all all trust
       - local replication all trust
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: ScheduledBackup
+metadata:
+  name: backup-example
+spec:
+  schedule: "0 */30 * * * *"  # Each 30 minutes create backup
+  backupOwnerReference: self
+  cluster:
+    name: cluster-example
+  pluginConfiguration:
+    name: cnpg-extensions.yandex.cloud
+    parameters:
+      backupConfig: example-backup-config
+  immediate: true
