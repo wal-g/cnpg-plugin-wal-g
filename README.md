@@ -24,7 +24,7 @@ This plugin adds backup and restore functionality to [CloudNativePG](https://clo
     ```sh
     # Install CNPG
     kubectl apply --server-side -f \
-    https://raw.githubusercontent.com/cloudnative-pg/cloudnative-pg/release-1.25/releases/cnpg-1.26.0.yaml
+    https://raw.githubusercontent.com/cloudnative-pg/cloudnative-pg/release-1.26/releases/cnpg-1.26.0.yaml
 
     # Install cert-manager
     kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.18.2/cert-manager.yaml
@@ -33,11 +33,11 @@ This plugin adds backup and restore functionality to [CloudNativePG](https://clo
 2) Install latest plugin release into `cnpg-system` namespace (that should be the same namespace where `cloudnative-pg` installed)
 - via Helm:
     ```sh
-    helm -n cnpg-system upgrade --install oci://ghcr.io/wal-g/cnpg-plugin-wal-g:0.2.0-helm-chart
+    helm -n cnpg-system upgrade --install oci://ghcr.io/wal-g/cnpg-plugin-wal-g:0.1.1-helm-chart
     ```
 - or via static manifest
     ```sh
-    kubectl apply -f https://github.com/
+    kubectl apply -f https://raw.githubusercontent.com/wal-g/cnpg-plugin-wal-g/v0.1.1/dist/install.yaml
     ```
 
 3) **Adjust** sample manifests from `config/samples/new-cluster` and apply
