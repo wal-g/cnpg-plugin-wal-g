@@ -4,12 +4,12 @@ metadata:
   name: cluster-example-from-backup
 spec:
   instances: 3
-  imagePullPolicy: Always
+  imagePullPolicy: IfNotPresent
   plugins:
   - name: cnpg-extensions.yandex.cloud
     isWALArchiver: true
     parameters:
-      someParameterName: some-parameter-value
+      someParameterName: new-backup-config
   storage:
     size: 1Gi
   bootstrap:
@@ -24,4 +24,46 @@ spec:
     plugin:
       name: cnpg-extensions.yandex.cloud
       parameters:
-        someParameterName: some-parameter-value
+        backupConfig: example-backup-config
+---
+apiVersion: cnpg-extensions.yandex.cloud/v1beta1
+kind: BackupConfig
+metadata:
+  name: new-backup-config
+spec:
+  downloadConcurrency: 4
+  downloadFileRetries: 15
+  uploadDiskRateLimitBytesPerSecond: 7864320
+  uploadNetworkRateLimitBytesPerSecond: 536870912
+  uploadConcurrency: 4
+  uploadDiskConcurrency: 4
+  deltaMaxSteps: 7
+  retention:
+    ignoreForManualBackups: true
+    minBackupsToKeep: 5
+    deleteBackupsAfter: 1d
+  storage:
+    type: s3
+    s3:
+      prefix: s3://BUCKET_NAME/backups
+      region: ru-central1
+      endpointUrl: https://storage.yandexcloud.net
+      forcePathStyle: false
+      storageClass: STANDARD
+      accessKeyId:
+        name: "example-s3-credentials"
+        key: "accessKey"
+      accessKeySecret:
+        name: "example-s3-credentials"
+        key: "secret"
+  encryption:
+    method: libsodium
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: example-s3-credentials
+type: Opaque
+stringData:
+  accessKey: CHANGEME
+  secret: CHANGEME

@@ -13,7 +13,7 @@ spec:
   storage:
     type: s3
     s3:
-      prefix: s3://endevir-test1/backups
+      prefix: s3://BUCKET_NAME/backups
       region: ru-central1
       endpointUrl: https://storage.yandexcloud.net
       forcePathStyle: false
@@ -24,6 +24,12 @@ spec:
       accessKeySecret:
         name: "example-s3-credentials"
         key: "secret"
+  retention:
+    ignoreForManualBackups: true
+    minBackupsToKeep: 5
+    deleteBackupsAfter: 1d
+  encryption:
+    method: libsodium
 ---
 apiVersion: v1
 kind: Secret

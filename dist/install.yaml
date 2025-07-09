@@ -1,3 +1,11 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/name: cnpg-plugin-wal-g
+    control-plane: controller-manager
+  name: cnpg-system
 ---
 apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
@@ -276,3 +284,455 @@ spec:
     storage: true
     subresources:
       status: {}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/name: cnpg-plugin-wal-g
+  name: cnpg-plugin-wal-g-controller-manager
+  namespace: cnpg-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/name: cnpg-plugin-wal-g
+  name: cnpg-plugin-wal-g-leader-election-role
+  namespace: cnpg-system
+rules:
+- apiGroups:
+  - ""
+  resources:
+  - configmaps
+  verbs:
+  - get
+  - list
+  - watch
+  - create
+  - update
+  - patch
+  - delete
+- apiGroups:
+  - coordination.k8s.io
+  resources:
+  - leases
+  verbs:
+  - get
+  - list
+  - watch
+  - create
+  - update
+  - patch
+  - delete
+- apiGroups:
+  - ""
+  resources:
+  - events
+  verbs:
+  - create
+  - patch
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/name: cnpg-plugin-wal-g
+  name: cnpg-plugin-wal-g-backupconfig-admin-role
+rules:
+- apiGroups:
+  - cnpg-extensions.yandex.cloud
+  resources:
+  - backupconfigs
+  verbs:
+  - '*'
+- apiGroups:
+  - cnpg-extensions.yandex.cloud
+  resources:
+  - backupconfigs/status
+  verbs:
+  - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/name: cnpg-plugin-wal-g
+  name: cnpg-plugin-wal-g-backupconfig-editor-role
+rules:
+- apiGroups:
+  - cnpg-extensions.yandex.cloud
+  resources:
+  - backupconfigs
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - cnpg-extensions.yandex.cloud
+  resources:
+  - backupconfigs/status
+  verbs:
+  - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/name: cnpg-plugin-wal-g
+  name: cnpg-plugin-wal-g-backupconfig-viewer-role
+rules:
+- apiGroups:
+  - cnpg-extensions.yandex.cloud
+  resources:
+  - backupconfigs
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - cnpg-extensions.yandex.cloud
+  resources:
+  - backupconfigs/status
+  verbs:
+  - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: cnpg-plugin-wal-g-manager-role
+rules:
+- apiGroups:
+  - ""
+  resources:
+  - secrets
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - watch
+- apiGroups:
+  - cnpg-extensions.yandex.cloud
+  resources:
+  - backupconfigs
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - cnpg-extensions.yandex.cloud
+  resources:
+  - backupconfigs/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - cnpg-extensions.yandex.cloud
+  resources:
+  - backupconfigs/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
+  - postgresql.cnpg.io
+  resources:
+  - backups
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - postgresql.cnpg.io
+  resources:
+  - backups/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - postgresql.cnpg.io
+  resources:
+  - backups/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
+  - postgresql.cnpg.io
+  resources:
+  - clusters
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - rbac.authorization.k8s.io
+  resources:
+  - rolebindings
+  - roles
+  verbs:
+  - create
+  - get
+  - list
+  - patch
+  - update
+  - watch
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: cnpg-plugin-wal-g-metrics-auth-role
+rules:
+- apiGroups:
+  - authentication.k8s.io
+  resources:
+  - tokenreviews
+  verbs:
+  - create
+- apiGroups:
+  - authorization.k8s.io
+  resources:
+  - subjectaccessreviews
+  verbs:
+  - create
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: cnpg-plugin-wal-g-metrics-reader
+rules:
+- nonResourceURLs:
+  - /metrics
+  verbs:
+  - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/name: cnpg-plugin-wal-g
+  name: cnpg-plugin-wal-g-leader-election-rolebinding
+  namespace: cnpg-system
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: cnpg-plugin-wal-g-leader-election-role
+subjects:
+- kind: ServiceAccount
+  name: cnpg-plugin-wal-g-controller-manager
+  namespace: cnpg-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/name: cnpg-plugin-wal-g
+  name: cnpg-plugin-wal-g-manager-rolebinding
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cnpg-plugin-wal-g-manager-role
+subjects:
+- kind: ServiceAccount
+  name: cnpg-plugin-wal-g-controller-manager
+  namespace: cnpg-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: cnpg-plugin-wal-g-metrics-auth-rolebinding
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cnpg-plugin-wal-g-metrics-auth-role
+subjects:
+- kind: ServiceAccount
+  name: cnpg-plugin-wal-g-controller-manager
+  namespace: cnpg-system
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/name: cnpg-plugin-wal-g
+    control-plane: controller-manager
+  name: cnpg-plugin-wal-g-metrics-service
+  namespace: cnpg-system
+spec:
+  ports:
+  - name: https
+    port: 8443
+    protocol: TCP
+    targetPort: 8443
+  selector:
+    app.kubernetes.io/name: cnpg-plugin-wal-g
+    control-plane: controller-manager
+---
+apiVersion: v1
+kind: Service
+metadata:
+  annotations:
+    cnpg.io/pluginClientSecret: cnpg-plugin-wal-g-client-tls
+    cnpg.io/pluginPort: "9090"
+    cnpg.io/pluginServerSecret: cnpg-plugin-wal-g-server-tls
+  labels:
+    cnpg.io/pluginName: cnpg-extensions.yandex.cloud
+  name: cnpg-plugin-wal-g-service
+  namespace: cnpg-system
+spec:
+  ports:
+  - port: 9090
+    protocol: TCP
+    targetPort: 9090
+  selector:
+    app.kubernetes.io/name: cnpg-plugin-wal-g
+  sessionAffinity: None
+  type: ClusterIP
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/name: cnpg-plugin-wal-g
+    control-plane: controller-manager
+  name: cnpg-plugin-wal-g-controller-manager
+  namespace: cnpg-system
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: cnpg-plugin-wal-g
+      control-plane: controller-manager
+  template:
+    metadata:
+      annotations:
+        kubectl.kubernetes.io/default-container: manager
+      labels:
+        app.kubernetes.io/name: cnpg-plugin-wal-g
+        control-plane: controller-manager
+    spec:
+      containers:
+      - args:
+        - --metrics-bind-address=:8443
+        - operator
+        - --leader-elect
+        - --health-probe-bind-address=:8081
+        - --cnpg-i-bind-address=:9090
+        - --cnpg-i-cert-path=/tls/cnpgi-server
+        - --cnpg-i-client-cert-path=/tls/cnpgi-client
+        - --cnpg-i-pg-sidecar-image=$(SIDECAR_IMAGE)
+        env:
+        - name: SIDECAR_IMAGE
+          value: ${IMG}:${TAG}
+        image: ${IMG}:${TAG}
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: 8081
+          initialDelaySeconds: 15
+          periodSeconds: 20
+        name: manager
+        ports: []
+        readinessProbe:
+          httpGet:
+            path: /readyz
+            port: 8081
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        resources:
+          limits:
+            cpu: 500m
+            memory: 128Mi
+          requests:
+            cpu: 10m
+            memory: 64Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+        volumeMounts:
+        - mountPath: /tls/cnpgi-server
+          name: cnpgi-server
+        - mountPath: /tls/cnpgi-client
+          name: cnpgi-client
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      serviceAccountName: cnpg-plugin-wal-g-controller-manager
+      terminationGracePeriodSeconds: 10
+      volumes:
+      - name: cnpgi-server
+        secret:
+          secretName: cnpg-plugin-wal-g-server-tls
+      - name: cnpgi-client
+        secret:
+          secretName: cnpg-plugin-wal-g-client-tls
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: cnpg-plugin-wal-g-client
+  namespace: cnpg-system
+spec:
+  commonName: cnpg-plugin-wal-g-client
+  duration: 2160h
+  isCA: false
+  issuerRef:
+    group: cert-manager.io
+    kind: Issuer
+    name: cnpg-plugin-wal-g-selfsigned-issuer
+  renewBefore: 360h
+  secretName: cnpg-plugin-wal-g-client-tls
+  usages:
+  - client auth
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: cnpg-plugin-wal-g-server
+  namespace: cnpg-system
+spec:
+  commonName: cnpg-plugin-wal-g
+  dnsNames:
+  - cnpg-plugin-wal-g
+  - cnpg-plugin-wal-g-service
+  duration: 2160h
+  isCA: false
+  issuerRef:
+    group: cert-manager.io
+    kind: Issuer
+    name: cnpg-plugin-wal-g-selfsigned-issuer
+  renewBefore: 360h
+  secretName: cnpg-plugin-wal-g-server-tls
+  usages:
+  - server auth
+---
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: cnpg-plugin-wal-g-selfsigned-issuer
+  namespace: cnpg-system
+spec:
+  selfSigned: {}
