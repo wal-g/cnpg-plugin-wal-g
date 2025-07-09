@@ -2,9 +2,52 @@
 
 This plugin adds backup and restore functionality to [CloudNativePG](https://cloudnative-pg.io/) by leveraging [WAL-G](https://github.com/wal-g/wal-g). It communicates with CloudNativePG through the `cnpg-i` interface, enabling seamless integration for managing PostgreSQL backups and restores in Kubernetes environments.
 
-> ⚠️ **Caution:** This project is currently under active development and is **not yet ready for production use**. Expect breaking changes and incomplete functionality.
+## Features
 
-## Getting Started
+- [x] WAL archivation/restoration
+- [x] Full and incremental basebackups creation
+- [x] Restore to any `wal-g`-created backup including PITR
+- [x] Retention and auto-removal of outdated backups and WALs
+- [x] Encryption via `libsodium`
+- [x] S3-compatible storage support
+
+## Dependencies
+
+- [Kubernetes](https://kubernetes.io/releases/) version 1.11 or higher
+- [CloudNative PG](https://cloudnative-pg.io/releases/) version 1.25 or higher
+- [Cert-manager](https://cert-manager.io/docs/releases/) version 1.13 or higher
+
+## Quickstart
+
+1) Install latest stable `cloudnative-pg` release and `cert-manager` (later is needed to generate certificates for secure communication between CNPG and plugin)
+
+    ```sh
+    # Install CNPG
+    kubectl apply --server-side -f \
+    https://raw.githubusercontent.com/cloudnative-pg/cloudnative-pg/release-1.25/releases/cnpg-1.26.0.yaml
+
+    # Install cert-manager
+    kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.18.2/cert-manager.yaml
+    ```
+
+2) Install latest plugin release into `cnpg-system` namespace (that should be the same namespace where `cloudnative-pg` installed)
+- via Helm:
+    ```sh
+    helm -n cnpg-system upgrade --install oci://ghcr.io/wal-g/cnpg-plugin-wal-g:0.2.0-helm-chart
+    ```
+- or via static manifest
+    ```sh
+    kubectl apply -f https://github.com/
+    ```
+
+3) **Adjust** sample manifests from `config/samples/new-cluster` and apply
+    ```sh
+    kubectl apply -f ./config/samples/new-cluster
+    ```
+
+You should encounter new CNPG `Cluster` with encrypted WAL archivation and periodic auto-backups performed by plugin and `WAL-G`.
+
+## Development
 
 ### Prerequisites
 - go version v1.23.0+
@@ -38,10 +81,10 @@ make deploy-kind
 ### Remove && cleanup Kind cluster
 
 ```sh
-./hack/kind/cleanup.sh
+./hack/kind/cleanup_kind.sh
 ```
 
-### To Deploy on the external cluster
+### Run extension with the external cluster
 **Build and push your image to the location specified by `IMG`:**
 
 ```sh
@@ -71,7 +114,7 @@ privileges or be logged in as admin.
 You can apply the samples (examples) from the config/sample:
 
 ```sh
-kubectl apply -k config/samples/
+kubectl apply -f config/samples/new-cluster
 ```
 
 >**NOTE**: Ensure that the samples has default values to test it out.
@@ -80,7 +123,7 @@ kubectl apply -k config/samples/
 **Delete the instances (CRs) from the cluster:**
 
 ```sh
-kubectl delete -k config/samples/
+kubectl delete -f config/samples/new-cluster
 ```
 
 **Delete the APIs(CRDs) from the cluster:**
@@ -93,30 +136,4 @@ make uninstall
 
 ```sh
 make undeploy
-```
-
-## Project Distribution
-
-Following the options to release and provide this solution to the users.
-
-### By providing a bundle with all YAML files
-
-1. Build the installer for the image built and published in the registry:
-
-```sh
-make build-installer IMG=<some-registry>/cnpg-plugin-wal-g:tag
-```
-
-**NOTE:** The makefile target mentioned above generates an 'install.yaml'
-file in the dist directory. This file contains all the resources built
-with Kustomize, which are necessary to install this project without its
-dependencies.
-
-2. Using the installer
-
-Users can just run 'kubectl apply -f <URL for YAML BUNDLE>' to install
-the project, i.e.:
-
-```sh
-kubectl apply -f https://raw.githubusercontent.com/<org>/cnpg-plugin-wal-g/<tag or branch>/dist/install.yaml
 ```
