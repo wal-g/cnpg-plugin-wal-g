@@ -36,7 +36,6 @@ type Config struct {
 	AWSSecretAccessKey                string `json:"AWS_SECRET_ACCESS_KEY,omitempty"`
 	GoDebug                           string `json:"GODEBUG,omitempty"`
 	GoMaxProcs                        int    `json:"GOMAXPROCS,omitempty"`
-	PgAppName                         string `json:"PGAPPNAME,omitempty"`
 	PgHost                            string `json:"PGHOST,omitempty"`
 	PgUser                            string `json:"PGUSER,omitempty"`
 	S3LogLevel                        string `json:"S3_LOG_LEVEL,omitempty"`
@@ -68,7 +67,6 @@ type Config struct {
 func NewConfigWithDefaults() Config {
 	return Config{
 		GoMaxProcs:                        5,
-		PgAppName:                         "wal-g",
 		PgHost:                            "/controller/run",
 		PgUser:                            "postgres",
 		TotalBgUploadedLimit:              32,
@@ -121,7 +119,7 @@ func NewConfigFromBackupConfig(backupConfig *v1beta1.BackupConfigWithSecrets) *C
 
 // ToFile dumps config to a file in JSON format acceptable by wal-g via --config param
 func (c *Config) ToFile(targetFilepath string) error {
-	bytes, err := json.Marshal(c)
+	bytes, err := json.MarshalIndent(c, "", "\t")
 	if err != nil {
 		return err
 	}

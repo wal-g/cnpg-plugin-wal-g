@@ -21,11 +21,15 @@ import (
 	"fmt"
 	"strings"
 
+	cnpgv1 "github.com/cloudnative-pg/cloudnative-pg/api/v1"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 	"github.com/wal-g/cnpg-plugin-wal-g/api/v1beta1"
 	"github.com/wal-g/cnpg-plugin-wal-g/internal/util/walg"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
+	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/config"
 )
@@ -36,21 +40,39 @@ func NewDumpConfigCmd() *cobra.Command {
 		Use:   "dump-config",
 		Short: "Dumps wal-g configuration from a BackupConfig to a file",
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			return runDumpConfig(cmd.Context())
+			scheme := runtime.NewScheme()
+			utilruntime.Must(clientgoscheme.AddToScheme(scheme))
+			utilruntime.Must(cnpgv1.AddToScheme(scheme))
+			utilruntime.Must(v1beta1.AddToScheme(scheme))
+
+			// Create a Kubernetes client
+			k8sConfig, err := config.GetConfig()
+			if err != nil {
+				return fmt.Errorf("failed to get Kubernetes config: %w", err)
+			}
+
+			k8sClient, err := client.New(k8sConfig, client.Options{
+				Scheme: scheme,
+			})
+			if err != nil {
+				return fmt.Errorf("failed to create Kubernetes client: %w", err)
+			}
+
+			return runDumpConfig(cmd.Context(), k8sClient)
 		},
 	}
 
-	cmd.Flags().String("backup-config", "", "Name of the BackupConfig resource in format [namespace/]name (defaults to default namespace if not specified)")
+	cmd.Flags().StringP("backup-config", "c", "", "Name of the BackupConfig resource in format [namespace/]name (defaults to default namespace if not specified)")
 	_ = viper.BindPFlag("backup-config", cmd.Flags().Lookup("backup-config"))
 	_ = cmd.MarkFlagRequired("backup-config")
 
-	cmd.Flags().String("output", "walg-config.json", "Output file path")
+	cmd.Flags().StringP("output", "o", "/tmp/walg-config.json", "Output file path")
 	_ = viper.BindPFlag("output", cmd.Flags().Lookup("output"))
 
 	return cmd
 }
 
-func runDumpConfig(ctx context.Context) error {
+func runDumpConfig(ctx context.Context, client client.Client) error {
 	backupConfigParam := viper.GetString("backup-config")
 	if backupConfigParam == "" {
 		return fmt.Errorf("backup-config parameter is required")
@@ -71,23 +93,12 @@ func runDumpConfig(ctx context.Context) error {
 
 	outputPath := viper.GetString("output")
 	if outputPath == "" {
-		outputPath = "walg-config.json"
-	}
-
-	// Create a Kubernetes client
-	k8sConfig, err := config.GetConfig()
-	if err != nil {
-		return fmt.Errorf("failed to get Kubernetes config: %w", err)
-	}
-
-	k8sClient, err := client.New(k8sConfig, client.Options{})
-	if err != nil {
-		return fmt.Errorf("failed to create Kubernetes client: %w", err)
+		outputPath = "/tmp/walg-config.json"
 	}
 
 	// Get the BackupConfig
 	backupConfig := &v1beta1.BackupConfig{}
-	err = k8sClient.Get(ctx, types.NamespacedName{
+	err := client.Get(ctx, types.NamespacedName{
 		Namespace: namespace,
 		Name:      backupConfigName,
 	}, backupConfig)
@@ -96,7 +107,7 @@ func runDumpConfig(ctx context.Context) error {
 	}
 
 	// Get the BackupConfig with secrets
-	backupConfigWithSecrets, err := backupConfig.PrefetchSecretsData(ctx, k8sClient)
+	backupConfigWithSecrets, err := backupConfig.PrefetchSecretsData(ctx, client)
 	if err != nil {
 		return fmt.Errorf("failed to prefetch secrets for BackupConfig %s/%s: %w", namespace, backupConfigName, err)
 	}
@@ -110,6 +121,6 @@ func runDumpConfig(ctx context.Context) error {
 		return fmt.Errorf("failed to write config to file %s: %w", outputPath, err)
 	}
 
-	fmt.Printf("Successfully wrote wal-g configuration from BackupConfig %s to %s\n", backupConfigParam, outputPath)
+	fmt.Printf("Successfully wrote wal-g configuration from BackupConfig %s in namespace %s to file %s\n", backupConfigName, namespace, outputPath)
 	return nil
 }
