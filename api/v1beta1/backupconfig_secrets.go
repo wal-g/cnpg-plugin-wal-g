@@ -38,10 +38,17 @@ type StorageConfigWithSecrets struct {
 	S3 *S3StorageConfigWithSecrets `json:"s3,omitempty"` // S3-specific parameters
 }
 
+// BackupEncryptionConfigWithSecrets defines encryption configuration with embedded secrets data
+type BackupEncryptionConfigWithSecrets struct {
+	BackupEncryptionConfig
+	EncryptionKeyData string
+}
+
 // backupConfigSpec defines the BackupConfigSpec extended with secrets data
 type BackupConfigSpecWithSecrets struct {
 	BackupConfigSpec
-	Storage StorageConfigWithSecrets `json:"storage"`
+	Storage    StorageConfigWithSecrets           `json:"storage"`
+	Encryption *BackupEncryptionConfigWithSecrets `json:"encryption,omitempty"`
 }
 
 // BackupConfigWithSecrets defines the BackupConfig with embedded secrets data (ex. S3 credentials)
@@ -71,10 +78,49 @@ func (b *BackupConfig) makeBackupConfigSpecWithPrefilledSecrets(
 		return BackupConfigSpecWithSecrets{}, err
 	}
 
+	encryption, err := b.makeEncryptionConfigWithPrefilledSecrets(ctx, c)
+	if err != nil {
+		return BackupConfigSpecWithSecrets{}, err
+	}
+
 	return BackupConfigSpecWithSecrets{
 		BackupConfigSpec: *b.Spec.DeepCopy(),
 		Storage:          storage,
+		Encryption:       encryption,
 	}, nil
+}
+
+func (b *BackupConfig) makeEncryptionConfigWithPrefilledSecrets(
+	ctx context.Context,
+	c client.Client,
+) (*BackupEncryptionConfigWithSecrets, error) {
+	newCfg := &BackupEncryptionConfigWithSecrets{BackupEncryptionConfig: *b.Spec.Encryption.DeepCopy()}
+
+	secretName := b.Spec.Encryption.ExistingEncryptionSecretName
+	if secretName == "" {
+		secretName = fmt.Sprintf("%s-encryption", b.Name)
+	}
+
+	switch b.Spec.Encryption.Method {
+	case "libsodium": // For libsodium we need to extract only encryption key
+		{
+			secretKeyName := "libsodiumKey"
+			encryptionKey, err := extractValueFromSecret(ctx, c, &v1.SecretKeySelector{
+				LocalObjectReference: v1.LocalObjectReference{Name: secretName},
+				Key:                  secretKeyName,
+			}, b.Namespace)
+			if err != nil {
+				return nil, err
+			}
+			newCfg.EncryptionKeyData = string(encryptionKey)
+		}
+	case "", "none": // Do not fill anything if encryption method is none or not specified
+		return newCfg, nil
+	default:
+		return nil, fmt.Errorf("unknown encryption method \"%s\"", b.Spec.Encryption.Method)
+	}
+
+	return newCfg, nil
 }
 
 func (b *BackupConfig) makeStorageConfigWithPrefilledSecrets(

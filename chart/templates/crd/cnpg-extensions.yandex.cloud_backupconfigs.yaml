@@ -51,6 +51,26 @@ spec:
                 description: 'How many times failed file will be retried during backup
                   / wal download. Default: 15.'
                 type: integer
+              encryption:
+                description: Backups encryption configuration
+                properties:
+                  encryptionSecret:
+                    description: |-
+                      Name of the existing secret with entryption keys.
+
+                      If empty / not provided - secret will be generated automatically
+                      with name "<backupconfig-name>-encryption" and random key
+
+                      For "libsodium" method secret should contain single key "libsodiumKey"
+                      containing hex-encoded 32-bytes length key i.e. created with `openssl rand -hex 32`
+                    type: string
+                  method:
+                    description: |-
+                      Method used for backup encryption.
+                      Currently "libsodium" method supported only.
+                      Use "none" or leave empty to disable encryption.
+                    type: string
+                type: object
               resources:
                 description: |-
                   Resources for wal-g sidecar configurations
