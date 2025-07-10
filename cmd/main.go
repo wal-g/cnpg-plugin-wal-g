@@ -33,8 +33,7 @@ func main() {
 
 	// logFlags := &log.Flags{}
 	rootCmd := &cobra.Command{
-		Use:          "cnpg-plugin-wal-g [cmd]",
-		SilenceUsage: true,
+		Use: "cnpg-plugin-wal-g [cmd]",
 	}
 
 	_ = viper.BindEnv("namespace", "NAMESPACE")       // K8s namespace where instance is running

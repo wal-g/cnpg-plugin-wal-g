@@ -38,7 +38,8 @@ import (
 func NewDumpConfigCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "dump-config",
-		Short: "Dumps wal-g configuration from a BackupConfig to a file",
+		Short: "Dumps BackupConfig wal-g configuration to file",
+		Long:  "This allows to run wal-g commands manually like 'wal-g config walg.json backup-list' for debugging",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			scheme := runtime.NewScheme()
 			utilruntime.Must(clientgoscheme.AddToScheme(scheme))
@@ -62,11 +63,12 @@ func NewDumpConfigCmd() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringP("backup-config", "c", "", "Name of the BackupConfig resource in format [namespace/]name (defaults to default namespace if not specified)")
+	cmd.Flags().StringP("backup-config", "c", "",
+		"BackupConfig resource in format [namespace/]name (using default namespace if not specified)")
 	_ = viper.BindPFlag("backup-config", cmd.Flags().Lookup("backup-config"))
 	_ = cmd.MarkFlagRequired("backup-config")
 
-	cmd.Flags().StringP("output", "o", "/tmp/walg-config.json", "Output file path")
+	cmd.Flags().StringP("output", "o", "walg.json", "Output file path")
 	_ = viper.BindPFlag("output", cmd.Flags().Lookup("output"))
 
 	return cmd
@@ -93,7 +95,7 @@ func runDumpConfig(ctx context.Context, client client.Client) error {
 
 	outputPath := viper.GetString("output")
 	if outputPath == "" {
-		outputPath = "/tmp/walg-config.json"
+		outputPath = "walg.json"
 	}
 
 	// Get the BackupConfig
@@ -121,6 +123,9 @@ func runDumpConfig(ctx context.Context, client client.Client) error {
 		return fmt.Errorf("failed to write config to file %s: %w", outputPath, err)
 	}
 
-	fmt.Printf("Successfully wrote wal-g configuration from BackupConfig %s in namespace %s to file %s\n", backupConfigName, namespace, outputPath)
+	fmt.Printf(
+		"Successfully wrote wal-g configuration from BackupConfig %s in namespace %s to file %s\n",
+		backupConfigName, namespace, outputPath,
+	)
 	return nil
 }

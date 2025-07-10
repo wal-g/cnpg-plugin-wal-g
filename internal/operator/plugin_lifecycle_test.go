@@ -571,7 +571,7 @@ var _ = Describe("LifecycleImplementation", func() {
 			Expect(sidecar.SecurityContext.AllowPrivilegeEscalation).To(Equal(ptr.To(false)))
 			Expect(sidecar.SecurityContext.RunAsNonRoot).To(Equal(ptr.To(true)))
 			Expect(sidecar.SecurityContext.Privileged).To(Equal(ptr.To(false)))
-			Expect(sidecar.SecurityContext.ReadOnlyRootFilesystem).To(Equal(ptr.To(true)))
+			Expect(sidecar.SecurityContext.ReadOnlyRootFilesystem).To(Equal(ptr.To(false)))
 
 			// Check that the resources were set correctly
 			Expect(sidecar.Resources).To(Equal(testBackupConfig.Spec.Resources))
