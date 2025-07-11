@@ -2,13 +2,11 @@
 # This file is used to track the info used to scaffold your project
 # and allow the plugins properly work.
 # More info: https://book.kubebuilder.io/reference/project-config.html
-
 domain: cnpg-extensions.yandex.cloud
 layout:
 - go.kubebuilder.io/v4
 projectName: cnpg-plugin-wal-g
 repo: github.com/wal-g/cnpg-plugin-wal-g
-version: "3"
 resources:
 - api:
     crdVersion: v1beta1
@@ -19,3 +17,8 @@ resources:
   kind: BackupConfig
   path: github.com/wal-g/cnpg-plugin-wal-g/api/v1beta1
   version: v1beta1
+  webhooks:
+    defaulting: true
+    validation: true
+    webhookVersion: v1
+version: "3"
