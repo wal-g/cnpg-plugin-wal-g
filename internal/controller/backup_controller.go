@@ -432,12 +432,11 @@ func buildDependentBackupsForBackup(
 	// Sort Backup list by name to make result idempotent between runs
 	slices.SortFunc(result, func(a, b cnpgv1.Backup) int {
 		if a.Name < b.Name {
-			return 1
-		} else if a.Name == b.Name {
-			return 0
-		} else {
 			return -1
+		} else if a.Name > b.Name {
+			return 1
 		}
+		return 0
 	})
 
 	return result
