@@ -24,8 +24,9 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
-	"github.com/wal-g/cnpg-plugin-wal-g/internal/cmd"
 	ctrl "sigs.k8s.io/controller-runtime"
+
+	"github.com/wal-g/cnpg-plugin-wal-g/internal/cmd"
 )
 
 func main() {
