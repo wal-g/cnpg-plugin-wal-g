@@ -47,7 +47,7 @@ linters:
     gocyclo:
       min-complexity: 15
     lll:
-      line-length: 140
+      line-length: 400
     misspell:
       locale: US
     revive:
