@@ -195,12 +195,8 @@ func DeleteBackup(
 // For example, if A depends on the current backup, and B depends on A, then B is an indirect dependency
 // of the current backup and will be included in the result if includeIndirect is true.
 func (m *BackupMetadata) GetDependentBackups(ctx context.Context, backupList []BackupMetadata, includeIndirect bool) []BackupMetadata {
-	logger := logr.FromContextOrDiscard(ctx)
-	logger.V(1).Info("Finding dependent backups", "backupName", m.BackupName, "includeIndirect", includeIndirect)
-
 	// Find direct dependencies
 	directDependencies := findDirectDependencies(m, backupList)
-	logger.V(1).Info("Found direct dependents", "backupName", m.BackupName, "dependents", directDependencies)
 
 	// If we don't need indirect dependencies, return just the direct ones
 	if !includeIndirect {

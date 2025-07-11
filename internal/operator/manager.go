@@ -208,7 +208,7 @@ func Start(ctx context.Context) error {
 	// Create and add the RetentionController
 	retentionController := controller.NewRetentionController(
 		mgr.GetClient(),
-		3*time.Hour, // Run retention check once per 3 hours
+		10*time.Minute, // Run retention check each 10 minutes
 	)
 	if err := mgr.Add(retentionController); err != nil {
 		setupLog.Error(err, "unable to add controller", "controller", "RetentionController")

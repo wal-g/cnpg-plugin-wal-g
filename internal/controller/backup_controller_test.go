@@ -18,14 +18,12 @@ package controller
 
 import (
 	"context"
-	"time"
 
 	cnpgv1 "github.com/cloudnative-pg/cloudnative-pg/api/v1"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	v1beta1 "github.com/wal-g/cnpg-plugin-wal-g/api/v1beta1"
 	"github.com/wal-g/cnpg-plugin-wal-g/internal/common"
-	"github.com/wal-g/cnpg-plugin-wal-g/internal/util/walg"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -169,22 +167,6 @@ func createTestBackup(name, namespace, clusterName string, backupID string, with
 	}
 
 	return backup
-}
-
-// Helper function to create WAL-G backup metadata
-func createBackupMetadata(backupName string, isIncremental bool) walg.BackupMetadata {
-	metadata := walg.BackupMetadata{
-		BackupName:       backupName,
-		StartTimeString:  time.Now().Format(time.RFC3339Nano),
-		FinishTimeString: time.Now().Add(time.Minute).Format(time.RFC3339Nano),
-		WalFileName:      "000000010000000100000001",
-	}
-
-	if isIncremental {
-		metadata.BackupName = "base_000000010000000100000002_D_000000010000000100000001"
-	}
-
-	return metadata
 }
 
 var _ = Describe("BackupReconciler", func() {
@@ -398,15 +380,8 @@ var _ = Describe("BackupReconciler", func() {
 
 			backups := []cnpgv1.Backup{*backup, *backup2, *backup3}
 
-			// Create WAL-G backups
-			walgBackup1 := createBackupMetadata("base_000000010000000100000001", false)
-			walgBackup2 := createBackupMetadata("base_000000010000000100000002_D_000000010000000100000001", true)
-			walgBackup3 := createBackupMetadata("base_000000010000000100000003", false)
-
-			walgBackups := []walg.BackupMetadata{walgBackup1, walgBackup2, walgBackup3}
-
 			// Call buildDependentBackupsForBackup
-			dependentBackups := buildDependentBackupsForBackup(testCtx, backup, backups, walgBackups, false)
+			dependentBackups := buildDependentBackupsForBackup(testCtx, backup, backups, false)
 			Expect(dependentBackups).To(HaveLen(1))
 			Expect(dependentBackups[0].Name).To(Equal("test-backup-2"))
 		})
@@ -419,24 +394,8 @@ var _ = Describe("BackupReconciler", func() {
 
 			backups := []cnpgv1.Backup{*backup1, *backup2, *backup3}
 
-			// Create WAL-G backups
-			walgBackup1 := walg.BackupMetadata{
-				BackupName:  "base_000000010000000100000001",
-				WalFileName: "000000010000000100000001",
-			}
-			walgBackup2 := walg.BackupMetadata{
-				BackupName:  "base_000000010000000100000002_D_000000010000000100000001",
-				WalFileName: "000000010000000100000002",
-			}
-			walgBackup3 := walg.BackupMetadata{
-				BackupName:  "base_000000010000000100000003_D_000000010000000100000002",
-				WalFileName: "000000010000000100000003",
-			}
-
-			walgBackups := []walg.BackupMetadata{walgBackup1, walgBackup2, walgBackup3}
-
 			// Call buildDependentBackupsForBackup with includeIndirect=true
-			dependentBackups := buildDependentBackupsForBackup(testCtx, backup1, backups, walgBackups, true)
+			dependentBackups := buildDependentBackupsForBackup(testCtx, backup1, backups, true)
 			Expect(dependentBackups).To(HaveLen(2))
 
 			// Check that both dependent backups are returned
@@ -448,10 +407,9 @@ var _ = Describe("BackupReconciler", func() {
 			// Create test objects
 			backup := createTestBackup("test-backup-1", "default", "test-cluster", "", true)
 			backups := []cnpgv1.Backup{*backup}
-			walgBackups := []walg.BackupMetadata{}
 
 			// Call buildDependentBackupsForBackup
-			dependentBackups := buildDependentBackupsForBackup(testCtx, backup, backups, walgBackups, false)
+			dependentBackups := buildDependentBackupsForBackup(testCtx, backup, backups, false)
 			Expect(dependentBackups).To(BeEmpty())
 		})
 	})
@@ -478,9 +436,6 @@ var _ = Describe("BackupReconciler", func() {
 				},
 			}
 
-			// Create WAL-G backups
-			walgBackups := []walg.BackupMetadata{}
-
 			// Create fake client with objects
 			fakeClient := setupFakeBackupClient(backupConfig, s3Secret, backup)
 
@@ -491,7 +446,7 @@ var _ = Describe("BackupReconciler", func() {
 			}
 
 			// Call reconcileBackupAnnotations
-			updated, err := reconciler.reconcileBackupAnnotations(testCtx, backup, backupConfigWithSecrets, walgBackups)
+			updated, err := reconciler.reconcileBackupAnnotations(testCtx, backup, backupConfigWithSecrets)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(updated).To(BeFalse())
 
@@ -525,10 +480,6 @@ var _ = Describe("BackupReconciler", func() {
 				},
 			}
 
-			// Create WAL-G backups
-			walgBackup := createBackupMetadata("base_000000010000000100000001", false)
-			walgBackups := []walg.BackupMetadata{walgBackup}
-
 			// Create fake client with objects
 			fakeClient := setupFakeBackupClient(backupConfig, s3Secret, backup)
 
@@ -539,7 +490,7 @@ var _ = Describe("BackupReconciler", func() {
 			}
 
 			// Call reconcileBackupAnnotations
-			updated, err := reconciler.reconcileBackupAnnotations(testCtx, backup, backupConfigWithSecrets, walgBackups)
+			updated, err := reconciler.reconcileBackupAnnotations(testCtx, backup, backupConfigWithSecrets)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(updated).To(BeTrue())
 			Expect(backup.Annotations).To(HaveKeyWithValue(backupTypeAnnotationName, string(BackupTypeFull)))
@@ -576,10 +527,6 @@ var _ = Describe("BackupReconciler", func() {
 				},
 			}
 
-			// Create WAL-G backups
-			walgBackup := createBackupMetadata("base_000000010000000100000002_D_000000010000000100000001", true)
-			walgBackups := []walg.BackupMetadata{walgBackup}
-
 			// Create fake client with objects
 			fakeClient := setupFakeBackupClient(backupConfig, s3Secret, backup)
 
@@ -590,7 +537,7 @@ var _ = Describe("BackupReconciler", func() {
 			}
 
 			// Call reconcileBackupAnnotations
-			updated, err := reconciler.reconcileBackupAnnotations(testCtx, backup, backupConfigWithSecrets, walgBackups)
+			updated, err := reconciler.reconcileBackupAnnotations(testCtx, backup, backupConfigWithSecrets)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(updated).To(BeTrue())
 			Expect(backup.Annotations).To(HaveKeyWithValue(backupTypeAnnotationName, string(BackupTypeIncremental)))
@@ -628,17 +575,6 @@ var _ = Describe("BackupReconciler", func() {
 				},
 			}
 
-			// Create WAL-G backups
-			walgBaseBackup := walg.BackupMetadata{
-				BackupName:  "base_000000010000000100000001",
-				WalFileName: "000000010000000100000001",
-			}
-			walgDependentBackup := walg.BackupMetadata{
-				BackupName:  "base_000000010000000100000002_D_000000010000000100000001",
-				WalFileName: "000000010000000100000002",
-			}
-			walgBackups := []walg.BackupMetadata{walgBaseBackup, walgDependentBackup}
-
 			// Create fake client with objects
 			fakeClient := setupFakeBackupClient(backupConfig, s3Secret, baseBackup, dependentBackup)
 
@@ -649,7 +585,7 @@ var _ = Describe("BackupReconciler", func() {
 			}
 
 			// Call reconcileBackupAnnotations
-			updated, err := reconciler.reconcileBackupAnnotations(testCtx, baseBackup, backupConfigWithSecrets, walgBackups)
+			updated, err := reconciler.reconcileBackupAnnotations(testCtx, baseBackup, backupConfigWithSecrets)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(updated).To(BeTrue())
 			Expect(baseBackup.Annotations).To(HaveKeyWithValue(backupTypeAnnotationName, string(BackupTypeFull)))
@@ -688,21 +624,6 @@ var _ = Describe("BackupReconciler", func() {
 				},
 			}
 
-			// Create WAL-G backups
-			walgBaseBackup := walg.BackupMetadata{
-				BackupName:  "base_000000010000000100000001",
-				WalFileName: "000000010000000100000001",
-			}
-			walgDirectDependentBackup := walg.BackupMetadata{
-				BackupName:  "base_000000010000000100000002_D_000000010000000100000001",
-				WalFileName: "000000010000000100000002",
-			}
-			walgIndirectDependentBackup := walg.BackupMetadata{
-				BackupName:  "base_000000010000000100000003_D_000000010000000100000002",
-				WalFileName: "000000010000000100000003",
-			}
-			walgBackups := []walg.BackupMetadata{walgBaseBackup, walgDirectDependentBackup, walgIndirectDependentBackup}
-
 			// Create fake client with objects
 			fakeClient := setupFakeBackupClient(backupConfig, s3Secret, baseBackup, directDependentBackup, indirectDependentBackup)
 
@@ -713,7 +634,7 @@ var _ = Describe("BackupReconciler", func() {
 			}
 
 			// Call reconcileBackupAnnotations
-			updated, err := reconciler.reconcileBackupAnnotations(testCtx, baseBackup, backupConfigWithSecrets, walgBackups)
+			updated, err := reconciler.reconcileBackupAnnotations(testCtx, baseBackup, backupConfigWithSecrets)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(updated).To(BeTrue())
 
@@ -758,10 +679,6 @@ var _ = Describe("BackupReconciler", func() {
 				},
 			}
 
-			// Create WAL-G backups
-			walgBackup := createBackupMetadata("base_000000010000000100000001", false)
-			walgBackups := []walg.BackupMetadata{walgBackup}
-
 			// Create fake client with objects
 			fakeClient := setupFakeBackupClient(backupConfig, s3Secret, backup)
 
@@ -772,7 +689,7 @@ var _ = Describe("BackupReconciler", func() {
 			}
 
 			// Call reconcileBackupAnnotations
-			updated, err := reconciler.reconcileBackupAnnotations(testCtx, backup, backupConfigWithSecrets, walgBackups)
+			updated, err := reconciler.reconcileBackupAnnotations(testCtx, backup, backupConfigWithSecrets)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(updated).To(BeFalse())
 		})
@@ -807,13 +724,6 @@ var _ = Describe("BackupReconciler", func() {
 				},
 			}
 
-			// Create WAL-G backups - only include the base backup since the dependent is being deleted
-			walgBaseBackup := walg.BackupMetadata{
-				BackupName:  "base_000000010000000100000001",
-				WalFileName: "000000010000000100000001",
-			}
-			walgBackups := []walg.BackupMetadata{walgBaseBackup}
-
 			// Create fake client with objects
 			fakeClient := setupFakeBackupClient(backupConfig, s3Secret, baseBackup, dependentBackup)
 
@@ -824,7 +734,7 @@ var _ = Describe("BackupReconciler", func() {
 			}
 
 			// Call reconcileBackupAnnotations on the base backup
-			updated, err := reconciler.reconcileBackupAnnotations(testCtx, baseBackup, backupConfigWithSecrets, walgBackups)
+			updated, err := reconciler.reconcileBackupAnnotations(testCtx, baseBackup, backupConfigWithSecrets)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(updated).To(BeTrue())
 
@@ -869,17 +779,6 @@ var _ = Describe("BackupReconciler", func() {
 				},
 			}
 
-			// Create WAL-G backups including the new dependent backup
-			walgParentBackup := walg.BackupMetadata{
-				BackupName:  "base_000000010000000100000001",
-				WalFileName: "000000010000000100000001",
-			}
-			walgDependentBackup := walg.BackupMetadata{
-				BackupName:  "base_000000010000000100000002_D_000000010000000100000001",
-				WalFileName: "000000010000000100000002",
-			}
-			walgBackups := []walg.BackupMetadata{walgParentBackup, walgDependentBackup}
-
 			// Create fake client with objects
 			fakeClient := setupFakeBackupClient(backupConfig, s3Secret, parentBackup, newDependentBackup)
 
@@ -890,7 +789,7 @@ var _ = Describe("BackupReconciler", func() {
 			}
 
 			// Call reconcileBackupAnnotations on the parent backup
-			updated, err := reconciler.reconcileBackupAnnotations(testCtx, parentBackup, backupConfigWithSecrets, walgBackups)
+			updated, err := reconciler.reconcileBackupAnnotations(testCtx, parentBackup, backupConfigWithSecrets)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(updated).To(BeTrue(), "Parent backup should be updated with new dependent")
 
@@ -904,18 +803,13 @@ var _ = Describe("BackupReconciler", func() {
 
 			// Also test the scenario where we add a second level dependent (indirect dependent)
 			secondLevelBackup := createTestBackup("second-level", "default", "test-cluster", "base_000000010000000100000003_D_000000010000000100000002", true)
-			walgSecondLevel := walg.BackupMetadata{
-				BackupName:  "base_000000010000000100000003_D_000000010000000100000002",
-				WalFileName: "000000010000000100000003",
-			}
-			walgBackups = append(walgBackups, walgSecondLevel)
 
 			// Update the fake client with the new backup
 			fakeClient = setupFakeBackupClient(backupConfig, s3Secret, parentBackup, newDependentBackup, secondLevelBackup)
 			reconciler.Client = fakeClient
 
 			// Call reconcileBackupAnnotations again on the parent backup
-			updated, err = reconciler.reconcileBackupAnnotations(testCtx, parentBackup, backupConfigWithSecrets, walgBackups)
+			updated, err = reconciler.reconcileBackupAnnotations(testCtx, parentBackup, backupConfigWithSecrets)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(updated).To(BeTrue(), "Parent backup should be updated with indirect dependent")
 

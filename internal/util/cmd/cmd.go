@@ -112,7 +112,7 @@ func (c Builder) Run() (result *RunResult, err error) {
 	if err = cmd.Start(); err != nil {
 		return result, fmt.Errorf("subprocess cmd.Start() error: %w", err)
 	}
-	logger = logger.WithValues("pid", cmd.Process.Pid, "env", cmd.Env)
+	logger = logger.WithValues("pid", cmd.Process.Pid)
 	logger.V(1).Info("Starting subprocess")
 
 	cmdWaitStatus, err := wait(logr.NewContext(c.ctx, logger), cmd.Process.Pid, cmdExitSubscription)
