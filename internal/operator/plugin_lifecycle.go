@@ -267,7 +267,7 @@ func reconcilePodSpecWithPluginSidecar(
 		AllowPrivilegeEscalation: ptr.To(false),
 		RunAsNonRoot:             ptr.To(true),
 		Privileged:               ptr.To(false),
-		ReadOnlyRootFilesystem:   ptr.To(true),
+		ReadOnlyRootFilesystem:   ptr.To(false),
 		SeccompProfile: &corev1.SeccompProfile{
 			Type: corev1.SeccompProfileTypeRuntimeDefault,
 		},

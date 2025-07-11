@@ -61,8 +61,8 @@ RUN cd $(go env GOPATH)/src/github.com/wal-g/wal-g && \
 # Primary runtime image (using bookworm-slim due to wal-g dynamic linked C dependencies)
 FROM docker.io/debian:bookworm-slim AS runtime
 RUN apt update && apt install -y ca-certificates && apt-get clean && rm -rf /var/lib/apt/lists/*
-RUN groupadd -o -g 26 postgres && useradd -Ms /bin/bash -u 26 -g postgres postgres
-WORKDIR /
+RUN groupadd -o -g 26 postgres && useradd -ms /bin/bash -u 26 -g postgres postgres
+WORKDIR /home/postgres
 COPY --from=builder /workspace/cnpg-plugin-wal-g /usr/local/bin/cnpg-plugin-wal-g
 COPY --from=walg-builder /wal-g /usr/local/bin/wal-g
 # Using same user as postgres user in postgresql instances to be able to manage files in PGDATA
