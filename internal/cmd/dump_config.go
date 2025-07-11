@@ -37,10 +37,15 @@ import (
 // NewDumpConfigCmd creates a new command for dumping wal-g configuration
 func NewDumpConfigCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "dump-config",
-		Short: "Dumps BackupConfig wal-g configuration to file",
-		Long:  "This allows to run wal-g commands manually like 'wal-g config walg.json backup-list' for debugging",
-		RunE: func(cmd *cobra.Command, _ []string) error {
+		Use:   "dump-config [namespace/]BackupConfigName",
+		Short: "Dumps BackupConfig wal-g configuration to file. Namespace is optional, using default if not specified",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if len(args) != 1 {
+				return fmt.Errorf("provide single argument - BackupConfig resource name")
+			}
+
+			viper.Set("backup-config", args[0])
+
 			scheme := runtime.NewScheme()
 			utilruntime.Must(clientgoscheme.AddToScheme(scheme))
 			utilruntime.Must(cnpgv1.AddToScheme(scheme))
@@ -62,11 +67,6 @@ func NewDumpConfigCmd() *cobra.Command {
 			return runDumpConfig(cmd.Context(), k8sClient)
 		},
 	}
-
-	cmd.Flags().StringP("backup-config", "c", "",
-		"BackupConfig resource in format [namespace/]name (using default namespace if not specified)")
-	_ = viper.BindPFlag("backup-config", cmd.Flags().Lookup("backup-config"))
-	_ = cmd.MarkFlagRequired("backup-config")
 
 	cmd.Flags().StringP("output", "o", "walg.json", "Output file path")
 	_ = viper.BindPFlag("output", cmd.Flags().Lookup("output"))
@@ -124,8 +124,9 @@ func runDumpConfig(ctx context.Context, client client.Client) error {
 	}
 
 	fmt.Printf(
-		"Successfully wrote wal-g configuration from BackupConfig %s in namespace %s to file %s\n",
-		backupConfigName, namespace, outputPath,
+		"WAL-G configuration from BackupConfig '%s/%s' written to file %s\n",
+		namespace, backupConfigName, outputPath,
 	)
+	fmt.Printf("Use it like this: 'wal-g --config %s backup-list'\n", outputPath)
 	return nil
 }
