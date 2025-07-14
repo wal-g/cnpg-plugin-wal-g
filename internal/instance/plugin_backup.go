@@ -109,7 +109,7 @@ func (b BackupServiceImplementation) Backup(
 
 	if err != nil {
 		logger.Error(err, "Error on wal-g backup-push", "stdout", string(result.Stdout()), "stderr", string(result.Stderr()))
-		return nil, fmt.Errorf("failed to do wal-g backup-push: %w", err)
+		return nil, fmt.Errorf("failed to do wal-g backup-push: %w (stderr: %s)", err, result.Stderr())
 	}
 	logger.Info("Finished wal-g backup-push", "stdout", string(result.Stdout()), "stderr", string(result.Stderr()))
 	return b.buildBackupResult(ctx, backupHumanName, backupConfigWithSecrets, backupParams)
