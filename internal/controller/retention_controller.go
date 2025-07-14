@@ -14,7 +14,6 @@ import (
 	v1beta1 "github.com/wal-g/cnpg-plugin-wal-g/api/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	logf "sigs.k8s.io/controller-runtime/pkg/log"
 )
 
 // RetentionController periodically checks all BackupConfig resources and applies
@@ -34,7 +33,7 @@ func NewRetentionController(client client.Client, checkInterval time.Duration) *
 
 // Start begins the retention controller's periodic check
 func (r *RetentionController) Start(ctx context.Context) error {
-	logger := logf.FromContext(ctx).WithName("RetentionController")
+	logger := logr.FromContextOrDiscard(ctx).WithName("RetentionController")
 	logger.Info("Starting retention controller", "checkInterval", r.checkInterval)
 
 	ticker := time.NewTicker(r.checkInterval)
@@ -54,7 +53,7 @@ func (r *RetentionController) Start(ctx context.Context) error {
 
 // runBackupsRetentionCheck lists all BackupConfig resources and applies retention policies
 func (r *RetentionController) runBackupsRetentionCheck(ctx context.Context) {
-	logger := logf.FromContext(ctx).WithName("RetentionController")
+	logger := logr.FromContextOrDiscard(ctx).WithName("RetentionController")
 
 	// List all BackupConfig resources
 	backupConfigList := &v1beta1.BackupConfigList{}
@@ -185,9 +184,12 @@ func (r *RetentionController) getBackupsToDelete(
 		minBackupsToKeep = retention.MinBackupsToKeep
 	}
 
-	// If we have fewer backups than minBackupsToKeep, keep all
-	if len(backupList) <= minBackupsToKeep {
-		logger.Info("Number of backups is less than or equal to MinBackupsToKeep, keeping all",
+	// If we have fewer successful backups than minBackupsToKeep, keep all
+	successfulBackups := lo.Filter(backupList, func(b cnpgv1.Backup, _ int) bool {
+		return b.Status.Phase == cnpgv1.BackupPhaseCompleted
+	})
+	if len(successfulBackups) <= minBackupsToKeep {
+		logger.Info("Number of successful backups is less than or equal to MinBackupsToKeep, keeping all",
 			"backupCount", len(backupList),
 			"minBackupsToKeep", minBackupsToKeep)
 		return backupsToDelete, nil

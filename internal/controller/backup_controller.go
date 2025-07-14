@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"time"
 
 	cnpgv1 "github.com/cloudnative-pg/cloudnative-pg/api/v1"
 	"github.com/go-logr/logr"
@@ -39,7 +40,8 @@ import (
 // BackupReconciler reconciles a Backup object
 type BackupReconciler struct {
 	client.Client
-	Scheme *runtime.Scheme
+	Scheme             *runtime.Scheme
+	DeletionController *BackupDeletionController
 }
 
 const backupFinalizerName = "cnpg-plugin-wal-g.yandex.cloud/backup-cleanup"
@@ -66,7 +68,7 @@ func (r *BackupReconciler) SetupWithManager(mgr ctrl.Manager) error {
 
 // Reconcile handles Backup resource events
 func (r *BackupReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	logger := logr.FromContextOrDiscard(ctx).WithName("BackupReconciler").WithValues("backup", req)
+	logger := logr.FromContextOrDiscard(ctx)
 	ctx = logr.NewContext(ctx, logger)
 
 	backup := &cnpgv1.Backup{}
@@ -80,10 +82,20 @@ func (r *BackupReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 		return ctrl.Result{}, nil
 	}
 
-	// Backup is being deleted
+	// Backup is being deleted - need to reconcile related backups annotations and to remove physical wal-g backup
 	if !backup.DeletionTimestamp.IsZero() {
+		// If backup has dependents or is dependent, then its deletion requires to update annotations
+		if err := r.reconcileRelatedBackupsAnnotations(ctx, backup); err != nil {
+			return ctrl.Result{}, err
+		}
+
 		// Handle backup deletion in background, because cleaning physical backup could take long time
-		go r.handleBackupDeletion(ctx, backup)
+		if err := r.DeletionController.EnqueueBackupDeletion(ctx, backup); err != nil {
+			logger.Error(err, "Cannot process backup deletion, requeing in 3 minutes")
+			return ctrl.Result{
+				RequeueAfter: 3 * time.Minute,
+			}, nil
+		}
 		return ctrl.Result{}, nil
 	}
 
@@ -164,14 +176,14 @@ func (r *BackupReconciler) reconcileRelatedBackupsAnnotations(ctx context.Contex
 		return err
 	}
 
-	updated, err := r.reconcileBackupAnnotations(ctx, backup, backupConfigWithSecrets)
+	_, err = r.reconcileBackupAnnotations(ctx, backup, backupConfigWithSecrets)
 	if err != nil {
 		return fmt.Errorf("while reconciling backup %s annotations: %w", backup.Name, err)
 	}
 
 	// If current backup is incremental - we need to update other backups annotations
 	// to update their dependent backups list
-	if updated && backup.Annotations[backupTypeAnnotationName] == string(BackupTypeIncremental) {
+	if backup.Annotations[backupTypeAnnotationName] == string(BackupTypeIncremental) {
 		backupsToReconcile, err := r.listBackupsOwnedByBackupConfig(ctx, backupConfigWithSecrets)
 		if err != nil {
 			return err
@@ -190,13 +202,21 @@ func (r *BackupReconciler) reconcileRelatedBackupsAnnotations(ctx context.Contex
 	return nil
 }
 
+// Reconciles annotations for this backup, including:
+//
+// "cnpg-plugin-wal-g.yandex.cloud/backup-type" which marks whether backup is full or incremental
+//
+// "cnpg-plugin-wal-g.yandex.cloud/dependent-backups-direct" with list of direct dependent backups of this backup
+//
+// "cnpg-plugin-wal-g.yandex.cloud/dependent-backups-all" with list of any dependent backups of this backup
+//
+// returns true if any of annotations changed
 func (r *BackupReconciler) reconcileBackupAnnotations(
 	ctx context.Context,
 	backup *cnpgv1.Backup,
 	backupConfig *v1beta1.BackupConfigWithSecrets,
 ) (bool, error) {
 	logger := logr.FromContextOrDiscard(ctx)
-
 	// If backup has not BackupID - skipping
 	if backup.Status.BackupID == "" {
 		return false, nil
@@ -243,93 +263,6 @@ func (r *BackupReconciler) reconcileBackupAnnotations(
 	return true, err
 }
 
-// handleBackupDeletion removes actual backup from storage via wal-g
-// and removes finalizer from Backup object after successful cleanup
-//
-// IMPORTANT: This function is long-running and should be started in separate goroutine
-func (r *BackupReconciler) handleBackupDeletion(ctx context.Context, backup *cnpgv1.Backup) {
-	logger := logr.FromContextOrDiscard(ctx)
-
-	if backup.Annotations[backupAllDependentsAnnotationName] != "" {
-		// TODO: emit event for backup
-		logger.Info(
-			"Cannot delete backup because it still has dependent backups",
-			"backup", backup.Name, "dependents", backup.Annotations[backupAllDependentsAnnotationName],
-		)
-		return
-	}
-
-	// Delete physical backup from storage (if only having proper finalizer)
-	if containsString(backup.Finalizers, backupFinalizerName) {
-		err := r.deleteWALGBackup(ctx, backup)
-		if err != nil {
-			// If there's an error, don't remove the finalizer so we can retry
-			logger.Error(err, "while deleting Backup via wal-g")
-			return
-		}
-	}
-
-	// If deleting incremental backup - we need to update annotations for other backups with same BackupConfig
-	// to make their depentent backups list consistent after current backup deletion
-	if backup.Annotations[backupTypeAnnotationName] == string(BackupTypeIncremental) {
-		backupConfigWithSecrets, err := r.getBackupConfigForBackup(ctx, backup)
-		if err != nil {
-			logger.Error(err, "while prefetching secrets data")
-			return
-		}
-
-		backups, err := r.listBackupsOwnedByBackupConfig(ctx, backupConfigWithSecrets)
-		if err != nil {
-			return
-		}
-
-		// Reconcile other backups annotations for same backupConfig - some of them can have this backup as dependency
-		for i := range backups {
-			_, err = r.reconcileBackupAnnotations(ctx, &backups[i], backupConfigWithSecrets)
-			if err != nil {
-				logger.Error(err, "while reconciling backup annotations", "backup", backups[i].Name)
-			}
-		}
-	}
-
-	// Remove our finalizer from the list and update
-	backup.Finalizers = removeString(backup.Finalizers, backupFinalizerName)
-	if err := r.Update(ctx, backup); err != nil {
-		logger.Error(err, "while removing cleanup finalizer from Backup")
-		return
-	}
-}
-
-// deleteWALGBackup deletes the backup via WAL-G (could be long running)
-func (r *BackupReconciler) deleteWALGBackup(ctx context.Context, backup *cnpgv1.Backup) error {
-	logger := logr.FromContextOrDiscard(ctx)
-	// Skip if BackupID is not set
-	if backup.Status.BackupID == "" {
-		logger.Info("Backup has no BackupID, skipping WAL-G deletion")
-		return nil
-	}
-
-	// Get BackupConfig with secrets
-	backupConfigWithSecrets, err := r.getBackupConfigForBackup(ctx, backup)
-	if err != nil {
-		return err
-	}
-
-	// Delete the backup using WAL-G
-	logger.Info("Deleting backup from WAL-G", "backupID", backup.Status.BackupID)
-	result, err := walg.DeleteBackup(ctx, backupConfigWithSecrets, backup.Status.BackupID)
-	if err != nil {
-		logger.Error(err, "Failed to delete backup from WAL-G",
-			"backupID", backup.Status.BackupID,
-			"stdout", string(result.Stdout()),
-			"stderr", string(result.Stderr()))
-		return err
-	}
-
-	logger.Info("Successfully deleted backup from WAL-G", "backupID", backup.Status.BackupID)
-	return nil
-}
-
 func (r *BackupReconciler) getBackupConfigForBackup(ctx context.Context, backup *cnpgv1.Backup) (*v1beta1.BackupConfigWithSecrets, error) {
 	logger := logr.FromContextOrDiscard(ctx)
 
@@ -368,11 +301,11 @@ func (r *BackupReconciler) listBackupsOwnedByBackupConfig(
 		return make([]cnpgv1.Backup, 0), fmt.Errorf("while getting Backup List: %w", err)
 	}
 
-	// Filter only backups owned by backupConfig
+	// Filter only backups owned by backupConfig and not being deleted
 	backups := lo.Filter(backupsList.Items, func(b cnpgv1.Backup, _ int) bool {
 		return lo.ContainsBy(b.OwnerReferences, func(o metav1.OwnerReference) bool {
 			return o.Kind == "BackupConfig" && o.Name == backupConfig.Name
-		})
+		}) && b.DeletionTimestamp.IsZero()
 	})
 
 	return backups, nil
