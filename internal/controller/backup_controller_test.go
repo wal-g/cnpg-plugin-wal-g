@@ -25,13 +25,16 @@ import (
 	v1beta1 "github.com/wal-g/cnpg-plugin-wal-g/api/v1beta1"
 	"github.com/wal-g/cnpg-plugin-wal-g/internal/common"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/equality"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/utils/ptr"
+	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
 
 // Helper function to create a fake client with the given objects
@@ -177,6 +180,40 @@ var _ = Describe("BackupReconciler", func() {
 
 	BeforeEach(func() {
 		testCtx = context.Background()
+	})
+
+	Describe("Reconcile", func() {
+		It("should do nothing with Backup without PluginConfiguration", func() {
+			// Create test objects
+			cluster := createTestCluster("test-cluster", "default")
+			backupConfig, s3Secret := createTestBackupConfig("test-backupconfig", "default")
+			backup := createTestBackup("test-backup", "default", "test-cluster", "base_000000010000000100000001", false)
+			backup.Spec.PluginConfiguration = nil
+
+			// Create fake client with objects
+			fakeClient := setupFakeBackupClient(cluster, backupConfig, s3Secret, backup)
+
+			// Create reconciler with fake client
+			reconciler = &BackupReconciler{
+				Client: fakeClient,
+				Scheme: runtime.NewScheme(),
+			}
+
+			// Call reconcileOwnerReference
+			result, err := reconciler.Reconcile(
+				testCtx,
+				reconcile.Request{
+					NamespacedName: client.ObjectKeyFromObject(backup),
+				},
+			)
+			Expect(result).To(BeEquivalentTo(ctrl.Result{}))
+			Expect(err).NotTo(HaveOccurred())
+
+			updatedBackup := &cnpgv1.Backup{}
+			err = fakeClient.Get(testCtx, client.ObjectKey{Namespace: "default", Name: "test-backup"}, updatedBackup)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(equality.Semantic.DeepEqual(backup, updatedBackup)).To(BeTrue())
+		})
 	})
 
 	Describe("reconcileOwnerReference", func() {
