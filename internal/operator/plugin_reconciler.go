@@ -179,11 +179,7 @@ func (r ReconcilerImplementation) ensureRole(
 		}
 
 		controller.BuildRoleForBackupConfigs(&newRole, cluster, backupConfigs)
-		logger.Info(
-			"Creating role",
-			"name", newRole.Name,
-			"namespace", newRole.Namespace,
-		)
+		logger.Info("Creating role", "role", newRole.TypeMeta)
 
 		if err := setOwnerReference(cluster, &newRole); err != nil {
 			return err
@@ -196,17 +192,13 @@ func (r ReconcilerImplementation) ensureRole(
 	oldRole := role.DeepCopy()
 
 	controller.BuildRoleForBackupConfigs(&role, cluster, backupConfigs)
-	if equality.Semantic.DeepEqual(role, oldRole) {
+	if equality.Semantic.DeepEqual(&role, oldRole) {
 		// There's no need to hit the API server again
 		return nil
 	}
 
-	logger.Info(
-		"Patching role",
-		"name", role.Name,
-		"namespace", role.Namespace,
-		"rules", role.Rules,
-	)
+	patchData, _ := client.MergeFrom(oldRole).Data(&role)
+	logger.Info("Patching role", "role", role.TypeMeta, "patch", string(patchData))
 
 	return r.Client.Patch(ctx, &role, client.MergeFrom(oldRole))
 }
