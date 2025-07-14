@@ -76,7 +76,7 @@ func (r *BackupReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 	}
 
 	// Skip backups not managed by plugin
-	if backup.Spec.PluginConfiguration.Name != common.PluginName {
+	if backup.Spec.PluginConfiguration == nil || backup.Spec.PluginConfiguration.Name != common.PluginName {
 		return ctrl.Result{}, nil
 	}
 
