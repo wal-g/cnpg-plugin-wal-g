@@ -89,6 +89,11 @@ func (r RestoreJobHooksImpl) Restore(
 		return nil, fmt.Errorf("no PGDATA env variable specified")
 	}
 
+	pgMajorVersion := viper.GetInt("pg_major")
+	if pgMajorVersion == 0 {
+		return nil, fmt.Errorf("backup request failed: no PG_MAJOR env variable specified")
+	}
+
 	recoveryPluginConfig := common.GetRecoveryPluginConfigFromCluster(cluster)
 	if recoveryPluginConfig == nil {
 		return nil, fmt.Errorf("failed to get recovery plugin config: %w", err)
@@ -101,7 +106,7 @@ func (r RestoreJobHooksImpl) Restore(
 		)
 	}
 
-	walgBackupList, err := walg.GetBackupsList(ctx, restoreConfigWithSecrets)
+	walgBackupList, err := walg.GetBackupsList(ctx, restoreConfigWithSecrets, pgMajorVersion)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list wal-g backups: %w", err)
 	}
@@ -142,9 +147,14 @@ func (r RestoreJobHooksImpl) downloadBackupIntoDir(
 	logger := logr.FromContextOrDiscard(ctx)
 	logger.Info("Starting downloadBackupIntoDir with wal-g")
 
+	pgMajorVersion := viper.GetInt("pg_major")
+	if pgMajorVersion == 0 {
+		return fmt.Errorf("backup request failed: no PG_MAJOR env variable specified")
+	}
+
 	result, err := cmd.New("wal-g", "backup-fetch", targetDir, walgBackupName).
 		WithContext(ctx).
-		WithEnv(walg.NewConfigFromBackupConfig(config).ToEnvMap()).
+		WithEnv(walg.NewConfigFromBackupConfig(config, pgMajorVersion).ToEnvMap()).
 		Run()
 
 	if err != nil {

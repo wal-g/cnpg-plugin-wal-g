@@ -86,7 +86,7 @@ func NewConfigWithDefaults() Config {
 	}
 }
 
-func NewConfigFromBackupConfig(backupConfig *v1beta1.BackupConfigWithSecrets) *Config {
+func NewConfigFromBackupConfig(backupConfig *v1beta1.BackupConfigWithSecrets, pgMajorVersion int) *Config {
 	config := NewConfigWithDefaults()
 
 	if backupConfig.Spec.Storage.StorageType == v1beta1.StorageTypeS3 {
@@ -95,7 +95,7 @@ func NewConfigFromBackupConfig(backupConfig *v1beta1.BackupConfigWithSecrets) *C
 		config.AWSEndpoint = backupConfig.Spec.Storage.S3.EndpointURL
 		config.AWSRegion = backupConfig.Spec.Storage.S3.Region
 		config.AWSS3ForcePathStyle = backupConfig.Spec.Storage.S3.ForcePathStyle
-		config.WaleS3Prefix = backupConfig.Spec.Storage.S3.Prefix
+		config.WaleS3Prefix = fmt.Sprintf("%s/%d", backupConfig.Spec.Storage.S3.Prefix, pgMajorVersion)
 		config.WalgS3StorageClass = backupConfig.Spec.Storage.S3.StorageClass
 	}
 

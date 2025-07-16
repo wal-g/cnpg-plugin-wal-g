@@ -101,6 +101,7 @@ func createBackup(name, namespace, backupConfigName string, startTime time.Time,
 		},
 		Status: cnpgv1.BackupStatus{
 			StartedAt: &metaTime,
+			Phase:     cnpgv1.BackupPhaseCompleted,
 		},
 	}
 }

@@ -3,6 +3,7 @@ package controller
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"sync"
 
 	cnpgv1 "github.com/cloudnative-pg/cloudnative-pg/api/v1"
@@ -49,13 +50,15 @@ func (b *BackupDeletionController) Start(ctx context.Context) error {
 	}
 
 	// Cleaning up all queues on exit
-	for _, cancelFunc := range b.queueCtxCancels {
+	for queueKey, cancelFunc := range b.queueCtxCancels {
 		func() { // Wrap in separate function to use "defer mutex.Unlock()"
 			b.queueMX.Lock()
 			defer b.queueMX.Unlock()
 
 			// Cancel the context for this queue's goroutine
 			cancelFunc()
+			// Remove queue
+			delete(b.backupDeletionQueues, queueKey)
 		}()
 	}
 
@@ -68,7 +71,7 @@ func (b *BackupDeletionController) EnqueueBackupDeletion(ctx context.Context, ba
 
 	logger := logr.FromContextOrDiscard(ctx).WithName("BackupDeletionController")
 	// Get BackupConfig with secrets for the backup
-	backupConfigWithSecrets, err := b.getBackupConfigForBackup(ctx, backup)
+	backupConfigWithSecrets, err := v1beta1.GetBackupConfigWithSecretsForBackup(ctx, b.Client, backup)
 	if err != nil {
 		return fmt.Errorf("failed to get BackupConfig for Backup: %w", err)
 	}
@@ -92,7 +95,8 @@ func (b *BackupDeletionController) EnqueueBackupDeletion(ctx context.Context, ba
 			b.backupDeletionQueues[queueKey] = make(chan types.NamespacedName, 128)
 
 			// Create a derived context for this queue's processing goroutine
-			queueCtx, cancelFunc := context.WithCancel(context.Background())
+			queueCtx, cancelFunc := context.WithCancel(logr.NewContext(context.Background(), logger))
+
 			b.queueCtxCancels[queueKey] = cancelFunc
 
 			// Start a goroutine to process this queue
@@ -134,31 +138,6 @@ func (b *BackupDeletionController) processBackupDeletionQueue(
 	}
 }
 
-// getBackupConfigForBackup fetches the BackupConfig with secrets for a given Backup
-func (b *BackupDeletionController) getBackupConfigForBackup(ctx context.Context, backup *cnpgv1.Backup) (*v1beta1.BackupConfigWithSecrets, error) {
-	logger := logr.FromContextOrDiscard(ctx)
-
-	cluster := &cnpgv1.Cluster{}
-	if err := b.Get(ctx, client.ObjectKey{Namespace: backup.Namespace, Name: backup.Spec.Cluster.Name}, cluster); err != nil {
-		logger.Error(err, "while getting Cluster")
-		return nil, err
-	}
-
-	backupConfig, err := v1beta1.GetBackupConfigForCluster(ctx, b.Client, cluster)
-	if err != nil || backupConfig == nil {
-		logger.Info("No BackupConfig found for cluster", "error", err)
-		return nil, err
-	}
-
-	backupConfigWithSecrets, err := backupConfig.PrefetchSecretsData(ctx, b.Client)
-	if err != nil {
-		logger.Error(err, "while prefetching secrets data")
-		return nil, err
-	}
-
-	return backupConfigWithSecrets, nil
-}
-
 // deleteWALGBackup deletes the physical backup via WAL-G (could be long running) and removes finalizer from Backup resource after successful deletion
 func (b *BackupDeletionController) deleteWALGBackup(ctx context.Context, backupKey client.ObjectKey) error {
 	logger := logr.FromContextOrDiscard(ctx)
@@ -168,9 +147,17 @@ func (b *BackupDeletionController) deleteWALGBackup(ctx context.Context, backupK
 		return fmt.Errorf("while getting backup %v: %w", backupKey, err)
 	}
 
-	backupConfig, err := b.getBackupConfigForBackup(ctx, backup)
+	backupConfig, err := v1beta1.GetBackupConfigWithSecretsForBackup(ctx, b.Client, backup)
 	if err != nil {
 		return fmt.Errorf("while getting backupconfig for backup %v: %w", backupKey, err)
+	}
+
+	if backup.Labels == nil || backup.Annotations == nil {
+		logger.Info(
+			"Cannot delete backup because it has missing plugin labels or annotations",
+			"backup", backup.Name, "dependents", backup.Annotations[backupAllDependentsAnnotationName],
+		)
+		return nil
 	}
 
 	if backup.Annotations[backupAllDependentsAnnotationName] != "" {
@@ -190,7 +177,14 @@ func (b *BackupDeletionController) deleteWALGBackup(ctx context.Context, backupK
 	if backup.Status.BackupID != "" {
 		// Delete the backup using WAL-G
 		logger.Info("Deleting backup from WAL-G", "backupID", backup.Status.BackupID)
-		result, err := walg.DeleteBackup(ctx, backupConfig, backup.Status.BackupID)
+		pgVersion, err := strconv.Atoi(backup.Labels[backupPgVersionLabelName])
+		if err != nil {
+			return fmt.Errorf(
+				"while wal-g backup removal: error cannot parse pgVersion from Backup label %s: '%s': %w",
+				backupPgVersionLabelName, backup.Labels[backupPgVersionLabelName], err,
+			)
+		}
+		result, err := walg.DeleteBackup(ctx, backupConfig, pgVersion, backup.Status.BackupID)
 		if err != nil {
 			return fmt.Errorf(
 				"while wal-g backup removal: error %w\nWAL-G stdout: %s\nWAL-G stderr: %s",

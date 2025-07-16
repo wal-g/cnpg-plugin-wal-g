@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -30,6 +31,7 @@ import (
 	"github.com/wal-g/cnpg-plugin-wal-g/internal/common"
 	"github.com/wal-g/cnpg-plugin-wal-g/internal/util/walg"
 	"k8s.io/apimachinery/pkg/api/equality"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/utils/ptr"
@@ -45,7 +47,8 @@ type BackupReconciler struct {
 }
 
 const backupFinalizerName = "cnpg-plugin-wal-g.yandex.cloud/backup-cleanup"
-const backupTypeAnnotationName = "cnpg-plugin-wal-g.yandex.cloud/backup-type"
+const backupPgVersionLabelName = "cnpg-plugin-wal-g.yandex.cloud/pg-major"
+const backupTypeLabelName = "cnpg-plugin-wal-g.yandex.cloud/backup-type"
 const backupAllDependentsAnnotationName = "cnpg-plugin-wal-g.yandex.cloud/dependent-backups-all"
 const backupDirectDependentsAnnotationName = "cnpg-plugin-wal-g.yandex.cloud/dependent-backups-direct"
 
@@ -85,7 +88,7 @@ func (r *BackupReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 	// Backup is being deleted - need to reconcile related backups annotations and to remove physical wal-g backup
 	if !backup.DeletionTimestamp.IsZero() {
 		// If backup has dependents or is dependent, then its deletion requires to update annotations
-		if err := r.reconcileRelatedBackupsAnnotations(ctx, backup); err != nil {
+		if err := r.reconcileRelatedBackupsMetadata(ctx, backup); err != nil {
 			return ctrl.Result{}, err
 		}
 
@@ -106,7 +109,7 @@ func (r *BackupReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 	}
 
 	// Reconcile backup (and probably related backups) annotations
-	err = r.reconcileRelatedBackupsAnnotations(ctx, backup)
+	err = r.reconcileRelatedBackupsMetadata(ctx, backup)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
@@ -153,7 +156,7 @@ func (r *BackupReconciler) reconcileOwnerReference(ctx context.Context, backup *
 
 	// Set the BackupConfig as the owner of the Backup
 	backup.OwnerReferences = append(backup.OwnerReferences, metav1.OwnerReference{
-		APIVersion:         "cnpg-extensions.yandex.cloud/v1beta1",
+		APIVersion:         fmt.Sprintf("%s/%s", v1beta1.GroupVersion.Group, v1beta1.GroupVersion.Version),
 		Kind:               "BackupConfig",
 		Name:               backupConfig.Name,
 		UID:                backupConfig.UID,
@@ -166,24 +169,33 @@ func (r *BackupReconciler) reconcileOwnerReference(ctx context.Context, backup *
 	return r.Update(ctx, backup)
 }
 
-func (r *BackupReconciler) reconcileRelatedBackupsAnnotations(ctx context.Context, backup *cnpgv1.Backup) error {
+func (r *BackupReconciler) reconcileRelatedBackupsMetadata(ctx context.Context, backup *cnpgv1.Backup) error {
 	logger := logr.FromContextOrDiscard(ctx)
 
+	// Get the cluster
+	cluster := &cnpgv1.Cluster{}
+	err := r.Get(ctx, client.ObjectKey{Namespace: backup.Namespace, Name: backup.Spec.Cluster.Name}, cluster)
+	// Tolerating non-existing cluster, this only blocks PG version evaluation
+	if err != nil && !apierrors.IsNotFound(err) {
+		logger.Error(err, "Failed to get Cluster for Backup")
+		return err
+	}
+
 	// Get BackupConfig with secrets
-	backupConfigWithSecrets, err := r.getBackupConfigForBackup(ctx, backup)
+	backupConfigWithSecrets, err := v1beta1.GetBackupConfigWithSecretsForBackup(ctx, r.Client, backup)
 	if err != nil {
 		logger.Error(err, "while prefetching secrets data")
 		return err
 	}
 
-	_, err = r.reconcileBackupAnnotations(ctx, backup, backupConfigWithSecrets)
+	_, err = r.reconcileBackupMetadata(ctx, backup, backupConfigWithSecrets, cluster)
 	if err != nil {
 		return fmt.Errorf("while reconciling backup %s annotations: %w", backup.Name, err)
 	}
 
 	// If current backup is incremental - we need to update other backups annotations
 	// to update their dependent backups list
-	if backup.Annotations[backupTypeAnnotationName] == string(BackupTypeIncremental) {
+	if backup.Labels[backupTypeLabelName] == string(BackupTypeIncremental) {
 		backupsToReconcile, err := r.listBackupsOwnedByBackupConfig(ctx, backupConfigWithSecrets)
 		if err != nil {
 			return err
@@ -192,7 +204,7 @@ func (r *BackupReconciler) reconcileRelatedBackupsAnnotations(ctx context.Contex
 			if backupsToReconcile[i].Name == backup.Name {
 				continue
 			}
-			_, err = r.reconcileBackupAnnotations(ctx, &backupsToReconcile[i], backupConfigWithSecrets)
+			_, err = r.reconcileBackupMetadata(ctx, &backupsToReconcile[i], backupConfigWithSecrets, cluster)
 			if err != nil {
 				logger.Error(err, "while reconciling backup annotations", "backup.Name", backupsToReconcile[i].Name)
 			}
@@ -202,19 +214,22 @@ func (r *BackupReconciler) reconcileRelatedBackupsAnnotations(ctx context.Contex
 	return nil
 }
 
-// Reconciles annotations for this backup, including:
+// Reconciles labels and annotations for this backup, including:
 //
-// "cnpg-plugin-wal-g.yandex.cloud/backup-type" which marks whether backup is full or incremental
+// label "cnpg-plugin-wal-g.yandex.cloud/pg-major" which shows postgresql version for this backup
 //
-// "cnpg-plugin-wal-g.yandex.cloud/dependent-backups-direct" with list of direct dependent backups of this backup
+// label "cnpg-plugin-wal-g.yandex.cloud/backup-type" which marks whether backup is full or incremental
 //
-// "cnpg-plugin-wal-g.yandex.cloud/dependent-backups-all" with list of any dependent backups of this backup
+// annotation "cnpg-plugin-wal-g.yandex.cloud/dependent-backups-direct" showing direct dependent backups of this backup
+//
+// annotation "cnpg-plugin-wal-g.yandex.cloud/dependent-backups-all" showing any dependent backups of this backup
 //
 // returns true if any of annotations changed
-func (r *BackupReconciler) reconcileBackupAnnotations(
+func (r *BackupReconciler) reconcileBackupMetadata(
 	ctx context.Context,
 	backup *cnpgv1.Backup,
 	backupConfig *v1beta1.BackupConfigWithSecrets,
+	cluster *cnpgv1.Cluster,
 ) (bool, error) {
 	logger := logr.FromContextOrDiscard(ctx)
 	// If backup has not BackupID - skipping
@@ -227,11 +242,27 @@ func (r *BackupReconciler) reconcileBackupAnnotations(
 	if backup.Annotations == nil {
 		backup.Annotations = make(map[string]string)
 	}
+	if backup.Labels == nil {
+		backup.Labels = make(map[string]string)
+	}
 
 	if strings.Contains(backup.Status.BackupID, "_D_") {
-		backup.Annotations[backupTypeAnnotationName] = string(BackupTypeIncremental)
+		backup.Labels[backupTypeLabelName] = string(BackupTypeIncremental)
 	} else {
-		backup.Annotations[backupTypeAnnotationName] = string(BackupTypeFull)
+		backup.Labels[backupTypeLabelName] = string(BackupTypeFull)
+	}
+
+	if backup.Labels[backupPgVersionLabelName] == "" && cluster == nil {
+		logger.Error(
+			fmt.Errorf("cluster %s does not exist", backup.Spec.Cluster.Name),
+			"while reconciling PG version annotation for backup",
+		)
+	} else if backup.Labels[backupPgVersionLabelName] == "" && cluster != nil {
+		pgVersion, err := cluster.GetPostgresqlVersion()
+		if err != nil {
+			logger.Error(err, "while getting PG version for cluster %v", client.ObjectKeyFromObject(cluster))
+		}
+		backup.Labels[backupPgVersionLabelName] = strconv.FormatInt(int64(pgVersion.Major()), 10)
 	}
 
 	backups, err := r.listBackupsOwnedByBackupConfig(ctx, backupConfig)
@@ -263,33 +294,6 @@ func (r *BackupReconciler) reconcileBackupAnnotations(
 	return true, err
 }
 
-func (r *BackupReconciler) getBackupConfigForBackup(ctx context.Context, backup *cnpgv1.Backup) (*v1beta1.BackupConfigWithSecrets, error) {
-	logger := logr.FromContextOrDiscard(ctx)
-
-	// Get the cluster
-	cluster := &cnpgv1.Cluster{}
-	if err := r.Get(ctx, client.ObjectKey{Namespace: backup.Namespace, Name: backup.Spec.Cluster.Name}, cluster); err != nil {
-		logger.Error(err, "while getting Cluster")
-		return nil, err
-	}
-
-	// Get the BackupConfig for this cluster
-	backupConfig, err := v1beta1.GetBackupConfigForCluster(ctx, r.Client, cluster)
-	if err != nil || backupConfig == nil {
-		logger.Info("No BackupConfig found for cluster", "error", err)
-		return nil, err
-	}
-
-	// Get BackupConfig with secrets
-	backupConfigWithSecrets, err := backupConfig.PrefetchSecretsData(ctx, r.Client)
-	if err != nil {
-		logger.Error(err, "while prefetching secrets data")
-		return nil, err
-	}
-
-	return backupConfigWithSecrets, nil
-}
-
 func (r *BackupReconciler) listBackupsOwnedByBackupConfig(
 	ctx context.Context,
 	backupConfig *v1beta1.BackupConfigWithSecrets,
@@ -305,7 +309,7 @@ func (r *BackupReconciler) listBackupsOwnedByBackupConfig(
 	backups := lo.Filter(backupsList.Items, func(b cnpgv1.Backup, _ int) bool {
 		return lo.ContainsBy(b.OwnerReferences, func(o metav1.OwnerReference) bool {
 			return o.Kind == "BackupConfig" && o.Name == backupConfig.Name
-		}) && b.DeletionTimestamp.IsZero()
+		})
 	})
 
 	return backups, nil

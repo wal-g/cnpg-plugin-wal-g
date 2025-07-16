@@ -119,6 +119,7 @@ func createTestCluster(name, namespace string) *cnpgv1.Cluster {
 			UID:       types.UID("test-cluster-uid"),
 		},
 		Spec: cnpgv1.ClusterSpec{
+			ImageName: "ghcr.io/cloudnative-pg/postgresql:14.0",
 			Plugins: []cnpgv1.PluginConfiguration{
 				{
 					Name: common.PluginName,
@@ -142,6 +143,7 @@ func createTestBackup(name, namespace, clusterName string, backupID string, with
 			Name:        name,
 			Namespace:   namespace,
 			Annotations: map[string]string{},
+			Labels:      map[string]string{},
 		},
 		Spec: cnpgv1.BackupSpec{
 			Cluster: cnpgv1.LocalObjectReference{
@@ -278,50 +280,6 @@ var _ = Describe("BackupReconciler", func() {
 		})
 	})
 
-	Describe("getBackupConfigForBackup", func() {
-		It("should return the BackupConfig for a backup", func() {
-			// Create test objects
-			cluster := createTestCluster("test-cluster", "default")
-			backupConfig, s3Secret := createTestBackupConfig("test-backupconfig", "default")
-			backup := createTestBackup("test-backup", "default", "test-cluster", "base_000000010000000100000001", false)
-
-			// Create fake client with objects
-			fakeClient := setupFakeBackupClient(cluster, backupConfig, s3Secret, backup)
-
-			// Create reconciler with fake client
-			reconciler = &BackupReconciler{
-				Client: fakeClient,
-				Scheme: runtime.NewScheme(),
-			}
-
-			// Call getBackupConfigForBackup
-			backupConfigWithSecrets, err := reconciler.getBackupConfigForBackup(testCtx, backup)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(backupConfigWithSecrets).NotTo(BeNil())
-			Expect(backupConfigWithSecrets.Name).To(Equal("test-backupconfig"))
-		})
-
-		It("should return error if cluster doesn't exist", func() {
-			// Create test objects without cluster
-			backupConfig, s3Secret := createTestBackupConfig("test-backupconfig", "default")
-			backup := createTestBackup("test-backup", "default", "test-cluster", "base_000000010000000100000001", false)
-
-			// Create fake client with objects
-			fakeClient := setupFakeBackupClient(backupConfig, s3Secret, backup)
-
-			// Create reconciler with fake client
-			reconciler = &BackupReconciler{
-				Client: fakeClient,
-				Scheme: runtime.NewScheme(),
-			}
-
-			// Call getBackupConfigForBackup
-			backupConfigWithSecrets, err := reconciler.getBackupConfigForBackup(testCtx, backup)
-			Expect(err).To(HaveOccurred())
-			Expect(backupConfigWithSecrets).To(BeNil())
-		})
-	})
-
 	Describe("listBackupsOwnedByBackupConfig", func() {
 		It("should list backups owned by a BackupConfig", func() {
 			// Create test objects
@@ -368,94 +326,12 @@ var _ = Describe("BackupReconciler", func() {
 		})
 	})
 
-	Describe("containsString", func() {
-		It("should return true if string is in slice", func() {
-			slice := []string{"a", "b", "c"}
-			Expect(containsString(slice, "a")).To(BeTrue())
-			Expect(containsString(slice, "b")).To(BeTrue())
-			Expect(containsString(slice, "c")).To(BeTrue())
-		})
-
-		It("should return false if string is not in slice", func() {
-			slice := []string{"a", "b", "c"}
-			Expect(containsString(slice, "d")).To(BeFalse())
-			Expect(containsString(slice, "")).To(BeFalse())
-		})
-
-		It("should handle empty slice", func() {
-			slice := []string{}
-			Expect(containsString(slice, "a")).To(BeFalse())
-		})
-	})
-
-	Describe("removeString", func() {
-		It("should remove string from slice", func() {
-			slice := []string{"a", "b", "c"}
-			result := removeString(slice, "b")
-			Expect(result).To(Equal([]string{"a", "c"}))
-		})
-
-		It("should return same slice if string not found", func() {
-			slice := []string{"a", "b", "c"}
-			result := removeString(slice, "d")
-			Expect(result).To(Equal([]string{"a", "b", "c"}))
-		})
-
-		It("should handle empty slice", func() {
-			slice := []string{}
-			result := removeString(slice, "a")
-			Expect(result).To(BeEmpty())
-		})
-	})
-
-	Describe("buildDependentBackupsForBackup", func() {
-		It("should find direct dependent backups", func() {
-			// Create test objects
-			backup := createTestBackup("test-backup-1", "default", "test-cluster", "base_000000010000000100000001", true)
-			backup2 := createTestBackup("test-backup-2", "default", "test-cluster", "base_000000010000000100000002_D_000000010000000100000001", true)
-			backup3 := createTestBackup("test-backup-3", "default", "test-cluster", "base_000000010000000100000003", true)
-
-			backups := []cnpgv1.Backup{*backup, *backup2, *backup3}
-
-			// Call buildDependentBackupsForBackup
-			dependentBackups := buildDependentBackupsForBackup(testCtx, backup, backups, false)
-			Expect(dependentBackups).To(HaveLen(1))
-			Expect(dependentBackups[0].Name).To(Equal("test-backup-2"))
-		})
-
-		It("should find all dependent backups (direct and indirect)", func() {
-			// Create test objects
-			backup1 := createTestBackup("test-backup-1", "default", "test-cluster", "base_000000010000000100000001", true)
-			backup2 := createTestBackup("test-backup-2", "default", "test-cluster", "base_000000010000000100000002_D_000000010000000100000001", true)
-			backup3 := createTestBackup("test-backup-3", "default", "test-cluster", "base_000000010000000100000003_D_000000010000000100000002", true)
-
-			backups := []cnpgv1.Backup{*backup1, *backup2, *backup3}
-
-			// Call buildDependentBackupsForBackup with includeIndirect=true
-			dependentBackups := buildDependentBackupsForBackup(testCtx, backup1, backups, true)
-			Expect(dependentBackups).To(HaveLen(2))
-
-			// Check that both dependent backups are returned
-			backupNames := []string{dependentBackups[0].Name, dependentBackups[1].Name}
-			Expect(backupNames).To(ContainElements("test-backup-2", "test-backup-3"))
-		})
-
-		It("should return empty slice if backup has no BackupID", func() {
-			// Create test objects
-			backup := createTestBackup("test-backup-1", "default", "test-cluster", "", true)
-			backups := []cnpgv1.Backup{*backup}
-
-			// Call buildDependentBackupsForBackup
-			dependentBackups := buildDependentBackupsForBackup(testCtx, backup, backups, false)
-			Expect(dependentBackups).To(BeEmpty())
-		})
-	})
-
-	Describe("reconcileBackupAnnotations", func() {
+	Describe("reconcileBackupMetadata", func() {
 		It("should do nothing for backup without BackupID", func() {
 			// Create test objects
 			backupConfig, s3Secret := createTestBackupConfig("test-backupconfig", "default")
 			backup := createTestBackup("test-backup", "default", "test-cluster", "", true)
+			cluster := createTestCluster("test-cluster", "default")
 
 			// Create a mock BackupConfigWithSecrets
 			backupConfigWithSecrets := &v1beta1.BackupConfigWithSecrets{
@@ -474,7 +350,7 @@ var _ = Describe("BackupReconciler", func() {
 			}
 
 			// Create fake client with objects
-			fakeClient := setupFakeBackupClient(backupConfig, s3Secret, backup)
+			fakeClient := setupFakeBackupClient(backupConfig, s3Secret, backup, cluster)
 
 			// Create reconciler with fake client
 			reconciler = &BackupReconciler{
@@ -482,8 +358,8 @@ var _ = Describe("BackupReconciler", func() {
 				Scheme: runtime.NewScheme(),
 			}
 
-			// Call reconcileBackupAnnotations
-			updated, err := reconciler.reconcileBackupAnnotations(testCtx, backup, backupConfigWithSecrets)
+			// Call reconcileBackupMetadata
+			updated, err := reconciler.reconcileBackupMetadata(testCtx, backup, backupConfigWithSecrets, cluster)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(updated).To(BeFalse())
 
@@ -491,15 +367,20 @@ var _ = Describe("BackupReconciler", func() {
 			updatedBackup := &cnpgv1.Backup{}
 			err = fakeClient.Get(testCtx, client.ObjectKey{Namespace: "default", Name: "test-backup"}, updatedBackup)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(updatedBackup.Annotations).NotTo(HaveKey(backupTypeAnnotationName))
+			Expect(updatedBackup.Labels).NotTo(HaveKey(backupTypeLabelName))
+			Expect(updatedBackup.Labels).NotTo(HaveKey(backupPgVersionLabelName))
 			Expect(updatedBackup.Annotations).NotTo(HaveKey(backupDirectDependentsAnnotationName))
 			Expect(updatedBackup.Annotations).NotTo(HaveKey(backupAllDependentsAnnotationName))
 		})
 
-		It("should set full backup type annotation for full backup", func() {
+		It("should set full backup type label and PG version label for full backup", func() {
 			// Create test objects
 			backupConfig, s3Secret := createTestBackupConfig("test-backupconfig", "default")
 			backup := createTestBackup("test-backup", "default", "test-cluster", "base_000000010000000100000001", true)
+			cluster := createTestCluster("test-cluster", "default")
+
+			// Set PostgreSQL version in cluster image
+			cluster.Spec.ImageName = "ghcr.io/cloudnative-pg/postgresql:14.0"
 
 			// Create a mock BackupConfigWithSecrets
 			backupConfigWithSecrets := &v1beta1.BackupConfigWithSecrets{
@@ -518,7 +399,7 @@ var _ = Describe("BackupReconciler", func() {
 			}
 
 			// Create fake client with objects
-			fakeClient := setupFakeBackupClient(backupConfig, s3Secret, backup)
+			fakeClient := setupFakeBackupClient(backupConfig, s3Secret, backup, cluster)
 
 			// Create reconciler with fake client
 			reconciler = &BackupReconciler{
@@ -526,27 +407,33 @@ var _ = Describe("BackupReconciler", func() {
 				Scheme: runtime.NewScheme(),
 			}
 
-			// Call reconcileBackupAnnotations
-			updated, err := reconciler.reconcileBackupAnnotations(testCtx, backup, backupConfigWithSecrets)
+			// Call reconcileBackupMetadata
+			updated, err := reconciler.reconcileBackupMetadata(testCtx, backup, backupConfigWithSecrets, cluster)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(updated).To(BeTrue())
-			Expect(backup.Annotations).To(HaveKeyWithValue(backupTypeAnnotationName, string(BackupTypeFull)))
+			Expect(backup.Labels).To(HaveKeyWithValue(backupTypeLabelName, string(BackupTypeFull)))
+			Expect(backup.Labels).To(HaveKeyWithValue(backupPgVersionLabelName, "14"))
 			Expect(backup.Annotations).To(HaveKeyWithValue(backupDirectDependentsAnnotationName, ""))
 			Expect(backup.Annotations).To(HaveKeyWithValue(backupAllDependentsAnnotationName, ""))
 
-			// Verify backup was updated with correct annotations
+			// Verify backup was updated with correct labels and annotations
 			updatedBackup := &cnpgv1.Backup{}
 			err = fakeClient.Get(testCtx, client.ObjectKey{Namespace: "default", Name: "test-backup"}, updatedBackup)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(updatedBackup.Annotations).To(HaveKeyWithValue(backupTypeAnnotationName, string(BackupTypeFull)))
+			Expect(updatedBackup.Labels).To(HaveKeyWithValue(backupTypeLabelName, string(BackupTypeFull)))
+			Expect(updatedBackup.Labels).To(HaveKeyWithValue(backupPgVersionLabelName, "14"))
 			Expect(updatedBackup.Annotations).To(HaveKeyWithValue(backupDirectDependentsAnnotationName, ""))
 			Expect(updatedBackup.Annotations).To(HaveKeyWithValue(backupAllDependentsAnnotationName, ""))
 		})
 
-		It("should set incremental backup type annotation for incremental backup", func() {
+		It("should set incremental backup type label and PG version label for incremental backup", func() {
 			// Create test objects
 			backupConfig, s3Secret := createTestBackupConfig("test-backupconfig", "default")
 			backup := createTestBackup("test-backup", "default", "test-cluster", "base_000000010000000100000002_D_000000010000000100000001", true)
+			cluster := createTestCluster("test-cluster", "default")
+
+			// Set PostgreSQL version in cluster image
+			cluster.Spec.ImageName = "ghcr.io/cloudnative-pg/postgresql:15.0"
 
 			// Create a mock BackupConfigWithSecrets
 			backupConfigWithSecrets := &v1beta1.BackupConfigWithSecrets{
@@ -565,7 +452,7 @@ var _ = Describe("BackupReconciler", func() {
 			}
 
 			// Create fake client with objects
-			fakeClient := setupFakeBackupClient(backupConfig, s3Secret, backup)
+			fakeClient := setupFakeBackupClient(backupConfig, s3Secret, backup, cluster)
 
 			// Create reconciler with fake client
 			reconciler = &BackupReconciler{
@@ -573,19 +460,21 @@ var _ = Describe("BackupReconciler", func() {
 				Scheme: runtime.NewScheme(),
 			}
 
-			// Call reconcileBackupAnnotations
-			updated, err := reconciler.reconcileBackupAnnotations(testCtx, backup, backupConfigWithSecrets)
+			// Call reconcileBackupMetadata
+			updated, err := reconciler.reconcileBackupMetadata(testCtx, backup, backupConfigWithSecrets, cluster)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(updated).To(BeTrue())
-			Expect(backup.Annotations).To(HaveKeyWithValue(backupTypeAnnotationName, string(BackupTypeIncremental)))
+			Expect(backup.Labels).To(HaveKeyWithValue(backupTypeLabelName, string(BackupTypeIncremental)))
+			Expect(backup.Labels).To(HaveKeyWithValue(backupPgVersionLabelName, "15"))
 			Expect(backup.Annotations).To(HaveKeyWithValue(backupDirectDependentsAnnotationName, ""))
 			Expect(backup.Annotations).To(HaveKeyWithValue(backupAllDependentsAnnotationName, ""))
 
-			// Verify backup was updated with correct annotations
+			// Verify backup was updated with correct labels and annotations
 			updatedBackup := &cnpgv1.Backup{}
 			err = fakeClient.Get(testCtx, client.ObjectKey{Namespace: "default", Name: "test-backup"}, updatedBackup)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(updatedBackup.Annotations).To(HaveKeyWithValue(backupTypeAnnotationName, string(BackupTypeIncremental)))
+			Expect(updatedBackup.Labels).To(HaveKeyWithValue(backupTypeLabelName, string(BackupTypeIncremental)))
+			Expect(updatedBackup.Labels).To(HaveKeyWithValue(backupPgVersionLabelName, "15"))
 			Expect(updatedBackup.Annotations).To(HaveKeyWithValue(backupDirectDependentsAnnotationName, ""))
 			Expect(updatedBackup.Annotations).To(HaveKeyWithValue(backupAllDependentsAnnotationName, ""))
 		})
@@ -595,6 +484,10 @@ var _ = Describe("BackupReconciler", func() {
 			backupConfig, s3Secret := createTestBackupConfig("test-backupconfig", "default")
 			baseBackup := createTestBackup("base-backup", "default", "test-cluster", "base_000000010000000100000001", true)
 			dependentBackup := createTestBackup("dependent-backup", "default", "test-cluster", "base_000000010000000100000002_D_000000010000000100000001", true)
+			cluster := createTestCluster("test-cluster", "default")
+
+			// Set PostgreSQL version in cluster image
+			cluster.Spec.ImageName = "ghcr.io/cloudnative-pg/postgresql:14.0"
 
 			// Create a mock BackupConfigWithSecrets
 			backupConfigWithSecrets := &v1beta1.BackupConfigWithSecrets{
@@ -613,7 +506,7 @@ var _ = Describe("BackupReconciler", func() {
 			}
 
 			// Create fake client with objects
-			fakeClient := setupFakeBackupClient(backupConfig, s3Secret, baseBackup, dependentBackup)
+			fakeClient := setupFakeBackupClient(backupConfig, s3Secret, baseBackup, dependentBackup, cluster)
 
 			// Create reconciler with fake client
 			reconciler = &BackupReconciler{
@@ -621,19 +514,21 @@ var _ = Describe("BackupReconciler", func() {
 				Scheme: runtime.NewScheme(),
 			}
 
-			// Call reconcileBackupAnnotations
-			updated, err := reconciler.reconcileBackupAnnotations(testCtx, baseBackup, backupConfigWithSecrets)
+			// Call reconcileBackupMetadata
+			updated, err := reconciler.reconcileBackupMetadata(testCtx, baseBackup, backupConfigWithSecrets, cluster)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(updated).To(BeTrue())
-			Expect(baseBackup.Annotations).To(HaveKeyWithValue(backupTypeAnnotationName, string(BackupTypeFull)))
+			Expect(baseBackup.Labels).To(HaveKeyWithValue(backupTypeLabelName, string(BackupTypeFull)))
+			Expect(baseBackup.Labels).To(HaveKeyWithValue(backupPgVersionLabelName, "14"))
 			Expect(baseBackup.Annotations).To(HaveKeyWithValue(backupDirectDependentsAnnotationName, "dependent-backup"))
 			Expect(baseBackup.Annotations).To(HaveKeyWithValue(backupAllDependentsAnnotationName, "dependent-backup"))
 
-			// Verify backup was updated with correct annotations
+			// Verify backup was updated with correct labels and annotations
 			updatedBackup := &cnpgv1.Backup{}
 			err = fakeClient.Get(testCtx, client.ObjectKey{Namespace: "default", Name: "base-backup"}, updatedBackup)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(updatedBackup.Annotations).To(HaveKeyWithValue(backupTypeAnnotationName, string(BackupTypeFull)))
+			Expect(updatedBackup.Labels).To(HaveKeyWithValue(backupTypeLabelName, string(BackupTypeFull)))
+			Expect(updatedBackup.Labels).To(HaveKeyWithValue(backupPgVersionLabelName, "14"))
 			Expect(updatedBackup.Annotations).To(HaveKeyWithValue(backupDirectDependentsAnnotationName, "dependent-backup"))
 			Expect(updatedBackup.Annotations).To(HaveKeyWithValue(backupAllDependentsAnnotationName, "dependent-backup"))
 		})
@@ -644,6 +539,10 @@ var _ = Describe("BackupReconciler", func() {
 			baseBackup := createTestBackup("base-backup", "default", "test-cluster", "base_000000010000000100000001", true)
 			directDependentBackup := createTestBackup("direct-dependent", "default", "test-cluster", "base_000000010000000100000002_D_000000010000000100000001", true)
 			indirectDependentBackup := createTestBackup("indirect-dependent", "default", "test-cluster", "base_000000010000000100000003_D_000000010000000100000002", true)
+			cluster := createTestCluster("test-cluster", "default")
+
+			// Set PostgreSQL version in cluster image
+			cluster.Spec.ImageName = "ghcr.io/cloudnative-pg/postgresql:14.0"
 
 			// Create a mock BackupConfigWithSecrets
 			backupConfigWithSecrets := &v1beta1.BackupConfigWithSecrets{
@@ -662,7 +561,7 @@ var _ = Describe("BackupReconciler", func() {
 			}
 
 			// Create fake client with objects
-			fakeClient := setupFakeBackupClient(backupConfig, s3Secret, baseBackup, directDependentBackup, indirectDependentBackup)
+			fakeClient := setupFakeBackupClient(backupConfig, s3Secret, baseBackup, directDependentBackup, indirectDependentBackup, cluster)
 
 			// Create reconciler with fake client
 			reconciler = &BackupReconciler{
@@ -670,32 +569,35 @@ var _ = Describe("BackupReconciler", func() {
 				Scheme: runtime.NewScheme(),
 			}
 
-			// Call reconcileBackupAnnotations
-			updated, err := reconciler.reconcileBackupAnnotations(testCtx, baseBackup, backupConfigWithSecrets)
+			// Call reconcileBackupMetadata
+			updated, err := reconciler.reconcileBackupMetadata(testCtx, baseBackup, backupConfigWithSecrets, cluster)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(updated).To(BeTrue())
+			Expect(baseBackup.Labels).To(HaveKeyWithValue(backupTypeLabelName, string(BackupTypeFull)))
+			Expect(baseBackup.Labels).To(HaveKeyWithValue(backupPgVersionLabelName, "14"))
+			Expect(baseBackup.Annotations).To(HaveKeyWithValue(backupDirectDependentsAnnotationName, "direct-dependent"))
+			Expect(baseBackup.Annotations).To(HaveKeyWithValue(backupAllDependentsAnnotationName, "direct-dependent indirect-dependent"))
 
-			// Verify backup was updated with correct annotations
+			// Verify backup was updated with correct labels and annotations
 			updatedBackup := &cnpgv1.Backup{}
 			err = fakeClient.Get(testCtx, client.ObjectKey{Namespace: "default", Name: "base-backup"}, updatedBackup)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(updatedBackup.Annotations).To(HaveKeyWithValue(backupTypeAnnotationName, string(BackupTypeFull)))
+			Expect(updatedBackup.Labels).To(HaveKeyWithValue(backupTypeLabelName, string(BackupTypeFull)))
+			Expect(updatedBackup.Labels).To(HaveKeyWithValue(backupPgVersionLabelName, "14"))
 			Expect(updatedBackup.Annotations).To(HaveKeyWithValue(backupDirectDependentsAnnotationName, "direct-dependent"))
-
-			// The all dependents annotation should include both direct and indirect dependents
-			allDependents := updatedBackup.Annotations[backupAllDependentsAnnotationName]
-			Expect(allDependents).To(ContainSubstring("direct-dependent"))
-			Expect(allDependents).To(ContainSubstring("indirect-dependent"))
+			Expect(updatedBackup.Annotations).To(HaveKeyWithValue(backupAllDependentsAnnotationName, "direct-dependent indirect-dependent"))
 		})
 
-		It("should not update backup if annotations are already correct", func() {
+		It("should not update backup if metadata is already correct", func() {
 			// Create test objects
 			backupConfig, s3Secret := createTestBackupConfig("test-backupconfig", "default")
-
-			// Create a backup with annotations already set
 			backup := createTestBackup("test-backup", "default", "test-cluster", "base_000000010000000100000001", true)
+			cluster := createTestCluster("test-cluster", "default")
+			backup.Labels = map[string]string{
+				backupTypeLabelName:      string(BackupTypeFull),
+				backupPgVersionLabelName: "14",
+			}
 			backup.Annotations = map[string]string{
-				backupTypeAnnotationName:             string(BackupTypeFull),
 				backupDirectDependentsAnnotationName: "",
 				backupAllDependentsAnnotationName:    "",
 			}
@@ -717,7 +619,7 @@ var _ = Describe("BackupReconciler", func() {
 			}
 
 			// Create fake client with objects
-			fakeClient := setupFakeBackupClient(backupConfig, s3Secret, backup)
+			fakeClient := setupFakeBackupClient(backupConfig, s3Secret, backup, cluster)
 
 			// Create reconciler with fake client
 			reconciler = &BackupReconciler{
@@ -725,8 +627,8 @@ var _ = Describe("BackupReconciler", func() {
 				Scheme: runtime.NewScheme(),
 			}
 
-			// Call reconcileBackupAnnotations
-			updated, err := reconciler.reconcileBackupAnnotations(testCtx, backup, backupConfigWithSecrets)
+			// Call reconcileBackupMetadata
+			updated, err := reconciler.reconcileBackupMetadata(testCtx, backup, backupConfigWithSecrets, cluster)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(updated).To(BeFalse())
 		})
@@ -736,6 +638,7 @@ var _ = Describe("BackupReconciler", func() {
 			// and we need to update the annotations of other backups
 
 			// Create test objects
+			cluster := createTestCluster("test-cluster", "default")
 			backupConfig, s3Secret := createTestBackupConfig("test-backupconfig", "default")
 			baseBackup := createTestBackup("base-backup", "default", "test-cluster", "base_000000010000000100000001", true)
 			dependentBackup := createTestBackup("dependent-backup", "default", "test-cluster", "base_000000010000000100000002_D_000000010000000100000001", true)
@@ -762,7 +665,7 @@ var _ = Describe("BackupReconciler", func() {
 			}
 
 			// Create fake client with objects
-			fakeClient := setupFakeBackupClient(backupConfig, s3Secret, baseBackup, dependentBackup)
+			fakeClient := setupFakeBackupClient(backupConfig, s3Secret, baseBackup, dependentBackup, cluster)
 
 			// Create reconciler with fake client
 			reconciler = &BackupReconciler{
@@ -770,8 +673,8 @@ var _ = Describe("BackupReconciler", func() {
 				Scheme: runtime.NewScheme(),
 			}
 
-			// Call reconcileBackupAnnotations on the base backup
-			updated, err := reconciler.reconcileBackupAnnotations(testCtx, baseBackup, backupConfigWithSecrets)
+			// Call reconcileBackupMetadata on the base backup
+			updated, err := reconciler.reconcileBackupMetadata(testCtx, baseBackup, backupConfigWithSecrets, cluster)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(updated).To(BeTrue())
 
@@ -780,7 +683,8 @@ var _ = Describe("BackupReconciler", func() {
 			updatedBackup := &cnpgv1.Backup{}
 			err = fakeClient.Get(testCtx, client.ObjectKey{Namespace: "default", Name: "base-backup"}, updatedBackup)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(updatedBackup.Annotations).To(HaveKeyWithValue(backupTypeAnnotationName, string(BackupTypeFull)))
+			Expect(updatedBackup.Labels).To(HaveKeyWithValue(backupTypeLabelName, string(BackupTypeFull)))
+			Expect(updatedBackup.Labels).To(HaveKeyWithValue(backupPgVersionLabelName, "14"))
 			Expect(updatedBackup.Annotations).To(HaveKeyWithValue(backupDirectDependentsAnnotationName, ""))
 			Expect(updatedBackup.Annotations).To(HaveKeyWithValue(backupAllDependentsAnnotationName, ""))
 		})
@@ -788,11 +692,15 @@ var _ = Describe("BackupReconciler", func() {
 		It("should update parent backup annotations when new dependent backup is created", func() {
 			// Create test objects
 			backupConfig, s3Secret := createTestBackupConfig("test-backupconfig", "default")
+			cluster := createTestCluster("test-cluster", "default")
 
 			// Create parent backup with no dependents initially
 			parentBackup := createTestBackup("parent-backup", "default", "test-cluster", "base_000000010000000100000001", true)
+			parentBackup.Labels = map[string]string{
+				backupTypeLabelName:      string(BackupTypeFull),
+				backupPgVersionLabelName: "14",
+			}
 			parentBackup.Annotations = map[string]string{
-				backupTypeAnnotationName:             string(BackupTypeFull),
 				backupDirectDependentsAnnotationName: "",
 				backupAllDependentsAnnotationName:    "",
 			}
@@ -817,7 +725,7 @@ var _ = Describe("BackupReconciler", func() {
 			}
 
 			// Create fake client with objects
-			fakeClient := setupFakeBackupClient(backupConfig, s3Secret, parentBackup, newDependentBackup)
+			fakeClient := setupFakeBackupClient(backupConfig, s3Secret, parentBackup, newDependentBackup, cluster)
 
 			// Create reconciler with fake client
 			reconciler = &BackupReconciler{
@@ -825,8 +733,8 @@ var _ = Describe("BackupReconciler", func() {
 				Scheme: runtime.NewScheme(),
 			}
 
-			// Call reconcileBackupAnnotations on the parent backup
-			updated, err := reconciler.reconcileBackupAnnotations(testCtx, parentBackup, backupConfigWithSecrets)
+			// Call reconcileBackupMetadata on the parent backup
+			updated, err := reconciler.reconcileBackupMetadata(testCtx, parentBackup, backupConfigWithSecrets, cluster)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(updated).To(BeTrue(), "Parent backup should be updated with new dependent")
 
@@ -834,7 +742,8 @@ var _ = Describe("BackupReconciler", func() {
 			updatedParent := &cnpgv1.Backup{}
 			err = fakeClient.Get(testCtx, client.ObjectKey{Namespace: "default", Name: "parent-backup"}, updatedParent)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(updatedParent.Annotations).To(HaveKeyWithValue(backupTypeAnnotationName, string(BackupTypeFull)))
+			Expect(updatedParent.Labels).To(HaveKeyWithValue(backupTypeLabelName, string(BackupTypeFull)))
+			Expect(updatedParent.Labels).To(HaveKeyWithValue(backupPgVersionLabelName, "14"))
 			Expect(updatedParent.Annotations).To(HaveKeyWithValue(backupDirectDependentsAnnotationName, "new-dependent"))
 			Expect(updatedParent.Annotations).To(HaveKeyWithValue(backupAllDependentsAnnotationName, "new-dependent"))
 
@@ -845,8 +754,8 @@ var _ = Describe("BackupReconciler", func() {
 			fakeClient = setupFakeBackupClient(backupConfig, s3Secret, parentBackup, newDependentBackup, secondLevelBackup)
 			reconciler.Client = fakeClient
 
-			// Call reconcileBackupAnnotations again on the parent backup
-			updated, err = reconciler.reconcileBackupAnnotations(testCtx, parentBackup, backupConfigWithSecrets)
+			// Call reconcileBackupMetadata again on the parent backup
+			updated, err = reconciler.reconcileBackupMetadata(testCtx, parentBackup, backupConfigWithSecrets, cluster)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(updated).To(BeTrue(), "Parent backup should be updated with indirect dependent")
 

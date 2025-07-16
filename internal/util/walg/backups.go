@@ -72,6 +72,7 @@ func (m *BackupMetadata) Timeline() int {
 	tid, _ := strconv.ParseInt(timelineStr, 16, 64)
 	return int(tid)
 }
+
 func (m *BackupMetadata) TimelineStr() string {
 	return m.WalFileName[0:8]
 }
@@ -92,11 +93,12 @@ func (m *BackupMetadata) HasMatchingTimeline(targetTimeline string) bool {
 func GetBackupsList(
 	ctx context.Context,
 	backupConfig *v1beta1.BackupConfigWithSecrets,
+	pgMajorVersion int,
 ) ([]BackupMetadata, error) {
 	logger := logr.FromContextOrDiscard(ctx)
 	result, err := cmd.New("wal-g", "backup-list", "--detail", "--json").
 		WithContext(ctx).
-		WithEnv(NewConfigFromBackupConfig(backupConfig).ToEnvMap()).
+		WithEnv(NewConfigFromBackupConfig(backupConfig, pgMajorVersion).ToEnvMap()).
 		Run()
 	if err != nil {
 		logger.Error(
@@ -169,11 +171,14 @@ func GetBackupByName(ctx context.Context, backupList []BackupMetadata, name stri
 func DeleteBackup(
 	ctx context.Context,
 	backupConfig *v1beta1.BackupConfigWithSecrets,
+	pgMajorVersion int,
 	backupName string,
 ) (*cmd.RunResult, error) {
+	logger := logr.FromContextOrDiscard(ctx)
+
 	result, err := cmd.New("wal-g", "delete", "target", backupName, "--confirm").
 		WithContext(ctx).
-		WithEnv(NewConfigFromBackupConfig(backupConfig).ToEnvMap()).
+		WithEnv(NewConfigFromBackupConfig(backupConfig, pgMajorVersion).ToEnvMap()).
 		Run()
 
 	backupDoesNotExistStr := fmt.Sprintf("Backup '%s' does not exist.", backupName)
@@ -181,6 +186,20 @@ func DeleteBackup(
 	if err != nil && strings.Contains(string(result.Stderr()), backupDoesNotExistStr) {
 		err = nil
 	}
+
+	gcResult, gcErr := cmd.New("wal-g", "delete", "garbage", "--confirm").
+		WithContext(ctx).
+		WithEnv(NewConfigFromBackupConfig(backupConfig, pgMajorVersion).ToEnvMap()).
+		Run()
+	if gcErr != nil {
+		// Actually errors on garbage collect do not block us from deleting backup
+		// So only logging them and not reporting them to caller
+		logger.Error(
+			gcErr, "Error while 'wal-g delete garbage'",
+			"stdout", gcResult.Stdout(), "stderr", gcResult.Stderr(),
+		)
+	}
+
 	return result, err
 }
 

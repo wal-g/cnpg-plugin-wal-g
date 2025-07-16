@@ -72,6 +72,11 @@ func (b BackupServiceImplementation) Backup(
 		return nil, fmt.Errorf("backup request failed: no PGDATA env variable specified")
 	}
 
+	pgMajorVersion := viper.GetInt("pg_major")
+	if pgMajorVersion == 0 {
+		return nil, fmt.Errorf("backup request failed: no PG_MAJOR env variable specified")
+	}
+
 	backup, err := common.CnpgBackupFromJSON(request.BackupDefinition)
 	if err != nil {
 		return nil, fmt.Errorf("backup request failed: cannot parse cnpg backup: %w", err)
@@ -104,7 +109,7 @@ func (b BackupServiceImplementation) Backup(
 
 	result, err := cmd.New("wal-g", "backup-push", pgdata, "--add-user-data", string(backupParamsJSON)).
 		WithContext(logr.NewContext(ctx, logger)).
-		WithEnv(walg.NewConfigFromBackupConfig(backupConfigWithSecrets).ToEnvMap()).
+		WithEnv(walg.NewConfigFromBackupConfig(backupConfigWithSecrets, pgMajorVersion).ToEnvMap()).
 		Run()
 
 	if err != nil {
@@ -112,7 +117,7 @@ func (b BackupServiceImplementation) Backup(
 		return nil, fmt.Errorf("failed to do wal-g backup-push: %w (stderr: %s)", err, result.Stderr())
 	}
 	logger.Info("Finished wal-g backup-push", "stdout", string(result.Stdout()), "stderr", string(result.Stderr()))
-	return b.buildBackupResult(ctx, backupHumanName, backupConfigWithSecrets, backupParams)
+	return b.buildBackupResult(ctx, backupHumanName, backupConfigWithSecrets, pgMajorVersion, backupParams)
 }
 
 func (b BackupServiceImplementation) getBackupConfig(
@@ -136,9 +141,10 @@ func (b BackupServiceImplementation) buildBackupResult(
 	ctx context.Context,
 	backupHumanName string,
 	config *v1beta1.BackupConfigWithSecrets,
+	pgMajorVersion int,
 	backupParams map[string]any,
 ) (*cnpgbackup.BackupResult, error) {
-	walgBackupList, err := walg.GetBackupsList(ctx, config)
+	walgBackupList, err := walg.GetBackupsList(ctx, config, pgMajorVersion)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list wal-g backups: %w", err)
 	}

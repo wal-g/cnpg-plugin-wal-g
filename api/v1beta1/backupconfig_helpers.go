@@ -19,6 +19,7 @@ package v1beta1
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	cnpgv1 "github.com/cloudnative-pg/cloudnative-pg/api/v1"
 	common "github.com/wal-g/cnpg-plugin-wal-g/internal/common"
@@ -54,6 +55,56 @@ func BackupConfigIsUsedForRecovery(backupConfigName types.NamespacedName, cluste
 func GetBackupConfigForCluster(ctx context.Context, c client.Client, cluster *cnpgv1.Cluster) (*BackupConfig, error) {
 	pluginConfig := common.GetPluginConfigFromCluster(cluster)
 	return getBackupConfigFromPluginConfig(ctx, c, pluginConfig, cluster.Namespace)
+}
+
+// GetBackupConfigForBackup fetches the BackupConfig for a given Backup
+func GetBackupConfigForBackup(ctx context.Context, c client.Client, backup *cnpgv1.Backup) (*BackupConfig, error) {
+	if backup == nil {
+		return nil, fmt.Errorf("getBackupConfigForBackup: provided backup is nill")
+	}
+
+	backupConfigKey := types.NamespacedName{}
+
+	for _, ownerRef := range backup.OwnerReferences {
+		if ownerRef.Kind == "BackupConfig" && strings.HasPrefix(ownerRef.APIVersion, GroupVersion.Group) {
+			backupConfigKey = types.NamespacedName{
+				Namespace: backup.Namespace,
+				Name:      ownerRef.Name,
+			}
+		}
+	}
+
+	if backupConfigKey.Name == "" {
+		return nil, fmt.Errorf("no BackupConfig owner found for backup %v", client.ObjectKeyFromObject(backup))
+	}
+
+	backupConfig := &BackupConfig{}
+	if err := c.Get(ctx, backupConfigKey, backupConfig); err != nil {
+		return nil, fmt.Errorf(
+			"while getting BackupConfig %v for backup %v: %w",
+			backupConfigKey, client.ObjectKeyFromObject(backup), err,
+		)
+	}
+
+	return backupConfig, nil
+}
+
+// GetBackupConfigWithSecretsForBackup fetches the BackupConfig with secrets for a given Backup
+func GetBackupConfigWithSecretsForBackup(
+	ctx context.Context,
+	c client.Client,
+	backup *cnpgv1.Backup,
+) (*BackupConfigWithSecrets, error) {
+	backupConfig, err := GetBackupConfigForBackup(ctx, c, backup)
+	if err != nil {
+		return nil, err
+	}
+
+	backupConfigWithSecrets, err := backupConfig.PrefetchSecretsData(ctx, c)
+	if err != nil {
+		return nil, fmt.Errorf("while prefetching backup secrets data: %w", err)
+	}
+	return backupConfigWithSecrets, nil
 }
 
 // GetBackupConfigForCluster returns BackupConfig object used for restoring from backups

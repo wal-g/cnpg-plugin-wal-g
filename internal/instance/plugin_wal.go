@@ -72,6 +72,11 @@ func (w WALServiceImplementation) Archive(
 		return nil, fmt.Errorf("WAL archivation restricted while running not in 'normal' mode")
 	}
 
+	pgMajorVersion := viper.GetInt("pg_major")
+	if pgMajorVersion == 0 {
+		return nil, fmt.Errorf("backup request failed: no PG_MAJOR env variable specified")
+	}
+
 	logger := logr.FromContextOrDiscard(ctx).WithName("plugin_wal").WithValues("method", "Archive")
 	childrenCtx := logr.NewContext(ctx, logger)
 
@@ -87,7 +92,7 @@ func (w WALServiceImplementation) Archive(
 
 	result, err := cmd.New("wal-g", "wal-push", request.SourceFileName).
 		WithContext(childrenCtx).
-		WithEnv(walg.NewConfigFromBackupConfig(backupConfig).ToEnvMap()).
+		WithEnv(walg.NewConfigFromBackupConfig(backupConfig, pgMajorVersion).ToEnvMap()).
 		Run()
 
 	logger = logger.WithValues("stdout", string(result.Stdout()), "stderr", string(result.Stderr()))
@@ -108,6 +113,11 @@ func (w WALServiceImplementation) Restore(
 	logger := logr.FromContextOrDiscard(ctx).WithName("plugin_wal").WithValues("method", "Restore")
 	childrenCtx := logr.NewContext(ctx, logger)
 
+	pgMajorVersion := viper.GetInt("pg_major")
+	if pgMajorVersion == 0 {
+		return nil, fmt.Errorf("backup request failed: no PG_MAJOR env variable specified")
+	}
+
 	cluster, err := common.CnpgClusterFromJSON(request.ClusterDefinition)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse cluser: %w", err)
@@ -120,7 +130,7 @@ func (w WALServiceImplementation) Restore(
 
 	result, err := cmd.New("wal-g", "wal-fetch", request.SourceWalName, request.DestinationFileName).
 		WithContext(childrenCtx).
-		WithEnv(walg.NewConfigFromBackupConfig(backupConfig).ToEnvMap()).
+		WithEnv(walg.NewConfigFromBackupConfig(backupConfig, pgMajorVersion).ToEnvMap()).
 		Run()
 
 	logger = logger.WithValues("stdout", string(result.Stdout()), "stderr", string(result.Stderr()))
