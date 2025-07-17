@@ -361,16 +361,16 @@ var _ = Describe("BackupReconciler", func() {
 			// Call reconcileBackupMetadata
 			updated, err := reconciler.reconcileBackupMetadata(testCtx, backup, backupConfigWithSecrets, cluster)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(updated).To(BeFalse())
+			Expect(updated).To(BeTrue())
 
 			// Verify backup was not updated
 			updatedBackup := &cnpgv1.Backup{}
 			err = fakeClient.Get(testCtx, client.ObjectKey{Namespace: "default", Name: "test-backup"}, updatedBackup)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(updatedBackup.Labels).NotTo(HaveKey(backupTypeLabelName))
-			Expect(updatedBackup.Labels).NotTo(HaveKey(backupPgVersionLabelName))
-			Expect(updatedBackup.Annotations).NotTo(HaveKey(backupDirectDependentsAnnotationName))
-			Expect(updatedBackup.Annotations).NotTo(HaveKey(backupAllDependentsAnnotationName))
+			Expect(updatedBackup.Labels).ToNot(HaveKey(backupTypeLabelName))
+			Expect(updatedBackup.Labels).To(HaveKeyWithValue(backupPgVersionLabelName, "14"))
+			Expect(updatedBackup.Annotations).To(HaveKeyWithValue(backupDirectDependentsAnnotationName, ""))
+			Expect(updatedBackup.Annotations).To(HaveKeyWithValue(backupAllDependentsAnnotationName, ""))
 		})
 
 		It("should set full backup type label and PG version label for full backup", func() {

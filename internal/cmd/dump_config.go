@@ -37,7 +37,7 @@ import (
 // NewDumpConfigCmd creates a new command for dumping wal-g configuration
 func NewDumpConfigCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "dump-config [namespace/]BackupConfigName <pgVersion>",
+		Use:   "dump-config [namespace/]BackupConfigName <pg_major>",
 		Short: "Dumps BackupConfig wal-g configuration to file. Namespace is optional, using default if not specified",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if len(args) != 2 {
@@ -45,12 +45,12 @@ func NewDumpConfigCmd() *cobra.Command {
 			}
 
 			viper.Set("backup-config", args[0])
-			viper.Set("pgversion", args[1])
+			viper.Set("pg_major", args[1])
 
-			if viper.GetInt("pgversion") < 10 {
+			if viper.GetInt("pg_major") < 10 {
 				return fmt.Errorf(
 					"unsupported pg version passed: %d, should be single number",
-					viper.GetInt("pgversion"),
+					viper.GetInt("pg_major"),
 				)
 			}
 
@@ -123,7 +123,7 @@ func runDumpConfig(ctx context.Context, client client.Client) error {
 	}
 
 	// Create a Config object
-	config := walg.NewConfigFromBackupConfig(backupConfigWithSecrets, viper.GetInt("pgversion"))
+	config := walg.NewConfigFromBackupConfig(backupConfigWithSecrets, viper.GetInt("pg_major"))
 
 	// Write the Config to a file
 	err = config.ToFile(outputPath)

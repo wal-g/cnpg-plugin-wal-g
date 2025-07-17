@@ -195,7 +195,7 @@ var _ = Describe("DumpConfig", func() {
 
 		It("should successfully write the config to a file", func() {
 			viper.Set("backup-config", testNamespace+"/test-backup-config")
-			viper.Set("pgversion", "17")
+			viper.Set("pg_major", "17")
 			outputPath := filepath.Join(tempDir, "config.json")
 			viper.Set("output", outputPath)
 

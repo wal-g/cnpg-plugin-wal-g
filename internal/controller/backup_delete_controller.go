@@ -68,7 +68,6 @@ func (b *BackupDeletionController) Start(ctx context.Context) error {
 // EnqueueBackupDeletion adds a Backup to the deletion queue for its BackupConfig
 // If the queue doesn't exist, it creates a new one and starts a goroutine to process it
 func (b *BackupDeletionController) EnqueueBackupDeletion(ctx context.Context, backup *cnpgv1.Backup) error {
-
 	logger := logr.FromContextOrDiscard(ctx).WithName("BackupDeletionController")
 	// Get BackupConfig with secrets for the backup
 	backupConfigWithSecrets, err := v1beta1.GetBackupConfigWithSecretsForBackup(ctx, b.Client, backup)

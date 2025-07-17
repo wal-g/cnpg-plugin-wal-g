@@ -69,9 +69,6 @@ func Start(ctx context.Context) error {
 	if os.Getenv("PG_MAJOR") == "" {
 		panic("Cannot start: PG_MAJOR environment variable is unset")
 	}
-	if os.Getenv("PG_VERSION") == "" {
-		panic("Cannot start: PG_VERSION environment variable is unset")
-	}
 
 	controllerOptions := ctrl.Options{
 		Scheme: scheme,

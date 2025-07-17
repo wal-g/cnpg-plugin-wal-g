@@ -54,8 +54,8 @@ const backupDirectDependentsAnnotationName = "cnpg-plugin-wal-g.yandex.cloud/dep
 
 type BackupType string
 
-const BackupTypeFull BackupType = "FULL"
-const BackupTypeIncremental BackupType = "INCREMENTAL"
+const BackupTypeFull BackupType = "full"
+const BackupTypeIncremental BackupType = "incremental"
 
 // +kubebuilder:rbac:groups=postgresql.cnpg.io,resources=clusters,verbs=get;list;watch
 // +kubebuilder:rbac:groups=postgresql.cnpg.io,resources=backups,verbs=get;list;watch;create;update;patch;delete
@@ -81,7 +81,9 @@ func (r *BackupReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 	}
 
 	// Skip backups not managed by plugin
-	if backup.Spec.PluginConfiguration == nil || backup.Spec.PluginConfiguration.Name != common.PluginName {
+	if backup.Spec.PluginConfiguration == nil ||
+		backup.Spec.PluginConfiguration.Name != common.PluginName ||
+		backup.Spec.Method != cnpgv1.BackupMethodPlugin {
 		return ctrl.Result{}, nil
 	}
 
@@ -232,10 +234,6 @@ func (r *BackupReconciler) reconcileBackupMetadata(
 	cluster *cnpgv1.Cluster,
 ) (bool, error) {
 	logger := logr.FromContextOrDiscard(ctx)
-	// If backup has not BackupID - skipping
-	if backup.Status.BackupID == "" {
-		return false, nil
-	}
 
 	oldBackup := backup.DeepCopy()
 
@@ -246,10 +244,12 @@ func (r *BackupReconciler) reconcileBackupMetadata(
 		backup.Labels = make(map[string]string)
 	}
 
-	if strings.Contains(backup.Status.BackupID, "_D_") {
-		backup.Labels[backupTypeLabelName] = string(BackupTypeIncremental)
-	} else {
-		backup.Labels[backupTypeLabelName] = string(BackupTypeFull)
+	if backup.Status.BackupID != "" {
+		if strings.Contains(backup.Status.BackupID, "_D_") {
+			backup.Labels[backupTypeLabelName] = string(BackupTypeIncremental)
+		} else {
+			backup.Labels[backupTypeLabelName] = string(BackupTypeFull)
+		}
 	}
 
 	if backup.Labels[backupPgVersionLabelName] == "" && cluster == nil {
