@@ -29,6 +29,7 @@ import (
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 
 	"github.com/spf13/viper"
+	"go.uber.org/zap/zapcore"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
@@ -65,7 +66,8 @@ func Start(ctx context.Context) error {
 	var tlsOpts []func(*tls.Config)
 
 	opts := zap.Options{
-		Development: true,
+		Development:     true,
+		StacktraceLevel: zapcore.DPanicLevel,
 	}
 	opts.BindFlags(flag.CommandLine)
 
@@ -197,6 +199,12 @@ func Start(ctx context.Context) error {
 		return err
 	}
 
+	backupDeletionController := controller.NewBackupDeletionController(mgr.GetClient())
+	if err := mgr.Add(backupDeletionController); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "BackupDeletionController")
+		return err
+	}
+
 	if err = (&controller.BackupConfigReconciler{
 		Client: mgr.GetClient(),
 		Scheme: mgr.GetScheme(),
@@ -217,8 +225,9 @@ func Start(ctx context.Context) error {
 
 	// Register the BackupReconciler
 	if err = (&controller.BackupReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
+		Client:             mgr.GetClient(),
+		Scheme:             mgr.GetScheme(),
+		DeletionController: backupDeletionController,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "BackupReconciler")
 		return err

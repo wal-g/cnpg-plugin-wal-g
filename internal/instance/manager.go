@@ -19,6 +19,7 @@ package instance
 import (
 	"context"
 	"flag"
+	"os"
 	"path"
 
 	cnpgv1 "github.com/cloudnative-pg/cloudnative-pg/api/v1"
@@ -64,6 +65,10 @@ func Start(ctx context.Context) error {
 
 	podName := viper.GetString("pod-name")
 	namespace := viper.GetString("namespace")
+
+	if os.Getenv("PG_MAJOR") == "" {
+		panic("Cannot start: PG_MAJOR environment variable is unset")
+	}
 
 	controllerOptions := ctrl.Options{
 		Scheme: scheme,

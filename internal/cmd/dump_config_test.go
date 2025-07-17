@@ -116,7 +116,7 @@ func verifyConfigFileContent(filePath string) {
 	Expect(config.AWSSecretAccessKey).To(Equal("test-access-key-secret"))
 	Expect(config.AWSRegion).To(Equal("us-east-1"))
 	Expect(config.AWSEndpoint).To(Equal("https://s3.amazonaws.com"))
-	Expect(config.WaleS3Prefix).To(Equal("s3://test-bucket/test-prefix"))
+	Expect(config.WaleS3Prefix).To(Equal("s3://test-bucket/test-prefix/17"))
 }
 
 var _ = Describe("DumpConfig", func() {
@@ -195,6 +195,7 @@ var _ = Describe("DumpConfig", func() {
 
 		It("should successfully write the config to a file", func() {
 			viper.Set("backup-config", testNamespace+"/test-backup-config")
+			viper.Set("pg_major", "17")
 			outputPath := filepath.Join(tempDir, "config.json")
 			viper.Set("output", outputPath)
 

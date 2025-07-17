@@ -65,7 +65,7 @@ type Config struct {
 }
 
 func NewConfigWithDefaults() Config {
-	return Config{
+	return Config{ // TODO: evaluate defaults based on runtime constraints!
 		GoMaxProcs:                        5,
 		PgHost:                            "/controller/run",
 		PgUser:                            "postgres",
@@ -74,19 +74,19 @@ func NewConfigWithDefaults() Config {
 		WalgCompressionMethod:             "brotli",
 		WalgDeltaMaxSteps:                 6,
 		WalgDiskRateLimit:                 7864320,
-		WalgDownloadConcurrency:           4,
+		WalgDownloadConcurrency:           12,
 		WalgFailoverStoragesCacheLifetime: "0m",
 		WalgFailoverStoragesCheck:         false,
 		WalgFailoverStoragesCheckSize:     "1KB",
 		WalgNetworkRateLimit:              536870912,
 		WalgS3StorageClass:                "STANDARD",
 		WalgTarDisableFsync:               "False",
-		WalgUploadConcurrency:             4,
-		WalgUploadDiskConcurrency:         4,
+		WalgUploadConcurrency:             16,
+		WalgUploadDiskConcurrency:         8,
 	}
 }
 
-func NewConfigFromBackupConfig(backupConfig *v1beta1.BackupConfigWithSecrets) *Config {
+func NewConfigFromBackupConfig(backupConfig *v1beta1.BackupConfigWithSecrets, pgMajorVersion int) *Config {
 	config := NewConfigWithDefaults()
 
 	if backupConfig.Spec.Storage.StorageType == v1beta1.StorageTypeS3 {
@@ -95,7 +95,7 @@ func NewConfigFromBackupConfig(backupConfig *v1beta1.BackupConfigWithSecrets) *C
 		config.AWSEndpoint = backupConfig.Spec.Storage.S3.EndpointURL
 		config.AWSRegion = backupConfig.Spec.Storage.S3.Region
 		config.AWSS3ForcePathStyle = backupConfig.Spec.Storage.S3.ForcePathStyle
-		config.WaleS3Prefix = backupConfig.Spec.Storage.S3.Prefix
+		config.WaleS3Prefix = fmt.Sprintf("%s/%d", backupConfig.Spec.Storage.S3.Prefix, pgMajorVersion)
 		config.WalgS3StorageClass = backupConfig.Spec.Storage.S3.StorageClass
 	}
 
@@ -106,14 +106,24 @@ func NewConfigFromBackupConfig(backupConfig *v1beta1.BackupConfigWithSecrets) *C
 			config.WalgLibsodiumKeyTransform = "hex"
 		}
 	}
-
-	config.WalgDownloadConcurrency = backupConfig.Spec.DownloadConcurrency
-	config.WalgDownloadFileRetries = backupConfig.Spec.DownloadFileRetries
-	config.WalgDiskRateLimit = backupConfig.Spec.UploadDiskRateLimit
-	config.WalgNetworkRateLimit = backupConfig.Spec.UploadNetworkRateLimit
-	config.WalgUploadConcurrency = backupConfig.Spec.UploadConcurrency
-	config.WalgUploadDiskConcurrency = backupConfig.Spec.UploadDiskConcurrency
 	config.WalgDeltaMaxSteps = backupConfig.Spec.DeltaMaxSteps
+	config.WalgDownloadFileRetries = backupConfig.Spec.DownloadFileRetries
+
+	if backupConfig.Spec.DownloadConcurrency != nil {
+		config.WalgDownloadConcurrency = *backupConfig.Spec.DownloadConcurrency
+	}
+	if backupConfig.Spec.UploadDiskRateLimit != nil {
+		config.WalgDiskRateLimit = *backupConfig.Spec.UploadDiskRateLimit
+	}
+	if backupConfig.Spec.UploadNetworkRateLimit != nil {
+		config.WalgNetworkRateLimit = *backupConfig.Spec.UploadNetworkRateLimit
+	}
+	if backupConfig.Spec.UploadConcurrency != nil {
+		config.WalgUploadConcurrency = *backupConfig.Spec.UploadConcurrency
+	}
+	if backupConfig.Spec.UploadDiskConcurrency != nil {
+		config.WalgUploadDiskConcurrency = *backupConfig.Spec.UploadDiskConcurrency
+	}
 	return &config
 }
 

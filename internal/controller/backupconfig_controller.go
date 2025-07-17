@@ -19,11 +19,11 @@ package controller
 import (
 	"context"
 
+	"github.com/go-logr/logr"
 	v1beta1 "github.com/wal-g/cnpg-plugin-wal-g/api/v1beta1"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	logf "sigs.k8s.io/controller-runtime/pkg/log"
 )
 
 // BackupConfigReconciler reconciles a BackupConfig object
@@ -42,8 +42,7 @@ type BackupConfigReconciler struct {
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.20.4/pkg/reconcile
 func (r *BackupConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	logger := logf.FromContext(ctx).WithName("BackupConfigReconciler").WithValues("namespace", req.Namespace, "name", req.Name)
-
+	logger := logr.FromContextOrDiscard(ctx)
 	logger.V(1).Info("Running Reconcile for BackupConfig")
 	// TODO(endevir): Check && report connection status into Status subresource
 	// TODO(endevir): Watch for secrets name change and reconcile cluster role

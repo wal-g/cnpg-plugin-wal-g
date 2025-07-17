@@ -61,23 +61,23 @@ type StorageConfig struct {
 
 // BackupConfigSpec defines the desired state of BackupConfig.
 type BackupConfigSpec struct {
-	// How many goroutines to use during backup && wal downloading. Default: 10.
-	DownloadConcurrency int `json:"downloadConcurrency,omitempty"`
+	// How many goroutines to use during backup && wal downloading. Default value is evaluated at runtime
+	DownloadConcurrency *int `json:"downloadConcurrency,omitempty"`
+
+	// Disk read rate limit during backup creation in bytes per second. Default value is evaluated at runtime
+	UploadDiskRateLimit *int `json:"uploadDiskRateLimitBytesPerSecond,omitempty"`
+
+	// Network upload rate limit during backup uploading in bytes per second. Default value is evaluated at runtime
+	UploadNetworkRateLimit *int `json:"uploadNetworkRateLimitBytesPerSecond,omitempty"`
+
+	// How many concurrency streams to use during backup uploading. Default value is evaluated at runtime
+	UploadConcurrency *int `json:"uploadConcurrency,omitempty"`
+
+	// How many concurrency streams are reading disk during backup uploading. Default value is evaluated at runtime
+	UploadDiskConcurrency *int `json:"uploadDiskConcurrency,omitempty"`
 
 	// How many times failed file will be retried during backup / wal download. Default: 15.
 	DownloadFileRetries int `json:"downloadFileRetries,omitempty"`
-
-	// Disk read rate limit during backup creation in bytes per second.
-	UploadDiskRateLimit int `json:"uploadDiskRateLimitBytesPerSecond,omitempty"`
-
-	// Network upload rate limit during backup uploading in bytes per second.
-	UploadNetworkRateLimit int `json:"uploadNetworkRateLimitBytesPerSecond,omitempty"`
-
-	// How many concurrency streams to use during backup uploading. Default: 16
-	UploadConcurrency int `json:"uploadConcurrency,omitempty"`
-
-	// How many concurrency streams are reading disk during backup uploading. Default: 1 stream
-	UploadDiskConcurrency int `json:"uploadDiskConcurrency,omitempty"`
 
 	// Determines how many delta backups can be between full backups. Defaults to 0.
 	DeltaMaxSteps int `json:"deltaMaxSteps,omitempty"`

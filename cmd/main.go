@@ -41,6 +41,7 @@ func main() {
 	_ = viper.BindEnv("cluster-name", "CLUSTER_NAME") // Name of CNPG Cluster resource
 	_ = viper.BindEnv("pod-name", "POD_NAME")         // Name of current pod
 	_ = viper.BindEnv("pgdata", "PGDATA")             // Path to pgdata folder
+	_ = viper.BindEnv("pg_major", "PG_MAJOR")         // Postgresql major version
 
 	_ = viper.BindEnv("zap-devel", "DEBUG")
 	_ = viper.BindEnv("zap-log-level", "LOG_LEVEL")

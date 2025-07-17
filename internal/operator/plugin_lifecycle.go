@@ -20,6 +20,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 
 	cnpgv1 "github.com/cloudnative-pg/cloudnative-pg/api/v1"
@@ -221,6 +222,10 @@ func reconcilePodSpecWithPluginSidecar(
 	jobRole string,
 	additionalEnvs []corev1.EnvVar,
 ) error {
+	pgVersion, err := cluster.GetPostgresqlVersion()
+	if err != nil {
+		return fmt.Errorf("while getting Postgresql version for cluster: %w", err)
+	}
 	envs := []corev1.EnvVar{
 		{
 			Name:  "NAMESPACE",
@@ -233,6 +238,10 @@ func reconcilePodSpecWithPluginSidecar(
 		{
 			Name:  "PGDATA",
 			Value: "/var/lib/postgresql/data/pgdata",
+		},
+		{
+			Name:  "PG_MAJOR",
+			Value: strconv.FormatInt(int64(pgVersion.Major()), 10),
 		},
 	}
 
