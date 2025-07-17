@@ -107,7 +107,7 @@ func (b BackupServiceImplementation) Backup(
 
 	logger.WithValues("pgdata", pgdata, "user-data", string(backupParamsJSON))
 
-	result, err := cmd.New("wal-g", "backup-push", pgdata, "--add-user-data", string(backupParamsJSON)).
+	result, err := cmd.New("wal-g", "backup-push", pgdata, "--permanent", "--add-user-data", string(backupParamsJSON)).
 		WithContext(logr.NewContext(ctx, logger)).
 		WithEnv(walg.NewConfigFromBackupConfig(backupConfigWithSecrets, pgMajorVersion).ToEnvMap()).
 		Run()

@@ -130,9 +130,10 @@ func (r *RetentionController) runRetentionForBackupConfig(
 	// Delete Backup resources
 	for i := range backupsToDelete {
 		if err := r.client.Delete(ctx, &backupsToDelete[i]); err != nil {
-			return fmt.Errorf("failed to delete Backup resource: %w", err)
+			logger.Error(err, "failed to delete Backup resource")
+		} else {
+			logger.Info("Successfully deleted Backup resource", "backupName", backupsToDelete[i].Name)
 		}
-		logger.Info("Successfully deleted Backup resource", "backupName", backupsToDelete[i].Name)
 	}
 
 	return nil
