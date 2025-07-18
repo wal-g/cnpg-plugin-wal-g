@@ -34,7 +34,7 @@ func FindMostSuitableBackupForRecovery(
 	// Check that BackupID is not empty. In such case, always use the
 	// backup ID provided by the user.
 	if recoveryTarget.GetBackupID() != "" {
-		return GetBackupByName(ctx, backupList, recoveryTarget.GetBackupID())
+		return GetBackupByName(ctx, backupList, recoveryTarget.GetBackupID()), nil
 	}
 
 	// Set the timeline
