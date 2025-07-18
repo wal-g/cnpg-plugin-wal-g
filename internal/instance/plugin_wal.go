@@ -98,9 +98,12 @@ func (w WALServiceImplementation) Archive(
 	logger = logger.WithValues("stdout", string(result.Stdout()), "stderr", string(result.Stderr()))
 
 	if err != nil {
-		logger.Error(err, fmt.Sprintf("Failed to perform wal-g wal-push %s", request.SourceFileName))
-		return nil, err
+		return nil, fmt.Errorf(
+			"'wal-g wal-push' for wal %s: %w\nstdout: %s\n stderr: %s",
+			request.SourceFileName, err, string(result.Stdout()), string(result.Stderr()),
+		)
 	}
+
 	logger.Info(fmt.Sprintf("Successful run wal-g wal-push %s", request.SourceFileName))
 	return &wal.WALArchiveResult{}, nil
 }

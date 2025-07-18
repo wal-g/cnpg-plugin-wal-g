@@ -152,19 +152,17 @@ func GetLatestBackup(ctx context.Context, backupList []BackupMetadata) (*BackupM
 	return &backupList[len(backupList)-1], nil
 }
 
-// Finds wal-g backup matching provided name
-// If any error occurred during searching for backup - returns (nil, error)
-// If no backup found - returns (nil, nil)
-func GetBackupByName(ctx context.Context, backupList []BackupMetadata, name string) (*BackupMetadata, error) {
+// Finds wal-g backup matching provided name among backups in backupList
+// If no backup found - returns nil
+func GetBackupByName(ctx context.Context, backupList []BackupMetadata, name string) *BackupMetadata {
 	backup, ok := lo.Find(backupList, func(b BackupMetadata) bool {
 		return b.BackupName == name
 	})
 
 	if !ok {
-		return nil, nil
+		return nil
 	}
-
-	return &backup, nil
+	return &backup
 }
 
 // DeleteBackup deletes a backup using WAL-G
