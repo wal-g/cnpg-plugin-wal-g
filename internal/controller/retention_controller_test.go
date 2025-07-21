@@ -65,30 +65,22 @@ func createBackupConfig(name, namespace string, minBackupsToKeep int, deleteBack
 	}
 }
 
+type testBackupOptions struct {
+	BackupConfigName string
+	StartTime        time.Time
+	IsManual         bool
+	IsDeleting       bool
+	Phase            cnpgv1.BackupPhase
+}
+
 // Helper function to create a Backup with the given parameters
-func createBackup(name, namespace, backupConfigName string, startTime time.Time, isManual bool) cnpgv1.Backup {
-	metaTime := metav1.NewTime(startTime)
+func createBackup(
+	name, namespace string,
+	opts testBackupOptions,
+) cnpgv1.Backup {
+	metaTime := metav1.NewTime(opts.StartTime)
 
-	ownerRefs := []metav1.OwnerReference{
-		{
-			APIVersion: "cnpg-extensions.yandex.cloud/v1beta1",
-			Kind:       "BackupConfig",
-			Name:       backupConfigName,
-			UID:        "test-uid",
-		},
-	}
-
-	// Add ScheduledBackup owner reference if not a manual backup
-	if !isManual {
-		ownerRefs = append(ownerRefs, metav1.OwnerReference{
-			APIVersion: "postgresql.cnpg.io/v1",
-			Kind:       "ScheduledBackup",
-			Name:       "test-scheduled-backup",
-			UID:        "test-scheduled-uid",
-		})
-	}
-
-	return cnpgv1.Backup{
+	backup := cnpgv1.Backup{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "Backup",
 			APIVersion: "postgresql.cnpg.io/v1",
@@ -96,7 +88,7 @@ func createBackup(name, namespace, backupConfigName string, startTime time.Time,
 		ObjectMeta: metav1.ObjectMeta{
 			Name:              name,
 			Namespace:         namespace,
-			OwnerReferences:   ownerRefs,
+			OwnerReferences:   make([]metav1.OwnerReference, 0),
 			CreationTimestamp: metaTime,
 		},
 		Status: cnpgv1.BackupStatus{
@@ -104,6 +96,38 @@ func createBackup(name, namespace, backupConfigName string, startTime time.Time,
 			Phase:     cnpgv1.BackupPhaseCompleted,
 		},
 	}
+
+	if opts.Phase != "" {
+		backup.Status.Phase = opts.Phase
+	}
+
+	if opts.BackupConfigName != "" {
+		backup.ObjectMeta.OwnerReferences = append(backup.ObjectMeta.OwnerReferences, metav1.OwnerReference{
+			APIVersion: "cnpg-extensions.yandex.cloud/v1beta1",
+			Kind:       "BackupConfig",
+			Name:       opts.BackupConfigName,
+			UID:        "test-uid",
+		})
+	}
+
+	// Add ScheduledBackup owner reference if not a manual backup
+	if !opts.IsManual {
+		backup.ObjectMeta.OwnerReferences = append(backup.ObjectMeta.OwnerReferences, metav1.OwnerReference{
+			APIVersion: "postgresql.cnpg.io/v1",
+			Kind:       "ScheduledBackup",
+			Name:       "test-scheduled-backup",
+			UID:        "test-scheduled-uid",
+		})
+	}
+
+	// Add finalizer and deletion timestamp if backup is being deleted
+	if opts.IsDeleting {
+		deletionTime := metav1.NewTime(time.Now())
+		backup.Finalizers = append(backup.Finalizers, "some-finalizer.yandex.cloud/no-delete")
+		backup.DeletionTimestamp = &deletionTime
+	}
+
+	return backup
 }
 
 // Helper function to check if a string is in a slice
@@ -229,24 +253,79 @@ var _ = Describe("RetentionController", func() {
 					},
 				},
 				backups: []cnpgv1.Backup{
-					createBackup("backup1", "default", "test-config", time.Now().Add(-24*time.Hour), false),
-					createBackup("backup2", "default", "test-config", time.Now().Add(-48*time.Hour), false),
+					createBackup("backup1", "default", testBackupOptions{
+						BackupConfigName: "test-config",
+						StartTime:        time.Now().Add(-24 * time.Hour),
+					}),
+					createBackup("backup2", "default", testBackupOptions{
+						BackupConfigName: "test-config",
+						StartTime:        time.Now().Add(-48 * time.Hour),
+					}),
 				},
 				expectedCount: 0,
 				expectedNames: []string{},
 			}),
 			Entry("fewer backups than minBackupsToKeep", testCase{
-				description: "fewer backups than minBackupsToKeep",
+				description: "fewer successful backups than minBackupsToKeep",
 				backupConfig: &v1beta1.BackupConfig{
 					Spec: v1beta1.BackupConfigSpec{
 						Retention: v1beta1.BackupRetentionConfig{
-							MinBackupsToKeep: 5,
+							MinBackupsToKeep:   5,
+							DeleteBackupsAfter: "1h",
 						},
 					},
 				},
 				backups: []cnpgv1.Backup{
-					createBackup("backup1", "default", "test-config", time.Now().Add(-24*time.Hour), false),
-					createBackup("backup2", "default", "test-config", time.Now().Add(-48*time.Hour), false),
+					createBackup("backup1-deleting", "default", testBackupOptions{
+						BackupConfigName: "test-config",
+						StartTime:        time.Now().Add(-24 * time.Hour),
+						IsDeleting:       true,
+					}),
+					createBackup("backup2-deleting", "default", testBackupOptions{
+						BackupConfigName: "test-config",
+						StartTime:        time.Now().Add(-48 * time.Hour),
+						IsDeleting:       true,
+					}),
+					createBackup("backup3-error", "default", testBackupOptions{
+						BackupConfigName: "test-config",
+						StartTime:        time.Now().Add(-48 * time.Hour),
+						Phase:            cnpgv1.BackupPhaseFailed,
+					}),
+					createBackup("backup4-running", "default", testBackupOptions{
+						BackupConfigName: "test-config",
+						StartTime:        time.Now().Add(-48 * time.Hour),
+						Phase:            cnpgv1.BackupPhaseRunning,
+					}),
+					createBackup("backup5-pending", "default", testBackupOptions{
+						BackupConfigName: "test-config",
+						StartTime:        time.Now().Add(-48 * time.Hour),
+						Phase:            cnpgv1.BackupPhasePending,
+					}),
+					createBackup("backup6-started", "default", testBackupOptions{
+						BackupConfigName: "test-config",
+						StartTime:        time.Now().Add(-48 * time.Hour),
+						Phase:            cnpgv1.BackupPhaseStarted,
+					}),
+					createBackup("backup1-ok", "default", testBackupOptions{
+						BackupConfigName: "test-config",
+						StartTime:        time.Now().Add(-48 * time.Hour),
+					}),
+					createBackup("backup2-ok", "default", testBackupOptions{
+						BackupConfigName: "test-config",
+						StartTime:        time.Now().Add(-48 * time.Hour),
+					}),
+					createBackup("backup3-ok", "default", testBackupOptions{
+						BackupConfigName: "test-config",
+						StartTime:        time.Now().Add(-48 * time.Hour),
+					}),
+					createBackup("backup4-ok", "default", testBackupOptions{
+						BackupConfigName: "test-config",
+						StartTime:        time.Now().Add(-48 * time.Hour),
+					}),
+					createBackup("backup5-ok", "default", testBackupOptions{
+						BackupConfigName: "test-config",
+						StartTime:        time.Now().Add(-48 * time.Hour),
+					}),
 				},
 				expectedCount: 0,
 				expectedNames: []string{},
@@ -262,9 +341,18 @@ var _ = Describe("RetentionController", func() {
 					},
 				},
 				backups: []cnpgv1.Backup{
-					createBackup("backup1", "default", "test-config", time.Now().Add(-12*time.Hour), false),
-					createBackup("backup2", "default", "test-config", time.Now().Add(-36*time.Hour), false),
-					createBackup("backup3", "default", "test-config", time.Now().Add(-48*time.Hour), false),
+					createBackup("backup1", "default", testBackupOptions{
+						BackupConfigName: "test-config",
+						StartTime:        time.Now().Add(-12 * time.Hour),
+					}),
+					createBackup("backup2", "default", testBackupOptions{
+						BackupConfigName: "test-config",
+						StartTime:        time.Now().Add(-36 * time.Hour),
+					}),
+					createBackup("backup3", "default", testBackupOptions{
+						BackupConfigName: "test-config",
+						StartTime:        time.Now().Add(-48 * time.Hour),
+					}),
 				},
 				expectedCount: 1,
 				expectedNames: []string{"backup3"},
@@ -281,9 +369,19 @@ var _ = Describe("RetentionController", func() {
 					},
 				},
 				backups: []cnpgv1.Backup{
-					createBackup("backup1", "default", "test-config", time.Now().Add(-12*time.Hour), false),
-					createBackup("backup2", "default", "test-config", time.Now().Add(-36*time.Hour), true), // Manual backup
-					createBackup("backup3", "default", "test-config", time.Now().Add(-48*time.Hour), false),
+					createBackup("backup1", "default", testBackupOptions{
+						BackupConfigName: "test-config",
+						StartTime:        time.Now().Add(-12 * time.Hour),
+					}),
+					createBackup("backup2-manual", "default", testBackupOptions{
+						BackupConfigName: "test-config",
+						StartTime:        time.Now().Add(-36 * time.Hour),
+						IsManual:         true,
+					}),
+					createBackup("backup3", "default", testBackupOptions{
+						BackupConfigName: "test-config",
+						StartTime:        time.Now().Add(-48 * time.Hour),
+					}),
 				},
 				expectedCount: 1,
 				expectedNames: []string{"backup3"},
@@ -299,8 +397,14 @@ var _ = Describe("RetentionController", func() {
 					},
 				},
 				backups: []cnpgv1.Backup{
-					createBackup("backup1", "default", "test-config", time.Now().Add(-36*time.Hour), false),
-					createBackup("backup2", "default", "test-config", time.Now().Add(-48*time.Hour), false),
+					createBackup("backup1", "default", testBackupOptions{
+						BackupConfigName: "test-config",
+						StartTime:        time.Now().Add(-36 * time.Hour),
+					}),
+					createBackup("backup2", "default", testBackupOptions{
+						BackupConfigName: "test-config",
+						StartTime:        time.Now().Add(-48 * time.Hour),
+					}),
 				},
 				expectedCount: 0,
 				expectedNames: []string{},
@@ -364,9 +468,18 @@ var _ = Describe("RetentionController", func() {
 				description:  "delete old backups",
 				backupConfig: createBackupConfig("test-config", "default", 2, "1d", false),
 				backups: []cnpgv1.Backup{
-					createBackup("backup1", "default", "test-config", time.Now().Add(-12*time.Hour), false),
-					createBackup("backup2", "default", "test-config", time.Now().Add(-36*time.Hour), false),
-					createBackup("backup3", "default", "test-config", time.Now().Add(-48*time.Hour), false),
+					createBackup("backup1", "default", testBackupOptions{
+						BackupConfigName: "test-config",
+						StartTime:        time.Now().Add(-12 * time.Hour),
+					}),
+					createBackup("backup2", "default", testBackupOptions{
+						BackupConfigName: "test-config",
+						StartTime:        time.Now().Add(-36 * time.Hour),
+					}),
+					createBackup("backup3", "default", testBackupOptions{
+						BackupConfigName: "test-config",
+						StartTime:        time.Now().Add(-48 * time.Hour),
+					}),
 				},
 				expectedDeleted: []string{"backup3"},
 			}),
@@ -374,8 +487,14 @@ var _ = Describe("RetentionController", func() {
 				description:  "keep all backups when fewer than minimum",
 				backupConfig: createBackupConfig("test-config", "default", 5, "1d", false),
 				backups: []cnpgv1.Backup{
-					createBackup("backup1", "default", "test-config", time.Now().Add(-36*time.Hour), false),
-					createBackup("backup2", "default", "test-config", time.Now().Add(-48*time.Hour), false),
+					createBackup("backup1", "default", testBackupOptions{
+						BackupConfigName: "test-config",
+						StartTime:        time.Now().Add(-36 * time.Hour),
+					}),
+					createBackup("backup2", "default", testBackupOptions{
+						BackupConfigName: "test-config",
+						StartTime:        time.Now().Add(-48 * time.Hour),
+					}),
 				},
 				expectedDeleted: []string{},
 			}),
@@ -383,9 +502,19 @@ var _ = Describe("RetentionController", func() {
 				description:  "respect ignore manual backups setting",
 				backupConfig: createBackupConfig("test-config", "default", 2, "1d", true),
 				backups: []cnpgv1.Backup{
-					createBackup("backup1", "default", "test-config", time.Now().Add(-12*time.Hour), false),
-					createBackup("backup2", "default", "test-config", time.Now().Add(-36*time.Hour), true), // Manual backup
-					createBackup("backup3", "default", "test-config", time.Now().Add(-48*time.Hour), false),
+					createBackup("backup1", "default", testBackupOptions{
+						BackupConfigName: "test-config",
+						StartTime:        time.Now().Add(-12 * time.Hour),
+					}),
+					createBackup("backup2", "default", testBackupOptions{
+						BackupConfigName: "test-config",
+						StartTime:        time.Now().Add(-36 * time.Hour),
+						IsManual:         true,
+					}),
+					createBackup("backup3", "default", testBackupOptions{
+						BackupConfigName: "test-config",
+						StartTime:        time.Now().Add(-48 * time.Hour),
+					}),
 				},
 				expectedDeleted: []string{"backup3"},
 			}),
@@ -399,29 +528,57 @@ var _ = Describe("RetentionController", func() {
 			backupConfig2 := createBackupConfig("config2", "namespace1", 5, "7d", false)
 			backupConfig3 := createBackupConfig("config3", "namespace2", 3, "2d", true)
 
-			// Create backups for each config with different timestamps
-			now := time.Now()
-
 			// Backups for config1 - should delete backup1-3 (older than 1d)
 			backups1 := []cnpgv1.Backup{
-				createBackup("backup1-1", "namespace1", "config1", now.Add(-12*time.Hour), false),
-				createBackup("backup1-2", "namespace1", "config1", now.Add(-20*time.Hour), false),
-				createBackup("backup1-3", "namespace1", "config1", now.Add(-30*time.Hour), false),
+				createBackup("backup1-1", "namespace1", testBackupOptions{
+					BackupConfigName: "config1",
+					StartTime:        time.Now().Add(-12 * time.Hour),
+				}),
+				createBackup("backup1-2", "namespace1", testBackupOptions{
+					BackupConfigName: "config1",
+					StartTime:        time.Now().Add(-20 * time.Hour),
+				}),
+				createBackup("backup1-3", "namespace1", testBackupOptions{
+					BackupConfigName: "config1",
+					StartTime:        time.Now().Add(-30 * time.Hour),
+				}),
 			}
 
 			// Backups for config2 - should keep all (within 7d and fewer than min 5)
 			backups2 := []cnpgv1.Backup{
-				createBackup("backup2-1", "namespace1", "config2", now.Add(-24*time.Hour), false),
-				createBackup("backup2-2", "namespace1", "config2", now.Add(-48*time.Hour), false),
-				createBackup("backup2-3", "namespace1", "config2", now.Add(-72*time.Hour), false),
+				createBackup("backup2-1", "namespace1", testBackupOptions{
+					BackupConfigName: "config2",
+					StartTime:        time.Now().Add(-24 * time.Hour),
+				}),
+				createBackup("backup2-2", "namespace1", testBackupOptions{
+					BackupConfigName: "config2",
+					StartTime:        time.Now().Add(-48 * time.Hour),
+				}),
+				createBackup("backup2-3", "namespace1", testBackupOptions{
+					BackupConfigName: "config2",
+					StartTime:        time.Now().Add(-72 * time.Hour),
+				}),
 			}
 
 			// Backups for config3 - should delete backup3-4 (older than 2d) but keep backup3-3 (manual)
 			backups3 := []cnpgv1.Backup{
-				createBackup("backup3-1", "namespace2", "config3", now.Add(-12*time.Hour), false),
-				createBackup("backup3-2", "namespace2", "config3", now.Add(-36*time.Hour), false),
-				createBackup("backup3-3", "namespace2", "config3", now.Add(-60*time.Hour), true), // Manual backup
-				createBackup("backup3-4", "namespace2", "config3", now.Add(-72*time.Hour), false),
+				createBackup("backup3-1", "namespace2", testBackupOptions{
+					BackupConfigName: "config3",
+					StartTime:        time.Now().Add(-12 * time.Hour),
+				}),
+				createBackup("backup3-2", "namespace2", testBackupOptions{
+					BackupConfigName: "config3",
+					StartTime:        time.Now().Add(-36 * time.Hour),
+				}),
+				createBackup("backup3-3", "namespace2", testBackupOptions{
+					BackupConfigName: "config3",
+					StartTime:        time.Now().Add(-60 * time.Hour),
+					IsManual:         true,
+				}),
+				createBackup("backup3-4", "namespace2", testBackupOptions{
+					BackupConfigName: "config3",
+					StartTime:        time.Now().Add(-72 * time.Hour),
+				}),
 			}
 
 			// Combine all objects for the fake client
@@ -493,19 +650,28 @@ var _ = Describe("RetentionController", func() {
 			backupConfig1 := createBackupConfig("same-config", "namespace1", 0, "1d", false)
 			backupConfig2 := createBackupConfig("same-config", "namespace2", 0, "7d", false)
 
-			// Create backups with same names in different namespaces
-			now := time.Now()
-
 			// Backups for config1 - should delete backup-old (older than 1d)
 			backups1 := []cnpgv1.Backup{
-				createBackup("backup-new", "namespace1", "same-config", now.Add(-12*time.Hour), false),
-				createBackup("backup-old", "namespace1", "same-config", now.Add(-30*time.Hour), false),
+				createBackup("backup-new", "namespace1", testBackupOptions{
+					BackupConfigName: "same-config",
+					StartTime:        time.Now().Add(-12 * time.Hour),
+				}),
+				createBackup("backup-old", "namespace1", testBackupOptions{
+					BackupConfigName: "same-config",
+					StartTime:        time.Now().Add(-30 * time.Hour),
+				}),
 			}
 
 			// Backups for config2 - should keep all (within 7d and fewer than min 5)
 			backups2 := []cnpgv1.Backup{
-				createBackup("backup-new", "namespace2", "same-config", now.Add(-24*time.Hour), false),
-				createBackup("backup-old", "namespace2", "same-config", now.Add(-48*time.Hour), false),
+				createBackup("backup-new", "namespace2", testBackupOptions{
+					BackupConfigName: "same-config",
+					StartTime:        time.Now().Add(-24 * time.Hour),
+				}),
+				createBackup("backup-old", "namespace2", testBackupOptions{
+					BackupConfigName: "same-config",
+					StartTime:        time.Now().Add(-48 * time.Hour),
+				}),
 			}
 
 			// Combine all objects for the fake client
@@ -559,37 +725,78 @@ var _ = Describe("RetentionController", func() {
 			backupConfig3 := createBackupConfig("config3", "namespace2", 3, "2d", true)
 			backupConfig4 := createBackupConfig("config4", "namespace2", 0, "", false) // No retention policy
 
-			// Create backups for each config with different timestamps
-			now := time.Now()
-
 			// Backups for config1 - should delete backup1-3 (older than 1d)
 			backups1 := []cnpgv1.Backup{
-				createBackup("backup1-1", "namespace1", "config1", now.Add(-12*time.Hour), false),
-				createBackup("backup1-2", "namespace1", "config1", now.Add(-20*time.Hour), false),
-				createBackup("backup1-3", "namespace1", "config1", now.Add(-30*time.Hour), false),
+				createBackup("backup1-1", "namespace1", testBackupOptions{
+					BackupConfigName: "config1",
+					StartTime:        time.Now().Add(-12 * time.Hour),
+				}),
+				createBackup("backup1-2", "namespace1", testBackupOptions{
+					BackupConfigName: "config1",
+					StartTime:        time.Now().Add(-20 * time.Hour),
+				}),
+				createBackup("backup1-3", "namespace1", testBackupOptions{
+					BackupConfigName: "config1",
+					StartTime:        time.Now().Add(-30 * time.Hour),
+				}),
 			}
 
 			// Backups for config2 - should keep all (within 7d and fewer than min 5)
 			backups2 := []cnpgv1.Backup{
-				createBackup("backup2-1", "namespace1", "config2", now.Add(-24*time.Hour), false),
-				createBackup("backup2-2", "namespace1", "config2", now.Add(-48*time.Hour), false),
-				createBackup("backup2-3", "namespace1", "config2", now.Add(-72*time.Hour), false),
+				createBackup("backup2-1", "namespace1", testBackupOptions{
+					BackupConfigName: "config2",
+					StartTime:        time.Now().Add(-24 * time.Hour),
+				}),
+				createBackup("backup2-2", "namespace1", testBackupOptions{
+					BackupConfigName: "config2",
+					StartTime:        time.Now().Add(-48 * time.Hour),
+				}),
+				createBackup("backup2-3", "namespace1", testBackupOptions{
+					BackupConfigName: "config2",
+					StartTime:        time.Now().Add(-72 * time.Hour),
+				}),
 			}
 
 			// Backups for config3 - should delete backup3-4 (older than 2d) but keep backup3-3 (manual)
 			backups3 := []cnpgv1.Backup{
-				createBackup("backup3-1", "namespace2", "config3", now.Add(-12*time.Hour), false),
-				createBackup("backup3-2", "namespace2", "config3", now.Add(-36*time.Hour), false),
-				createBackup("backup3-3", "namespace2", "config3", now.Add(-60*time.Hour), true), // Manual backup
-				createBackup("backup3-4", "namespace2", "config3", now.Add(-72*time.Hour), false),
+				createBackup("backup3-1", "namespace2", testBackupOptions{
+					BackupConfigName: "config3",
+					StartTime:        time.Now().Add(-12 * time.Hour),
+				}),
+				createBackup("backup3-2", "namespace2", testBackupOptions{
+					BackupConfigName: "config3",
+					StartTime:        time.Now().Add(-36 * time.Hour),
+				}),
+				createBackup("backup3-3", "namespace2", testBackupOptions{
+					BackupConfigName: "config3",
+					StartTime:        time.Now().Add(-60 * time.Hour),
+					IsManual:         true,
+				}),
+				createBackup("backup3-4", "namespace2", testBackupOptions{
+					BackupConfigName: "config3",
+					StartTime:        time.Now().Add(-72 * time.Hour),
+				}),
 			}
 
 			// Backups for config4 - should keep all (no retention policy)
 			backups4 := []cnpgv1.Backup{
-				createBackup("backup4-1", "namespace2", "config4", now.Add(-24*time.Hour), false),
-				createBackup("backup4-2", "namespace2", "config4", now.Add(-48*time.Hour), false),
-				createBackup("backup4-3", "namespace2", "config4", now.Add(-72*time.Hour), false),
-				createBackup("backup4-4", "namespace2", "config4", now.Add(-96*time.Hour), false),
+				createBackup("backup4-1", "namespace2", testBackupOptions{
+					BackupConfigName: "config4",
+					StartTime:        time.Now().Add(-24 * time.Hour),
+				}),
+				createBackup("backup4-2", "namespace2", testBackupOptions{
+					BackupConfigName: "config4",
+					StartTime:        time.Now().Add(-48 * time.Hour),
+				}),
+				createBackup("backup4-3", "namespace2", testBackupOptions{
+					BackupConfigName: "config4",
+					StartTime:        time.Now().Add(-72 * time.Hour),
+					IsManual:         true,
+				}),
+				createBackup("backup4-4", "namespace2", testBackupOptions{
+					BackupConfigName: "config4",
+					StartTime:        time.Now().Add(-96 * time.Hour),
+				}),
 			}
 
 			// Combine all objects for the fake client
@@ -684,21 +891,50 @@ var _ = Describe("RetentionController", func() {
 
 			// Regular backups for each config
 			backups1 := []cnpgv1.Backup{
-				createBackup("daily-1", "shared-ns", "daily-backups", now.Add(-1*24*time.Hour), false),
-				createBackup("daily-2", "shared-ns", "daily-backups", now.Add(-2*24*time.Hour), false),
-				createBackup("daily-3", "shared-ns", "daily-backups", now.Add(-3*24*time.Hour), false),
-				createBackup("daily-4", "shared-ns", "daily-backups", now.Add(-4*24*time.Hour), false), // Should be deleted (>2d)
+				createBackup("daily-1", "shared-ns", testBackupOptions{
+					BackupConfigName: "daily-backups",
+					StartTime:        time.Now().Add(-1 * 24 * time.Hour),
+				}),
+				createBackup("daily-2", "shared-ns", testBackupOptions{
+					BackupConfigName: "daily-backups",
+					StartTime:        time.Now().Add(-2 * 24 * time.Hour),
+				}),
+				createBackup("daily-3", "shared-ns", testBackupOptions{
+					BackupConfigName: "daily-backups",
+					StartTime:        time.Now().Add(-3 * 24 * time.Hour),
+					IsManual:         true,
+				}),
+				createBackup("daily-4", "shared-ns", testBackupOptions{
+					BackupConfigName: "daily-backups",
+					StartTime:        time.Now().Add(-4 * 24 * time.Hour),
+				}),
 			}
 
 			backups2 := []cnpgv1.Backup{
-				createBackup("weekly-1", "shared-ns", "weekly-backups", now.Add(-7*24*time.Hour), false),
-				createBackup("weekly-2", "shared-ns", "weekly-backups", now.Add(-14*24*time.Hour), false),
-				createBackup("weekly-3", "shared-ns", "weekly-backups", now.Add(-21*24*time.Hour), false), // Should be deleted (>14d)
+				createBackup("weekly-1", "shared-ns", testBackupOptions{
+					BackupConfigName: "weekly-backups",
+					StartTime:        time.Now().Add(-7 * 24 * time.Hour),
+				}),
+				createBackup("weekly-2", "shared-ns", testBackupOptions{
+					BackupConfigName: "weekly-backups",
+					StartTime:        time.Now().Add(-14 * 24 * time.Hour),
+				}),
+				createBackup("weekly-3", "shared-ns", testBackupOptions{
+					BackupConfigName: "weekly-backups",
+					StartTime:        time.Now().Add(-21 * 24 * time.Hour),
+					IsManual:         true,
+				}), // Should be deleted (>14d)
 			}
 
 			backups3 := []cnpgv1.Backup{
-				createBackup("other-1", "other-ns", "other-backups", now.Add(-12*time.Hour), false),
-				createBackup("other-2", "other-ns", "other-backups", now.Add(-36*time.Hour), false), // Should be deleted (>1d)
+				createBackup("other-1", "other-ns", testBackupOptions{
+					BackupConfigName: "other-backups",
+					StartTime:        time.Now().Add(-12 * time.Hour),
+				}),
+				createBackup("other-2", "other-ns", testBackupOptions{
+					BackupConfigName: "other-backups",
+					StartTime:        time.Now().Add(-36 * time.Hour),
+				}), // Should be deleted (>1d)
 			}
 
 			// Combine all objects for the fake client

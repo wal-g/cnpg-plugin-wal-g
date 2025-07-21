@@ -105,7 +105,7 @@ func (r *RetentionController) runRetentionForBackupConfig(
 	var relevantBackups []cnpgv1.Backup
 	for i := range backupList.Items {
 		backup := backupList.Items[i].DeepCopy()
-		if len(backup.OwnerReferences) == 0 {
+		if len(backup.OwnerReferences) == 0 || backup.DeletionTimestamp != nil {
 			continue
 		}
 
@@ -146,12 +146,11 @@ func (r *RetentionController) getBackupsToDelete(
 	backupList []cnpgv1.Backup,
 ) ([]cnpgv1.Backup, error) {
 	logger := logr.FromContextOrDiscard(ctx)
-	var backupsToDelete []cnpgv1.Backup
 	retention := backupConfig.Spec.Retention
 
 	// If no retention policy is configured, return empty list
 	if retention.DeleteBackupsAfter == "" {
-		return backupsToDelete, nil
+		return []cnpgv1.Backup{}, nil
 	}
 
 	// Sort backups by start time (oldest first). If StartedAt not specified - use CreationTimestamp
@@ -187,15 +186,16 @@ func (r *RetentionController) getBackupsToDelete(
 
 	// If we have fewer successful backups than minBackupsToKeep, keep all
 	successfulBackups := lo.Filter(backupList, func(b cnpgv1.Backup, _ int) bool {
-		return b.Status.Phase == cnpgv1.BackupPhaseCompleted
+		return b.Status.Phase == cnpgv1.BackupPhaseCompleted && b.DeletionTimestamp == nil
 	})
 	if len(successfulBackups) <= minBackupsToKeep {
 		logger.Info("Number of successful backups is less than or equal to MinBackupsToKeep, keeping all",
 			"backupCount", len(backupList),
 			"minBackupsToKeep", minBackupsToKeep)
-		return backupsToDelete, nil
+		return []cnpgv1.Backup{}, nil
 	}
 
+	backupsToDelete := make([]cnpgv1.Backup, 0)
 	// Process backups from oldest to newest (they're already sorted)
 	for i := range backupList {
 		backup := &backupList[i]
