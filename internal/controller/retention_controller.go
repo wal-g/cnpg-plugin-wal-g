@@ -198,46 +198,58 @@ func (r *RetentionController) getBackupsToDelete(
 	backupsToDelete := make([]cnpgv1.Backup, 0)
 	// Process backups from oldest to newest (they're already sorted)
 	for i := range backupList {
-		backup := &backupList[i]
-		// Skip if this is one of the newest backups we want to keep
-		remainingBackups := len(backupList) - i
-		if remainingBackups <= minBackupsToKeep {
-			logger.Info("Keeping backup as part of MinBackupsToKeep", "backupName", backup.Name)
-			continue
-		}
-
-		// Check if backup is a manual backup and should be ignored
-		// Manual backup is a backup not owned by anything except BackupConfig
-		// (for automated backups owner is either Cluster or ScheduledBackup resource)
-		// We assume that all backups passed there are owned by BackupConfig,
-		// so it is enough to check that there's only 1 OwnerReference
-		if retention.IgnoreForManualBackups && len(backup.OwnerReferences) == 1 {
-			logger.Info("Skipping manual backup", "backupName", backup.Name)
-			continue
-		}
-
-		// Check if backup is older than retention threshold
-		if retentionThreshold != nil {
-			var backupTime time.Time
-
-			// Use StartedAt if available, otherwise use creation timestamp
-			if backup.Status.StartedAt != nil {
-				backupTime = backup.Status.StartedAt.Time
-			} else {
-				backupTime = backup.CreationTimestamp.Time
-			}
-
-			if backupTime.Before(*retentionThreshold) {
-				logger.Info("Marking backup for deletion based on age",
-					"backupName", backup.Name,
-					"backupTime", backupTime,
-					"retentionThreshold", *retentionThreshold)
-				backupsToDelete = append(backupsToDelete, *backup)
-			}
+		if shouldDeleteBackup(ctx, backupList, i, retention.IgnoreForManualBackups, minBackupsToKeep, retentionThreshold) {
+			backupsToDelete = append(backupsToDelete, backupList[i])
 		}
 	}
 
 	return backupsToDelete, nil
+}
+
+// Checks whether need to delete backup from with index `backupIndex` at slice `backupList`
+// according to retention constraints
+func shouldDeleteBackup(ctx context.Context, backupList []cnpgv1.Backup, backupIndex int, ignoreForManualBackups bool, minBackupsToKeep int, retentionThreshold *time.Time) bool {
+	backup := backupList[backupIndex]
+
+	logger := logr.FromContextOrDiscard(ctx)
+
+	// Skip if this is one of the newest backups we want to keep
+	remainingBackups := len(backupList) - backupIndex
+	if remainingBackups <= minBackupsToKeep {
+		logger.Info("Keeping backup as part of MinBackupsToKeep", "backupName", backup.Name)
+		return false
+	}
+
+	// Check if backup is a manual backup and should be ignored
+	// Manual backup is a backup not owned by anything except BackupConfig
+	// (for automated backups owner is either Cluster or ScheduledBackup resource)
+	// We assume that all backups passed there are owned by BackupConfig,
+	// so it is enough to check that there's only 1 OwnerReference
+	if ignoreForManualBackups && len(backup.OwnerReferences) == 1 {
+		logger.Info("Skipping manual backup", "backupName", backup.Name)
+		return false
+	}
+
+	// Check if backup is older than retention threshold
+	if retentionThreshold != nil {
+		var backupTime time.Time
+
+		// Use StartedAt if available, otherwise use creation timestamp
+		if backup.Status.StartedAt != nil {
+			backupTime = backup.Status.StartedAt.Time
+		} else {
+			backupTime = backup.CreationTimestamp.Time
+		}
+
+		if backupTime.Before(*retentionThreshold) {
+			logger.Info("Marking backup for deletion based on age",
+				"backupName", backup.Name,
+				"backupTime", backupTime,
+				"retentionThreshold", *retentionThreshold)
+			return true
+		}
+	}
+	return false
 }
 
 // calculateRetentionThreshold calculates the retention threshold time based on the retention policy
