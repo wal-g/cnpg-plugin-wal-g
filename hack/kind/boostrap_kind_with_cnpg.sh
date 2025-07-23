@@ -14,7 +14,8 @@ helm -n kube-system upgrade --install cilium cilium/cilium --version 1.17.4 --na
 kubectl apply -f ./metrics-server.yaml
 
 # Install cert-manager
-kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.17.0/cert-manager.yaml
+kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.18.2/cert-manager.yaml
+
 
 # Install CNPG
 kubectl apply --server-side -f \
