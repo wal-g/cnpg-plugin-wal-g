@@ -33,6 +33,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
+	"k8s.io/client-go/tools/clientcmd"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/certwatcher"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -64,7 +65,7 @@ const (
 
 	// WebhookServiceName is the name of the service where the webhook server
 	// is reachable
-	WebhookServiceName = "cnpg-plugin-wal-g-wwebhook-service" // #nosec
+	WebhookServiceName = "cnpg-plugin-wal-g-webhook-service" // #nosec
 
 	// MutatingWebhookConfigurationName is the name of the mutating webhook configuration
 	MutatingWebhookConfigurationName = "cnpg-plugin-wal-g-mutating-webhook-configuration"
@@ -77,9 +78,6 @@ const (
 
 	// CaSecretName is the name of the secret which is hosting the Operator CA
 	CaSecretName = "cnpg-plugin-wal-g-ca-secret" // #nosec
-
-	// OperatorNamespace is the namespace of the operator
-	OperatorNamespace = "cnpg-system" // #nosec
 
 	// OperatorDeploymentLabelSelector is the labelSelector to be used to get the operators deployment
 	OperatorDeploymentLabelSelector = "app.kubernetes.io/name=cnpg-plugin-wal-g"
@@ -122,9 +120,6 @@ func Start(ctx context.Context) error {
 	// Create watchers for metrics and webhooks certificates
 	var metricsCertWatcher, webhookCertWatcher *certwatcher.CertWatcher
 
-	// Initial webhook TLS options
-	webhookTLSOpts := tlsOpts
-
 	webhookCertPath := viper.GetString("webhook-cert-path")
 	webhookCertName := viper.GetString("webhook-cert-name")
 	webhookCertKey := viper.GetString("webhook-cert-key")
@@ -142,10 +137,6 @@ func Start(ctx context.Context) error {
 			setupLog.Error(err, "Failed to initialize webhook certificate watcher")
 			os.Exit(1)
 		}
-
-		webhookTLSOpts = append(webhookTLSOpts, func(config *tls.Config) {
-			config.GetCertificate = webhookCertWatcher.GetCertificate
-		})
 	}
 
 	webhookServer := webhook.NewServer(webhook.Options{
@@ -266,21 +257,18 @@ func Start(ctx context.Context) error {
 	}
 
 	// nolint:goconst
-	if os.Getenv("ENABLE_WEBHOOKS") != "false" {
-		ctx := context.Background()
-		kubeClient, err := client.New(mgr.GetConfig(), client.Options{Scheme: scheme})
-		if err != nil {
-			setupLog.Error(err, "unable to create Kubernetes client")
-			os.Exit(1)
-		}
-		if err := ensurePKI(ctx, kubeClient); err != nil {
-			setupLog.Error(err, "unable to start manager")
-			os.Exit(1)
-		}
-		if err = webhookv1.SetupBackupConfigWebhookWithManager(mgr); err != nil {
-			setupLog.Error(err, "unable to create webhook", "webhook", "PostgresqlCluster")
-			os.Exit(1)
-		}
+	kubeClient, err := client.New(mgr.GetConfig(), client.Options{Scheme: scheme})
+	if err != nil {
+		setupLog.Error(err, "unable to create Kubernetes client")
+		os.Exit(1)
+	}
+	if err := ensurePKI(ctx, kubeClient); err != nil {
+		setupLog.Error(err, "unable to start manager")
+		os.Exit(1)
+	}
+	if err = webhookv1.SetupBackupConfigWebhookWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create webhook", "webhook", "PostgresqlCluster")
+		os.Exit(1)
 	}
 
 	if metricsCertWatcher != nil {
@@ -339,6 +327,14 @@ func ensurePKI(
 	ctx context.Context,
 	kubeClient client.Client,
 ) error {
+	kubeConfig := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(
+		clientcmd.NewDefaultClientConfigLoadingRules(),
+		&clientcmd.ConfigOverrides{},
+	)
+	operatorNamespace, _, err := kubeConfig.Namespace()
+	if err != nil {
+		return err
+	}
 	// We need to self-manage required PKI infrastructure and install the certificates into
 	// the webhooks configuration
 	pkiConfig := certs.PublicKeyInfrastructure{
@@ -346,12 +342,12 @@ func ensurePKI(
 		CertDir:                            defaultWebhookCertDir,
 		SecretName:                         WebhookSecretName,
 		ServiceName:                        WebhookServiceName,
-		OperatorNamespace:                  OperatorNamespace,
+		OperatorNamespace:                  operatorNamespace,
 		MutatingWebhookConfigurationName:   MutatingWebhookConfigurationName,
 		ValidatingWebhookConfigurationName: ValidatingWebhookConfigurationName,
 		OperatorDeploymentLabelSelector:    OperatorDeploymentLabelSelector,
 	}
-	err := pkiConfig.Setup(ctx, kubeClient)
+	err = pkiConfig.Setup(ctx, kubeClient)
 	if err != nil {
 		setupLog.Error(err, "unable to setup PKI infrastructure")
 	}
