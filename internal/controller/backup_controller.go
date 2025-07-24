@@ -46,17 +46,6 @@ type BackupReconciler struct {
 	DeletionController *BackupDeletionController
 }
 
-const backupFinalizerName = "cnpg-plugin-wal-g.yandex.cloud/backup-cleanup"
-const backupPgVersionLabelName = "cnpg-plugin-wal-g.yandex.cloud/pg-major"
-const backupTypeLabelName = "cnpg-plugin-wal-g.yandex.cloud/backup-type"
-const backupAllDependentsAnnotationName = "cnpg-plugin-wal-g.yandex.cloud/dependent-backups-all"
-const backupDirectDependentsAnnotationName = "cnpg-plugin-wal-g.yandex.cloud/dependent-backups-direct"
-
-type BackupType string
-
-const BackupTypeFull BackupType = "full"
-const BackupTypeIncremental BackupType = "incremental"
-
 // +kubebuilder:rbac:groups=postgresql.cnpg.io,resources=clusters,verbs=get;list;watch
 // +kubebuilder:rbac:groups=postgresql.cnpg.io,resources=backups,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=postgresql.cnpg.io,resources=backups/status,verbs=get;update;patch
@@ -117,9 +106,9 @@ func (r *BackupReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 	}
 
 	// Add finalizer if it doesn't exist
-	if !containsString(backup.Finalizers, backupFinalizerName) {
+	if !containsString(backup.Finalizers, v1beta1.BackupFinalizerName) {
 		logger.Info("Detected new Backup managed by plugin, setting up finalizer")
-		backup.Finalizers = append(backup.Finalizers, backupFinalizerName)
+		backup.Finalizers = append(backup.Finalizers, v1beta1.BackupFinalizerName)
 		if err := r.Update(ctx, backup); err != nil {
 			return ctrl.Result{}, err
 		}
@@ -197,7 +186,7 @@ func (r *BackupReconciler) reconcileRelatedBackupsMetadata(ctx context.Context, 
 
 	// If current backup is incremental - we need to update other backups annotations
 	// to update their dependent backups list
-	if backup.Labels[backupTypeLabelName] == string(BackupTypeIncremental) {
+	if backup.Labels[v1beta1.BackupTypeLabelName] == string(v1beta1.BackupTypeIncremental) {
 		backupsToReconcile, err := r.listBackupsOwnedByBackupConfig(ctx, backupConfigWithSecrets)
 		if err != nil {
 			return err
@@ -246,23 +235,23 @@ func (r *BackupReconciler) reconcileBackupMetadata(
 
 	if backup.Status.BackupID != "" {
 		if strings.Contains(backup.Status.BackupID, "_D_") {
-			backup.Labels[backupTypeLabelName] = string(BackupTypeIncremental)
+			backup.Labels[v1beta1.BackupTypeLabelName] = string(v1beta1.BackupTypeIncremental)
 		} else {
-			backup.Labels[backupTypeLabelName] = string(BackupTypeFull)
+			backup.Labels[v1beta1.BackupTypeLabelName] = string(v1beta1.BackupTypeFull)
 		}
 	}
 
-	if backup.Labels[backupPgVersionLabelName] == "" && cluster == nil {
+	if backup.Labels[v1beta1.BackupPgVersionLabelName] == "" && cluster == nil {
 		logger.Error(
 			fmt.Errorf("cluster %s does not exist", backup.Spec.Cluster.Name),
 			"while reconciling PG version annotation for backup",
 		)
-	} else if backup.Labels[backupPgVersionLabelName] == "" && cluster != nil {
+	} else if backup.Labels[v1beta1.BackupPgVersionLabelName] == "" && cluster != nil {
 		pgVersion, err := cluster.GetPostgresqlVersion()
 		if err != nil {
 			logger.Error(err, "while getting PG version for cluster %v", client.ObjectKeyFromObject(cluster))
 		}
-		backup.Labels[backupPgVersionLabelName] = strconv.FormatInt(int64(pgVersion.Major()), 10)
+		backup.Labels[v1beta1.BackupPgVersionLabelName] = strconv.FormatInt(int64(pgVersion.Major()), 10)
 	}
 
 	backups, err := r.listBackupsOwnedByBackupConfig(ctx, backupConfig)
@@ -274,13 +263,13 @@ func (r *BackupReconciler) reconcileBackupMetadata(
 	dependentBackupsNames := lo.Map(directDependentBackups, func(b cnpgv1.Backup, _ int) string {
 		return b.Name
 	})
-	backup.Annotations[backupDirectDependentsAnnotationName] = strings.Join(dependentBackupsNames, " ")
+	backup.Annotations[v1beta1.BackupDirectDependentsAnnotationName] = strings.Join(dependentBackupsNames, " ")
 
 	allDependentBackups := buildDependentBackupsForBackup(ctx, backup, backups, true)
 	allDependentBackupsNames := lo.Map(allDependentBackups, func(b cnpgv1.Backup, _ int) string {
 		return b.Name
 	})
-	backup.Annotations[backupAllDependentsAnnotationName] = strings.Join(allDependentBackupsNames, " ")
+	backup.Annotations[v1beta1.BackupAllDependentsAnnotationName] = strings.Join(allDependentBackupsNames, " ")
 
 	if equality.Semantic.DeepEqual(backup, oldBackup) {
 		// There's no need to hit the API server again
