@@ -103,6 +103,8 @@ spec:
           name: cnpgi-server
         - mountPath: /tls/cnpgi-client
           name: cnpgi-client
+        - mountPath: /run/secrets/cnpg-plugin-wal-g/webhook
+          name: webhook-certificates
       volumes:
       - name: cnpgi-server
         secret:
@@ -110,5 +112,10 @@ spec:
       - name: cnpgi-client
         secret:
           secretName: cnpg-plugin-wal-g-client-tls
+      - name: webhook-certificates
+        secret:
+          optional: true
+          secretName: cnpg-plugin-wal-g-webhook-cert
+          defaultMode: 420
       serviceAccountName: controller-manager
       terminationGracePeriodSeconds: 10
