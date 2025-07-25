@@ -367,10 +367,10 @@ var _ = Describe("BackupReconciler", func() {
 			updatedBackup := &cnpgv1.Backup{}
 			err = fakeClient.Get(testCtx, client.ObjectKey{Namespace: "default", Name: "test-backup"}, updatedBackup)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(updatedBackup.Labels).ToNot(HaveKey(backupTypeLabelName))
-			Expect(updatedBackup.Labels).To(HaveKeyWithValue(backupPgVersionLabelName, "14"))
-			Expect(updatedBackup.Annotations).To(HaveKeyWithValue(backupDirectDependentsAnnotationName, ""))
-			Expect(updatedBackup.Annotations).To(HaveKeyWithValue(backupAllDependentsAnnotationName, ""))
+			Expect(updatedBackup.Labels).ToNot(HaveKey(v1beta1.BackupTypeLabelName))
+			Expect(updatedBackup.Labels).To(HaveKeyWithValue(v1beta1.BackupPgVersionLabelName, "14"))
+			Expect(updatedBackup.Annotations).To(HaveKeyWithValue(v1beta1.BackupDirectDependentsAnnotationName, ""))
+			Expect(updatedBackup.Annotations).To(HaveKeyWithValue(v1beta1.BackupAllDependentsAnnotationName, ""))
 		})
 
 		It("should set full backup type label and PG version label for full backup", func() {
@@ -411,19 +411,19 @@ var _ = Describe("BackupReconciler", func() {
 			updated, err := reconciler.reconcileBackupMetadata(testCtx, backup, backupConfigWithSecrets, cluster)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(updated).To(BeTrue())
-			Expect(backup.Labels).To(HaveKeyWithValue(backupTypeLabelName, string(BackupTypeFull)))
-			Expect(backup.Labels).To(HaveKeyWithValue(backupPgVersionLabelName, "14"))
-			Expect(backup.Annotations).To(HaveKeyWithValue(backupDirectDependentsAnnotationName, ""))
-			Expect(backup.Annotations).To(HaveKeyWithValue(backupAllDependentsAnnotationName, ""))
+			Expect(backup.Labels).To(HaveKeyWithValue(v1beta1.BackupTypeLabelName, string(v1beta1.BackupTypeFull)))
+			Expect(backup.Labels).To(HaveKeyWithValue(v1beta1.BackupPgVersionLabelName, "14"))
+			Expect(backup.Annotations).To(HaveKeyWithValue(v1beta1.BackupDirectDependentsAnnotationName, ""))
+			Expect(backup.Annotations).To(HaveKeyWithValue(v1beta1.BackupAllDependentsAnnotationName, ""))
 
 			// Verify backup was updated with correct labels and annotations
 			updatedBackup := &cnpgv1.Backup{}
 			err = fakeClient.Get(testCtx, client.ObjectKey{Namespace: "default", Name: "test-backup"}, updatedBackup)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(updatedBackup.Labels).To(HaveKeyWithValue(backupTypeLabelName, string(BackupTypeFull)))
-			Expect(updatedBackup.Labels).To(HaveKeyWithValue(backupPgVersionLabelName, "14"))
-			Expect(updatedBackup.Annotations).To(HaveKeyWithValue(backupDirectDependentsAnnotationName, ""))
-			Expect(updatedBackup.Annotations).To(HaveKeyWithValue(backupAllDependentsAnnotationName, ""))
+			Expect(updatedBackup.Labels).To(HaveKeyWithValue(v1beta1.BackupTypeLabelName, string(v1beta1.BackupTypeFull)))
+			Expect(updatedBackup.Labels).To(HaveKeyWithValue(v1beta1.BackupPgVersionLabelName, "14"))
+			Expect(updatedBackup.Annotations).To(HaveKeyWithValue(v1beta1.BackupDirectDependentsAnnotationName, ""))
+			Expect(updatedBackup.Annotations).To(HaveKeyWithValue(v1beta1.BackupAllDependentsAnnotationName, ""))
 		})
 
 		It("should set incremental backup type label and PG version label for incremental backup", func() {
@@ -464,19 +464,19 @@ var _ = Describe("BackupReconciler", func() {
 			updated, err := reconciler.reconcileBackupMetadata(testCtx, backup, backupConfigWithSecrets, cluster)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(updated).To(BeTrue())
-			Expect(backup.Labels).To(HaveKeyWithValue(backupTypeLabelName, string(BackupTypeIncremental)))
-			Expect(backup.Labels).To(HaveKeyWithValue(backupPgVersionLabelName, "15"))
-			Expect(backup.Annotations).To(HaveKeyWithValue(backupDirectDependentsAnnotationName, ""))
-			Expect(backup.Annotations).To(HaveKeyWithValue(backupAllDependentsAnnotationName, ""))
+			Expect(backup.Labels).To(HaveKeyWithValue(v1beta1.BackupTypeLabelName, string(v1beta1.BackupTypeIncremental)))
+			Expect(backup.Labels).To(HaveKeyWithValue(v1beta1.BackupPgVersionLabelName, "15"))
+			Expect(backup.Annotations).To(HaveKeyWithValue(v1beta1.BackupDirectDependentsAnnotationName, ""))
+			Expect(backup.Annotations).To(HaveKeyWithValue(v1beta1.BackupAllDependentsAnnotationName, ""))
 
 			// Verify backup was updated with correct labels and annotations
 			updatedBackup := &cnpgv1.Backup{}
 			err = fakeClient.Get(testCtx, client.ObjectKey{Namespace: "default", Name: "test-backup"}, updatedBackup)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(updatedBackup.Labels).To(HaveKeyWithValue(backupTypeLabelName, string(BackupTypeIncremental)))
-			Expect(updatedBackup.Labels).To(HaveKeyWithValue(backupPgVersionLabelName, "15"))
-			Expect(updatedBackup.Annotations).To(HaveKeyWithValue(backupDirectDependentsAnnotationName, ""))
-			Expect(updatedBackup.Annotations).To(HaveKeyWithValue(backupAllDependentsAnnotationName, ""))
+			Expect(updatedBackup.Labels).To(HaveKeyWithValue(v1beta1.BackupTypeLabelName, string(v1beta1.BackupTypeIncremental)))
+			Expect(updatedBackup.Labels).To(HaveKeyWithValue(v1beta1.BackupPgVersionLabelName, "15"))
+			Expect(updatedBackup.Annotations).To(HaveKeyWithValue(v1beta1.BackupDirectDependentsAnnotationName, ""))
+			Expect(updatedBackup.Annotations).To(HaveKeyWithValue(v1beta1.BackupAllDependentsAnnotationName, ""))
 		})
 
 		It("should set direct dependent backups annotation", func() {
@@ -518,19 +518,19 @@ var _ = Describe("BackupReconciler", func() {
 			updated, err := reconciler.reconcileBackupMetadata(testCtx, baseBackup, backupConfigWithSecrets, cluster)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(updated).To(BeTrue())
-			Expect(baseBackup.Labels).To(HaveKeyWithValue(backupTypeLabelName, string(BackupTypeFull)))
-			Expect(baseBackup.Labels).To(HaveKeyWithValue(backupPgVersionLabelName, "14"))
-			Expect(baseBackup.Annotations).To(HaveKeyWithValue(backupDirectDependentsAnnotationName, "dependent-backup"))
-			Expect(baseBackup.Annotations).To(HaveKeyWithValue(backupAllDependentsAnnotationName, "dependent-backup"))
+			Expect(baseBackup.Labels).To(HaveKeyWithValue(v1beta1.BackupTypeLabelName, string(v1beta1.BackupTypeFull)))
+			Expect(baseBackup.Labels).To(HaveKeyWithValue(v1beta1.BackupPgVersionLabelName, "14"))
+			Expect(baseBackup.Annotations).To(HaveKeyWithValue(v1beta1.BackupDirectDependentsAnnotationName, "dependent-backup"))
+			Expect(baseBackup.Annotations).To(HaveKeyWithValue(v1beta1.BackupAllDependentsAnnotationName, "dependent-backup"))
 
 			// Verify backup was updated with correct labels and annotations
 			updatedBackup := &cnpgv1.Backup{}
 			err = fakeClient.Get(testCtx, client.ObjectKey{Namespace: "default", Name: "base-backup"}, updatedBackup)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(updatedBackup.Labels).To(HaveKeyWithValue(backupTypeLabelName, string(BackupTypeFull)))
-			Expect(updatedBackup.Labels).To(HaveKeyWithValue(backupPgVersionLabelName, "14"))
-			Expect(updatedBackup.Annotations).To(HaveKeyWithValue(backupDirectDependentsAnnotationName, "dependent-backup"))
-			Expect(updatedBackup.Annotations).To(HaveKeyWithValue(backupAllDependentsAnnotationName, "dependent-backup"))
+			Expect(updatedBackup.Labels).To(HaveKeyWithValue(v1beta1.BackupTypeLabelName, string(v1beta1.BackupTypeFull)))
+			Expect(updatedBackup.Labels).To(HaveKeyWithValue(v1beta1.BackupPgVersionLabelName, "14"))
+			Expect(updatedBackup.Annotations).To(HaveKeyWithValue(v1beta1.BackupDirectDependentsAnnotationName, "dependent-backup"))
+			Expect(updatedBackup.Annotations).To(HaveKeyWithValue(v1beta1.BackupAllDependentsAnnotationName, "dependent-backup"))
 		})
 
 		It("should set both direct and indirect dependent backups annotations", func() {
@@ -573,19 +573,19 @@ var _ = Describe("BackupReconciler", func() {
 			updated, err := reconciler.reconcileBackupMetadata(testCtx, baseBackup, backupConfigWithSecrets, cluster)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(updated).To(BeTrue())
-			Expect(baseBackup.Labels).To(HaveKeyWithValue(backupTypeLabelName, string(BackupTypeFull)))
-			Expect(baseBackup.Labels).To(HaveKeyWithValue(backupPgVersionLabelName, "14"))
-			Expect(baseBackup.Annotations).To(HaveKeyWithValue(backupDirectDependentsAnnotationName, "direct-dependent"))
-			Expect(baseBackup.Annotations).To(HaveKeyWithValue(backupAllDependentsAnnotationName, "direct-dependent indirect-dependent"))
+			Expect(baseBackup.Labels).To(HaveKeyWithValue(v1beta1.BackupTypeLabelName, string(v1beta1.BackupTypeFull)))
+			Expect(baseBackup.Labels).To(HaveKeyWithValue(v1beta1.BackupPgVersionLabelName, "14"))
+			Expect(baseBackup.Annotations).To(HaveKeyWithValue(v1beta1.BackupDirectDependentsAnnotationName, "direct-dependent"))
+			Expect(baseBackup.Annotations).To(HaveKeyWithValue(v1beta1.BackupAllDependentsAnnotationName, "direct-dependent indirect-dependent"))
 
 			// Verify backup was updated with correct labels and annotations
 			updatedBackup := &cnpgv1.Backup{}
 			err = fakeClient.Get(testCtx, client.ObjectKey{Namespace: "default", Name: "base-backup"}, updatedBackup)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(updatedBackup.Labels).To(HaveKeyWithValue(backupTypeLabelName, string(BackupTypeFull)))
-			Expect(updatedBackup.Labels).To(HaveKeyWithValue(backupPgVersionLabelName, "14"))
-			Expect(updatedBackup.Annotations).To(HaveKeyWithValue(backupDirectDependentsAnnotationName, "direct-dependent"))
-			Expect(updatedBackup.Annotations).To(HaveKeyWithValue(backupAllDependentsAnnotationName, "direct-dependent indirect-dependent"))
+			Expect(updatedBackup.Labels).To(HaveKeyWithValue(v1beta1.BackupTypeLabelName, string(v1beta1.BackupTypeFull)))
+			Expect(updatedBackup.Labels).To(HaveKeyWithValue(v1beta1.BackupPgVersionLabelName, "14"))
+			Expect(updatedBackup.Annotations).To(HaveKeyWithValue(v1beta1.BackupDirectDependentsAnnotationName, "direct-dependent"))
+			Expect(updatedBackup.Annotations).To(HaveKeyWithValue(v1beta1.BackupAllDependentsAnnotationName, "direct-dependent indirect-dependent"))
 		})
 
 		It("should not update backup if metadata is already correct", func() {
@@ -594,12 +594,12 @@ var _ = Describe("BackupReconciler", func() {
 			backup := createTestBackup("test-backup", "default", "test-cluster", "base_000000010000000100000001", true)
 			cluster := createTestCluster("test-cluster", "default")
 			backup.Labels = map[string]string{
-				backupTypeLabelName:      string(BackupTypeFull),
-				backupPgVersionLabelName: "14",
+				v1beta1.BackupTypeLabelName:      string(v1beta1.BackupTypeFull),
+				v1beta1.BackupPgVersionLabelName: "14",
 			}
 			backup.Annotations = map[string]string{
-				backupDirectDependentsAnnotationName: "",
-				backupAllDependentsAnnotationName:    "",
+				v1beta1.BackupDirectDependentsAnnotationName: "",
+				v1beta1.BackupAllDependentsAnnotationName:    "",
 			}
 
 			// Create a mock BackupConfigWithSecrets
@@ -645,7 +645,7 @@ var _ = Describe("BackupReconciler", func() {
 
 			// Set deletion timestamp on dependent backup
 			now := metav1.Now()
-			dependentBackup.Finalizers = append(dependentBackup.Finalizers, backupFinalizerName)
+			dependentBackup.Finalizers = append(dependentBackup.Finalizers, v1beta1.BackupFinalizerName)
 			dependentBackup.DeletionTimestamp = &now
 
 			// Create a mock BackupConfigWithSecrets
@@ -683,10 +683,10 @@ var _ = Describe("BackupReconciler", func() {
 			updatedBackup := &cnpgv1.Backup{}
 			err = fakeClient.Get(testCtx, client.ObjectKey{Namespace: "default", Name: "base-backup"}, updatedBackup)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(updatedBackup.Labels).To(HaveKeyWithValue(backupTypeLabelName, string(BackupTypeFull)))
-			Expect(updatedBackup.Labels).To(HaveKeyWithValue(backupPgVersionLabelName, "14"))
-			Expect(updatedBackup.Annotations).To(HaveKeyWithValue(backupDirectDependentsAnnotationName, ""))
-			Expect(updatedBackup.Annotations).To(HaveKeyWithValue(backupAllDependentsAnnotationName, ""))
+			Expect(updatedBackup.Labels).To(HaveKeyWithValue(v1beta1.BackupTypeLabelName, string(v1beta1.BackupTypeFull)))
+			Expect(updatedBackup.Labels).To(HaveKeyWithValue(v1beta1.BackupPgVersionLabelName, "14"))
+			Expect(updatedBackup.Annotations).To(HaveKeyWithValue(v1beta1.BackupDirectDependentsAnnotationName, ""))
+			Expect(updatedBackup.Annotations).To(HaveKeyWithValue(v1beta1.BackupAllDependentsAnnotationName, ""))
 		})
 
 		It("should update parent backup annotations when new dependent backup is created", func() {
@@ -697,12 +697,12 @@ var _ = Describe("BackupReconciler", func() {
 			// Create parent backup with no dependents initially
 			parentBackup := createTestBackup("parent-backup", "default", "test-cluster", "base_000000010000000100000001", true)
 			parentBackup.Labels = map[string]string{
-				backupTypeLabelName:      string(BackupTypeFull),
-				backupPgVersionLabelName: "14",
+				v1beta1.BackupTypeLabelName:      string(v1beta1.BackupTypeFull),
+				v1beta1.BackupPgVersionLabelName: "14",
 			}
 			parentBackup.Annotations = map[string]string{
-				backupDirectDependentsAnnotationName: "",
-				backupAllDependentsAnnotationName:    "",
+				v1beta1.BackupDirectDependentsAnnotationName: "",
+				v1beta1.BackupAllDependentsAnnotationName:    "",
 			}
 
 			// Create a new dependent backup
@@ -742,10 +742,10 @@ var _ = Describe("BackupReconciler", func() {
 			updatedParent := &cnpgv1.Backup{}
 			err = fakeClient.Get(testCtx, client.ObjectKey{Namespace: "default", Name: "parent-backup"}, updatedParent)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(updatedParent.Labels).To(HaveKeyWithValue(backupTypeLabelName, string(BackupTypeFull)))
-			Expect(updatedParent.Labels).To(HaveKeyWithValue(backupPgVersionLabelName, "14"))
-			Expect(updatedParent.Annotations).To(HaveKeyWithValue(backupDirectDependentsAnnotationName, "new-dependent"))
-			Expect(updatedParent.Annotations).To(HaveKeyWithValue(backupAllDependentsAnnotationName, "new-dependent"))
+			Expect(updatedParent.Labels).To(HaveKeyWithValue(v1beta1.BackupTypeLabelName, string(v1beta1.BackupTypeFull)))
+			Expect(updatedParent.Labels).To(HaveKeyWithValue(v1beta1.BackupPgVersionLabelName, "14"))
+			Expect(updatedParent.Annotations).To(HaveKeyWithValue(v1beta1.BackupDirectDependentsAnnotationName, "new-dependent"))
+			Expect(updatedParent.Annotations).To(HaveKeyWithValue(v1beta1.BackupAllDependentsAnnotationName, "new-dependent"))
 
 			// Also test the scenario where we add a second level dependent (indirect dependent)
 			secondLevelBackup := createTestBackup("second-level", "default", "test-cluster", "base_000000010000000100000003_D_000000010000000100000002", true)
@@ -762,10 +762,10 @@ var _ = Describe("BackupReconciler", func() {
 			// Verify parent backup was updated with both direct and indirect dependents
 			err = fakeClient.Get(testCtx, client.ObjectKey{Namespace: "default", Name: "parent-backup"}, updatedParent)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(updatedParent.Annotations).To(HaveKeyWithValue(backupDirectDependentsAnnotationName, "new-dependent"))
+			Expect(updatedParent.Annotations).To(HaveKeyWithValue(v1beta1.BackupDirectDependentsAnnotationName, "new-dependent"))
 
 			// The all dependents annotation should include both direct and indirect dependents
-			allDependents := updatedParent.Annotations[backupAllDependentsAnnotationName]
+			allDependents := updatedParent.Annotations[v1beta1.BackupAllDependentsAnnotationName]
 			Expect(allDependents).To(ContainSubstring("new-dependent"))
 			Expect(allDependents).To(ContainSubstring("second-level"))
 		})

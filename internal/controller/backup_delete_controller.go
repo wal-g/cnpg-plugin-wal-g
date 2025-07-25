@@ -154,21 +154,21 @@ func (b *BackupDeletionController) deleteWALGBackup(ctx context.Context, backupK
 	if backup.Labels == nil || backup.Annotations == nil {
 		logger.Info(
 			"Cannot delete backup because it has missing plugin labels or annotations",
-			"backup", backup.Name, "dependents", backup.Annotations[backupAllDependentsAnnotationName],
+			"backup", backup.Name, "dependents", backup.Annotations[v1beta1.BackupAllDependentsAnnotationName],
 		)
 		return nil
 	}
 
-	if backup.Annotations[backupAllDependentsAnnotationName] != "" {
+	if backup.Annotations[v1beta1.BackupAllDependentsAnnotationName] != "" {
 		// TODO: emit event for backup
 		logger.Info(
 			"Cannot delete backup because it still has dependent backups",
-			"backup", backup.Name, "dependents", backup.Annotations[backupAllDependentsAnnotationName],
+			"backup", backup.Name, "dependents", backup.Annotations[v1beta1.BackupAllDependentsAnnotationName],
 		)
 		return nil
 	}
 
-	if !containsString(backup.Finalizers, backupFinalizerName) {
+	if !containsString(backup.Finalizers, v1beta1.BackupFinalizerName) {
 		return nil // Nothing to do if finalizer is not specified
 	}
 
@@ -176,11 +176,11 @@ func (b *BackupDeletionController) deleteWALGBackup(ctx context.Context, backupK
 	if backup.Status.BackupID != "" {
 		// Delete the backup using WAL-G
 		logger.Info("Deleting backup from WAL-G", "backupID", backup.Status.BackupID)
-		pgVersion, err := strconv.Atoi(backup.Labels[backupPgVersionLabelName])
+		pgVersion, err := strconv.Atoi(backup.Labels[v1beta1.BackupPgVersionLabelName])
 		if err != nil {
 			return fmt.Errorf(
 				"while wal-g backup removal: error cannot parse pgVersion from Backup label %s: '%s': %w",
-				backupPgVersionLabelName, backup.Labels[backupPgVersionLabelName], err,
+				v1beta1.BackupPgVersionLabelName, backup.Labels[v1beta1.BackupPgVersionLabelName], err,
 			)
 		}
 		result, err := walg.DeleteBackup(ctx, backupConfig, pgVersion, backup.Status.BackupID)
@@ -195,7 +195,7 @@ func (b *BackupDeletionController) deleteWALGBackup(ctx context.Context, backupK
 	}
 
 	// Remove our finalizer from the list and update
-	backup.Finalizers = removeString(backup.Finalizers, backupFinalizerName)
+	backup.Finalizers = removeString(backup.Finalizers, v1beta1.BackupFinalizerName)
 	if err := b.Update(ctx, backup); err != nil {
 		logger.Error(err, "while removing cleanup finalizer from Backup")
 		return fmt.Errorf("while removing cleanup finalizer from Backup: %w", err)
