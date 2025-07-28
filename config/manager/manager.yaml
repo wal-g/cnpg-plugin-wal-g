@@ -93,11 +93,11 @@ spec:
         # More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
         resources:
           limits:
-            cpu: 500m
-            memory: 128Mi
+            cpu: 1000m
+            memory: 512Mi
           requests:
             cpu: 10m
-            memory: 64Mi
+            memory: 128Mi
         volumeMounts:
         - mountPath: /tls/cnpgi-server
           name: cnpgi-server
