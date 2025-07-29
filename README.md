@@ -153,3 +153,19 @@ make uninstall
 ```sh
 make undeploy
 ```
+
+### Releasing new version
+
+```sh
+# 1) Choose new tag
+export GIT_TAG=v0.2.0
+# 2) Make installer file (./dist/install.yaml) with new tag and commit
+make build-installer && git add ./dist/install.yaml && git commit -m "Bump installer to version $GIT_TAG" && git push
+# 3) Create new tag
+git tag -m "Version $GIT_TAG" $GIT_TAG
+# 4) Push new tag and commit
+git push origin $GIT_TAG
+# 5) Unset GIT_TAG variable
+unset GIT_TAG
+```
+

@@ -52,8 +52,8 @@ spec:
                   backups. Defaults to 0.
                 type: integer
               downloadConcurrency:
-                description: 'How many goroutines to use during backup && wal downloading.
-                  Default: 10.'
+                description: How many goroutines to use during backup && wal downloading.
+                  Default value is evaluated at runtime
                 type: integer
               downloadFileRetries:
                 description: 'How many times failed file will be retried during backup
@@ -258,20 +258,20 @@ spec:
                 - type
                 type: object
               uploadConcurrency:
-                description: 'How many concurrency streams to use during backup uploading.
-                  Default: 16'
+                description: How many concurrency streams to use during backup uploading.
+                  Default value is evaluated at runtime
                 type: integer
               uploadDiskConcurrency:
-                description: 'How many concurrency streams are reading disk during
-                  backup uploading. Default: 1 stream'
+                description: How many concurrency streams are reading disk during
+                  backup uploading. Default value is evaluated at runtime
                 type: integer
               uploadDiskRateLimitBytesPerSecond:
                 description: Disk read rate limit during backup creation in bytes
-                  per second.
+                  per second. Default value is evaluated at runtime
                 type: integer
               uploadNetworkRateLimitBytesPerSecond:
                 description: Network upload rate limit during backup uploading in
-                  bytes per second.
+                  bytes per second. Default value is evaluated at runtime
                 type: integer
             required:
             - storage
@@ -420,6 +420,27 @@ rules:
   - delete
   - get
   - list
+  - patch
+  - watch
+- apiGroups:
+  - admissionregistration.k8s.io
+  resources:
+  - mutatingwebhookconfigurations
+  - validatingwebhookconfigurations
+  verbs:
+  - get
+  - patch
+- apiGroups:
+  - apps
+  resources:
+  - deployments
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
   - watch
 - apiGroups:
   - cnpg-extensions.yandex.cloud
@@ -608,6 +629,23 @@ spec:
   sessionAffinity: None
   type: ClusterIP
 ---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/name: cnpg-plugin-wal-g
+  name: cnpg-plugin-wal-g-webhook-service
+  namespace: cnpg-system
+spec:
+  ports:
+  - port: 443
+    protocol: TCP
+    targetPort: 9443
+  selector:
+    app.kubernetes.io/name: cnpg-plugin-wal-g
+    control-plane: controller-manager
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -643,8 +681,8 @@ spec:
         - --cnpg-i-pg-sidecar-image=$(SIDECAR_IMAGE)
         env:
         - name: SIDECAR_IMAGE
-          value: ${IMG}:${TAG}
-        image: ${IMG}:${TAG}
+          value: ghcr.io/wal-g/cnpg-plugin-wal-g:0.2.0
+        image: ghcr.io/wal-g/cnpg-plugin-wal-g:0.2.0
         livenessProbe:
           httpGet:
             path: /healthz
@@ -661,11 +699,11 @@ spec:
           periodSeconds: 10
         resources:
           limits:
-            cpu: 500m
-            memory: 128Mi
+            cpu: 1000m
+            memory: 512Mi
           requests:
             cpu: 10m
-            memory: 64Mi
+            memory: 128Mi
         securityContext:
           allowPrivilegeEscalation: false
           capabilities:
@@ -676,6 +714,8 @@ spec:
           name: cnpgi-server
         - mountPath: /tls/cnpgi-client
           name: cnpgi-client
+        - mountPath: /run/secrets/cnpg-plugin-wal-g/webhook
+          name: webhook-certificates
       securityContext:
         runAsNonRoot: true
         seccompProfile:
@@ -689,6 +729,11 @@ spec:
       - name: cnpgi-client
         secret:
           secretName: cnpg-plugin-wal-g-client-tls
+      - name: webhook-certificates
+        secret:
+          defaultMode: 420
+          optional: true
+          secretName: cnpg-plugin-wal-g-webhook-cert
 ---
 apiVersion: cert-manager.io/v1
 kind: Certificate
@@ -736,3 +781,55 @@ metadata:
   namespace: cnpg-system
 spec:
   selfSigned: {}
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: MutatingWebhookConfiguration
+metadata:
+  name: cnpg-plugin-wal-g-mutating-webhook-configuration
+webhooks:
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    service:
+      name: cnpg-plugin-wal-g-webhook-service
+      namespace: cnpg-system
+      path: /mutate-cnpg-extensions-yandex-cloud-v1beta1-backupconfig
+  failurePolicy: Fail
+  name: mbackupconfig-v1beta1.kb.io
+  rules:
+  - apiGroups:
+    - cnpg-extensions.yandex.cloud
+    apiVersions:
+    - v1beta1
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - backupconfigs
+  sideEffects: None
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingWebhookConfiguration
+metadata:
+  name: cnpg-plugin-wal-g-validating-webhook-configuration
+webhooks:
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    service:
+      name: cnpg-plugin-wal-g-webhook-service
+      namespace: cnpg-system
+      path: /validate-cnpg-extensions-yandex-cloud-v1beta1-backupconfig
+  failurePolicy: Fail
+  name: vbackupconfig-v1beta1.kb.io
+  rules:
+  - apiGroups:
+    - cnpg-extensions.yandex.cloud
+    apiVersions:
+    - v1beta1
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - backupconfigs
+  sideEffects: None

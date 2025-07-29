@@ -121,6 +121,11 @@ docker-build: build ## Build docker image with the manager.
 
 .PHONY: docker-push
 docker-push: ## Push docker image with the manager.
+	@if [ "$(GIT_TAG)" = "v0.0.0-dev" ]; then \
+		echo "ERROR: VERSION is v0.0.0-dev, aborting publish!"; \
+		exit 1; \
+	fi
+	@echo "Publishing docker image ${DOCKER_IMG}:${DOCKER_TAG}..."
 	$(CONTAINER_TOOL) push ${DOCKER_IMG}:${DOCKER_TAG}
 
 .PHONY: helm-package
@@ -131,7 +136,12 @@ helm-package: manifests
 
 .PHONY: helm-push
 helm-push: manifests
-	$(HELM) push ${CHART} oci://ghcr.io/wal-g
+	@if [ "$(GIT_TAG)" = "v0.0.0-dev" ]; then \
+		echo "ERROR: VERSION is v0.0.0-dev, aborting publish!"; \
+		exit 1; \
+	fi
+	@echo "Publishing helm package oci://ghcr.io/wal-g:$(HELM_TAG) ..."
+	$(HELM) push ./cnpg-plugin-wal-g-$(HELM_TAG).tgz oci://ghcr.io/wal-g
 
 .PHONY: release
 release: build-installer docker-build docker-push helm-package helm-push
@@ -157,8 +167,7 @@ docker-buildx: ## Build and push docker image for the manager for cross-platform
 .PHONY: build-installer
 build-installer: manifests generate kustomize ## Generate a consolidated YAML with CRDs and deployment.
 	mkdir -p dist
-	cd config/manager && $(KUSTOMIZE) edit set image controller=${DOCKER_IMG}:${DOCKER_TAG}
-	$(KUSTOMIZE) build config/default > dist/install.yaml
+	$(KUSTOMIZE) build config/default | IMG=${DOCKER_IMG} TAG=${DOCKER_TAG} envsubst > dist/install.yaml
 
 ##@ Deployment
 
@@ -176,13 +185,13 @@ uninstall: manifests kustomize ## Uninstall CRDs from the K8s cluster specified 
 
 .PHONY: deploy
 deploy: manifests kustomize ## Deploy controller to the K8s cluster specified in ~/.kube/config.
-	cd config/manager && $(KUSTOMIZE) edit set image controller=${IMG}:${TAG}
-	$(KUSTOMIZE) build config/default | IMG=${IMG} TAG=${TAG} envsubst | $(KUBECTL) apply -f -
+	cd config/manager && $(KUSTOMIZE) edit set image controller=${DOCKER_IMG}:${DOCKER_TAG}
+	$(KUSTOMIZE) build config/default | IMG=${DOCKER_IMG} TAG=${DOCKER_TAG} envsubst | $(KUBECTL) apply -f -
 
 .PHONY: deploy-kind
 deploy-kind: manifests kustomize ## Deploy controller to the K8s cluster specified in ~/.kube/config.
-	kind load docker-image ${IMG}:${TAG} -n pg-operator-e2e-v1-32-2
-	$(KUSTOMIZE) build config/kind | IMG=${IMG} TAG=${TAG} envsubst | $(KUBECTL) apply -f -
+	kind load docker-image ${DOCKER_IMG}:${DOCKER_TAG} -n cnpg-wal-g
+	$(KUSTOMIZE) build config/kind | IMG=${DOCKER_IMG} TAG=${DOCKER_TAG} envsubst | $(KUBECTL) apply -f -
 	$(KUBECTL) rollout restart deployment/cnpg-plugin-wal-g-controller-manager -n cnpg-system
 	$(KUBECTL) rollout status deployment/cnpg-plugin-wal-g-controller-manager -n cnpg-system --timeout=120s
 
