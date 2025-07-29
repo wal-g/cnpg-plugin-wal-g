@@ -1,13 +1,19 @@
-# Image URL to use all building/pushing image targets
-IMG ?= ghcr.io/wal-g/cnpg-plugin-wal-g
-TAG ?= 0.0.0
+GIT_COMMIT ?= $(shell git rev-parse --short HEAD)
+GIT_TAG ?= $(shell git describe --tags --exact-match 2>/dev/null || echo "v0.0.0-dev" )
 
-# Populate GOROOT, GOPATH vars if it is not specified
-ifeq (,$(GOROOT))
-GOROOT=$(shell go env GOROOT)
-endif
-ifeq (,$(GOPATH))
-GOPATH=$(shell go env GOPATH)
+DATE ?= $(shell date --iso-8601=seconds)
+GO_VERSION_FLAGS ?= -X github.com/wal-g/cnpg-plugin-wal-g/pkg/version.version=$(GIT_TAG) \
+				    -X github.com/wal-g/cnpg-plugin-wal-g/pkg/version.commitHash=$(GIT_COMMIT) \
+				    -X github.com/wal-g/cnpg-plugin-wal-g/pkg/version.buildDate=$(DATE)
+
+DOCKER_IMG ?= ghcr.io/wal-g/cnpg-plugin-wal-g
+DOCKER_TAG = $(shell tag="$(GIT_TAG)"; [[ $$tag =~ ^v[0-9]+\.[0-9]+\.[0-9]+ ]] && tag="$${tag:1}"; echo "$$tag")
+HELM_TAG = $(DOCKER_TAG)-helm-chart
+
+ifeq ($(TAG),"v0.0.0-dev")
+	LDFLAGS = -ldflags "-s -w $(GO_VERSION_FLAGS)"
+else
+	LDFLAGS = -ldflags "$(GO_VERSION_FLAGS)"
 endif
 
 # Get the currently used golang install path (in GOPATH/bin, unless GOBIN is set)
@@ -100,14 +106,10 @@ lint-config: golangci-lint ## Verify golangci-lint linter configuration
 	$(GOLANGCI_LINT) config verify
 
 ##@ Build
-
 .PHONY: build
-build: manifests generate fmt vet goreleaser ## Build manager binary.
-	GOROOT=$(GOROOT) GOPATH=$(GOPATH) $(GORELEASER) build --snapshot --clean
-
-.PHONY: build-ci
-build-ci: manifests generate fmt vet goreleaser ## Build manager binary in CI (with checks).
-	GOROOT=$(GOROOT) GOPATH=$(GOPATH) $(GORELEASER) build --clean
+build: manifests generate fmt vet ## Build manager binary.
+	mkdir -p output
+	CGO_ENABLED=0 GOOS=linux GOARCH=${GOARCH} go build ${LDFLAGS} -o output/cnpg-plugin-wal-g ./cmd/main.go
 
 .PHONY: run
 run: manifests generate fmt vet ## Run a controller from your host.
@@ -115,18 +117,16 @@ run: manifests generate fmt vet ## Run a controller from your host.
 
 .PHONY: docker-build
 docker-build: build ## Build docker image with the manager.
-	$(CONTAINER_TOOL) build -t ${IMG}:${TAG} .
-
-.PHONY: docker-build-ci
-docker-build-ci: build-ci ## Build docker image with the manager.
-	$(CONTAINER_TOOL) build -t ${IMG}:${TAG} .
+	$(CONTAINER_TOOL) build -t ${DOCKER_IMG}:${DOCKER_TAG} .
 
 .PHONY: docker-push
 docker-push: ## Push docker image with the manager.
-	$(CONTAINER_TOOL) push ${IMG}:${TAG}
+	$(CONTAINER_TOOL) push ${DOCKER_IMG}:${DOCKER_TAG}
 
 .PHONY: helm-package
 helm-package: manifests
+	sed -i 's/version: "0.0.0-dev-helm-chart"/version: "$(HELM_TAG)"/' chart/Chart.yaml
+	sed -i 's/appVersion: "0.0.0-dev"/appVersion: "$(DOCKER_TAG)"/' chart/Chart.yaml
 	$(HELM) package ./chart
 
 .PHONY: helm-push
@@ -134,8 +134,8 @@ helm-push: manifests
 	$(HELM) push ${CHART} oci://ghcr.io/wal-g
 
 .PHONY: release
-release: docker-buildx helm-package helm-push ## Build and push multi-platform images and helm chart for release
-	@echo "Release completed successfully"
+release: build-installer docker-build docker-push helm-package helm-push
+	@echo "Release artifacts published successfully"
 
 # PLATFORMS defines the target platforms for the manager image be built to provide support to multiple
 # architectures. (i.e. make docker-buildx IMG=myregistry/mypoperator:0.0.1). To use this option you need to:
@@ -150,14 +150,14 @@ docker-buildx: ## Build and push docker image for the manager for cross-platform
 	sed -e '1 s/\(^FROM\)/FROM --platform=\$$\{BUILDPLATFORM\}/; t' -e ' 1,// s//FROM --platform=\$$\{BUILDPLATFORM\}/' Dockerfile > Dockerfile.cross
 	- $(CONTAINER_TOOL) buildx create --name cnpg-plugin-wal-g-builder
 	$(CONTAINER_TOOL) buildx use cnpg-plugin-wal-g-builder
-	- $(CONTAINER_TOOL) buildx build --push --platform=$(PLATFORMS) --tag ${IMG} -f Dockerfile.cross .
+	- $(CONTAINER_TOOL) buildx build --push --platform=$(PLATFORMS) --tag ${DOCKER_IMG} -f Dockerfile.cross .
 	- $(CONTAINER_TOOL) buildx rm cnpg-plugin-wal-g-builder
 	rm Dockerfile.cross
 
 .PHONY: build-installer
 build-installer: manifests generate kustomize ## Generate a consolidated YAML with CRDs and deployment.
 	mkdir -p dist
-	cd config/manager && $(KUSTOMIZE) edit set image controller=${IMG}
+	cd config/manager && $(KUSTOMIZE) edit set image controller=${DOCKER_IMG}:${DOCKER_TAG}
 	$(KUSTOMIZE) build config/default > dist/install.yaml
 
 ##@ Deployment

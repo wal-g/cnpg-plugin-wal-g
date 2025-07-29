@@ -41,7 +41,7 @@ FROM docker.io/debian:bookworm-slim AS runtime
 RUN apt update && apt install -y ca-certificates && apt-get clean && rm -rf /var/lib/apt/lists/*
 RUN groupadd -o -g 26 postgres && useradd -ms /bin/bash -u 26 -g postgres postgres
 WORKDIR /home/postgres
-COPY --chmod=0755 /output/walg-plugin_linux_amd64_v1/cnpg-plugin-wal-g /usr/local/bin/cnpg-plugin-wal-g
+COPY --chmod=0755 /output/cnpg-plugin-wal-g /usr/local/bin/cnpg-plugin-wal-g
 COPY --from=walg-builder /wal-g /usr/local/bin/wal-g
 # Using same user as postgres user in postgresql instances to be able to manage files in PGDATA
 USER 26:26

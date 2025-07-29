@@ -28,6 +28,8 @@ import (
 	"github.com/wal-g/cnpg-plugin-wal-g/api/v1beta1"
 	"github.com/wal-g/cnpg-plugin-wal-g/internal/util/cmd"
 	"github.com/wal-g/cnpg-plugin-wal-g/pkg/resourcecachingclient"
+	"github.com/wal-g/cnpg-plugin-wal-g/pkg/version"
+	"go.uber.org/zap/zapcore"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
@@ -52,9 +54,14 @@ func init() {
 
 // Start starts the sidecar informers and CNPG-i server
 func Start(ctx context.Context) error {
-	opts := zap.Options{
-		Development: true,
+	opts := zap.Options{}
+	if version.IsDevelopment() {
+		opts.Development = true
+	} else {
+		opts.Development = false
+		opts.StacktraceLevel = zapcore.DPanicLevel
 	}
+
 	opts.BindFlags(flag.CommandLine)
 	logger := zap.New(zap.UseFlagOptions(&opts))
 	ctrl.SetLogger(logger)

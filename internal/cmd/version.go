@@ -31,7 +31,7 @@ func NewVersionCmd() *cobra.Command {
 		Run: func(cmd *cobra.Command, args []string) {
 			fmt.Printf(
 				"CNPG Plugin WAL-G\nVersion: %s\nGitCommit: %s\nBuildDate: %s\n",
-				version.GetVersionNumber(),
+				version.GetVersion(),
 				version.GetCommitHash(),
 				version.GetBuildDate(),
 			)

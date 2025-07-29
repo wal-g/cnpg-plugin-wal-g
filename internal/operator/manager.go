@@ -51,6 +51,7 @@ import (
 	"github.com/wal-g/cnpg-plugin-wal-g/internal/controller"
 	"github.com/wal-g/cnpg-plugin-wal-g/internal/util/cmd"
 	webhookv1 "github.com/wal-g/cnpg-plugin-wal-g/internal/webhook/v1beta1"
+	"github.com/wal-g/cnpg-plugin-wal-g/pkg/version"
 )
 
 var (
@@ -94,10 +95,14 @@ func init() {
 func Start(ctx context.Context) error {
 	var tlsOpts []func(*tls.Config)
 
-	opts := zap.Options{
-		Development:     true,
-		StacktraceLevel: zapcore.DPanicLevel,
+	opts := zap.Options{}
+	if version.IsDevelopment() {
+		opts.Development = true
+	} else {
+		opts.Development = false
+		opts.StacktraceLevel = zapcore.DPanicLevel
 	}
+
 	opts.BindFlags(flag.CommandLine)
 
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
