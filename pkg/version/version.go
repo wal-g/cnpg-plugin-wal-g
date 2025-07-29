@@ -12,10 +12,6 @@ var commitHash = ""
 // This value is injected at build time by Go ldflags.
 var buildDate = ""
 
-// Random suffix for development versions, will be empty for release builds
-// This value is injected at build time by Go ldflags.
-var devVersionSuffix = ""
-
 // Returns true if current version is development
 func IsDevelopment() bool {
 	return version == "0.0.0-dev" || version == ""
