@@ -1,7 +1,7 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ include "cnpg-plugin-wal-g.fullname" . }}
+  name: {{ include "cnpg-plugin-wal-g.fullname" . }}-controller-manager
   labels:
     {{- include "cnpg-plugin-wal-g.labels" . | nindent 4 }}
 spec:
@@ -67,6 +67,8 @@ spec:
             name: cnpgi-server
           - mountPath: /tls/cnpgi-client
             name: cnpgi-client
+          - mountPath: /run/secrets/cnpg-plugin-wal-g/webhook
+            name: webhook-certificates
       volumes:
       - name: cnpgi-server
         secret:
@@ -82,6 +84,11 @@ spec:
           {{- else }}
           secretName: {{ .Values.cnpg.tls.existingClientCertSecretName }}
           {{- end }}
+      - name: webhook-certificates
+        secret:
+          optional: true
+          secretName: cnpg-plugin-wal-g-webhook-cert
+          defaultMode: 420
       {{- with .Values.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}
