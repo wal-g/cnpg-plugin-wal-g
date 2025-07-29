@@ -1,27 +1,31 @@
 # CloudNativePG WAL-G Backup Plugin
 
-*Status:* EXPERIMENTAL
+**Status:** EXPERIMENTAL
 
 This plugin adds backup and restore functionality to [CloudNativePG](https://cloudnative-pg.io/) by leveraging [WAL-G](https://github.com/wal-g/wal-g). It communicates with CloudNativePG through the `cnpg-i` interface, enabling seamless integration for managing PostgreSQL backups and restores in Kubernetes environments.
 
 ## Features
 
-- Backup:
+#### Backup
+
 - [x] Full and incremental backups creation
 - [x] Continuous WAL archivation/restoration
 - [x] Encryption with symmetric key via `libsodium`
 - [ ] Encryption with asymmetric key via `GPG` (planned)
 
-- Restore:
+#### Restore
+
 - [x] Restore to any `wal-g`-created backup
 - [x] Point-in-time Recovery (PITR) supporting timestamp/transaction XID/LSN
 
-- Storage:
+#### Storage
+
 - [x] S3-compatible storage support (AWS S3, MinIO)
 - [ ] Azure (currently not planned, need community support)
 - [ ] GCS (currently not planned, need community support)
 
-- Lifecycle:
+#### Lifecycle
+
 - [x] Retention and auto-removal of outdated backups and WALs
 - [ ] Marking Backups as persistent (protect from removing from storage, even if `Backup` or `BackupConfig` custom resource deleted) (planned)
 - [ ] Monitoring (planned)
