@@ -3,17 +3,12 @@ kind: BackupConfig
 metadata:
   name: example-backup-config
 spec:
-  downloadConcurrency: 4
-  downloadFileRetries: 15
-  uploadDiskRateLimitBytesPerSecond: 7864320
-  uploadNetworkRateLimitBytesPerSecond: 536870912
-  uploadConcurrency: 4
-  uploadDiskConcurrency: 4
-  deltaMaxSteps: 7
+  downloadFileRetries: 15  # How many times retry if storage is unavailable (optional, default: 15)
+  deltaMaxSteps: 7 # How many incremental backups can be created before creating new full backup (optional, default: 0)
   storage:
-    type: s3
-    s3:
-      prefix: s3://BUCKET_NAME/backups
+    type: s3  # Type of storage (only S3 supported currently)
+    s3:       # S3 storage configuration
+      prefix: s3://<BUCKET_NAME>/<PREFIX_NAME> # Prefix for backups, should be unique among any other BackupConfig
       region: ru-central1
       endpointUrl: https://storage.yandexcloud.net
       forcePathStyle: false
@@ -24,12 +19,15 @@ spec:
       accessKeySecret:
         name: "example-s3-credentials"
         key: "secret"
-  retention:
-    ignoreForManualBackups: true
-    minBackupsToKeep: 5
-    deleteBackupsAfter: 1d
-  encryption:
-    method: libsodium
+  retention:  # Remove this section to disable retention policy
+    ignoreForManualBackups: true  # Set to true to keep manual backups infinitely.
+                                  # IMPORTANT: set ".spec.backupOwnerReference" on ScheduledBackup resources to "self"
+                                  # to distinguish manual backups (created directly, w/o ownerReference) from automatic
+    minBackupsToKeep: 5           # Minimal number of healthy backups to be kept, overrides deleteBackupsAfter
+    deleteBackupsAfter: 1d        # Delete backups older than this value. `minBackupsToKeep` has higher priority
+  encryption:  # Remove this section to disable encryption
+    method: libsodium  # Use symmetric entryption via libsodium
+    encryptionSecret: example-encryption-secret  # Name of secret with encryption credentials 
 ---
 apiVersion: v1
 kind: Secret
@@ -37,5 +35,14 @@ metadata:
   name: example-s3-credentials
 type: Opaque
 stringData:
-  accessKey: CHANGEME
-  secret: CHANGEME
+  accessKey: <S3_ACCESS_KEY>
+  secret: <S3_SECRET_KEY>
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: example-encryption-secret
+type: Opaque
+stringData:
+  libsodiumKey: <LIBSODIUM_KEY>  # MUST have name "libsodiumKey" and value - hex-encoded 32-bytes length key 
+                                 # i.e. created with `openssl rand -hex 32`

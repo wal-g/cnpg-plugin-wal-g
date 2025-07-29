@@ -5,6 +5,6 @@ metadata:
 spec:
   method: plugin
   cluster:
-    name: cluster-example
+    name: cluster-example  # Name of cluster to create backup from
   pluginConfiguration:
-    name: cnpg-extensions.yandex.cloud
+    name: cnpg-extensions.yandex.cloud  # Use plugin for backup creation (BackupConfig will be used from Cluster definition)
