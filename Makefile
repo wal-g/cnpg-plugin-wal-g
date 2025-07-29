@@ -2,6 +2,14 @@
 IMG ?= ghcr.io/wal-g/cnpg-plugin-wal-g
 TAG ?= 0.0.0
 
+# Populate GOROOT, GOPATH vars if it is not specified
+ifeq (,$(GOROOT))
+GOROOT=$(shell go env GOROOT)
+endif
+ifeq (,$(GOPATH))
+GOPATH=$(shell go env GOPATH)
+endif
+
 # Get the currently used golang install path (in GOPATH/bin, unless GOBIN is set)
 ifeq (,$(shell go env GOBIN))
 GOBIN=$(shell go env GOPATH)/bin
@@ -94,16 +102,24 @@ lint-config: golangci-lint ## Verify golangci-lint linter configuration
 ##@ Build
 
 .PHONY: build
-build: manifests generate fmt vet ## Build manager binary.
-	go build -o bin/cnpg-plugin-wal-g cmd/main.go
+build: manifests generate fmt vet goreleaser ## Build manager binary.
+	GOROOT=$(GOROOT) GOPATH=$(GOPATH) $(GORELEASER) build --snapshot --clean
+
+.PHONY: build-ci
+build-ci: manifests generate fmt vet goreleaser ## Build manager binary in CI (with checks).
+	GOROOT=$(GOROOT) GOPATH=$(GOPATH) $(GORELEASER) build --clean
 
 .PHONY: run
 run: manifests generate fmt vet ## Run a controller from your host.
 	go run ./cmd/main.go
 
 .PHONY: docker-build
-docker-build: manifests generate fmt vet ## Build docker image with the manager.
-	$(CONTAINER_TOOL) build -t ${IMG}:${TAG} . 
+docker-build: build ## Build docker image with the manager.
+	$(CONTAINER_TOOL) build -t ${IMG}:${TAG} .
+
+.PHONY: docker-build-ci
+docker-build-ci: build-ci ## Build docker image with the manager.
+	$(CONTAINER_TOOL) build -t ${IMG}:${TAG} .
 
 .PHONY: docker-push
 docker-push: ## Push docker image with the manager.
@@ -165,7 +181,7 @@ deploy: manifests kustomize ## Deploy controller to the K8s cluster specified in
 
 .PHONY: deploy-kind
 deploy-kind: manifests kustomize ## Deploy controller to the K8s cluster specified in ~/.kube/config.
-	kind load docker-image ${IMG}:${TAG} -n cnpg-wal-g
+	kind load docker-image ${IMG}:${TAG} -n pg-operator-e2e-v1-32-2
 	$(KUSTOMIZE) build config/kind | IMG=${IMG} TAG=${TAG} envsubst | $(KUBECTL) apply -f -
 	$(KUBECTL) rollout restart deployment/cnpg-plugin-wal-g-controller-manager -n cnpg-system
 	$(KUBECTL) rollout status deployment/cnpg-plugin-wal-g-controller-manager -n cnpg-system --timeout=120s
@@ -189,6 +205,7 @@ KUSTOMIZE ?= $(LOCALBIN)/kustomize
 CONTROLLER_GEN ?= $(LOCALBIN)/controller-gen
 ENVTEST ?= $(LOCALBIN)/setup-envtest
 GOLANGCI_LINT = $(LOCALBIN)/golangci-lint
+GORELEASER ?= $(LOCALBIN)/goreleaser
 
 ## Tool Versions
 KUSTOMIZE_VERSION ?= v5.6.0
@@ -198,6 +215,7 @@ ENVTEST_VERSION ?= $(shell go list -m -f "{{ .Version }}" sigs.k8s.io/controller
 #ENVTEST_K8S_VERSION is the version of Kubernetes to use for setting up ENVTEST binaries (i.e. 1.31)
 ENVTEST_K8S_VERSION ?= $(shell go list -m -f "{{ .Version }}" k8s.io/api | awk -F'[v.]' '{printf "1.%d", $$3}')
 GOLANGCI_LINT_VERSION ?= v2.1.6
+GORELEASER_VERSION ?= v2.11.1
 
 .PHONY: kustomize
 kustomize: $(KUSTOMIZE) ## Download kustomize locally if necessary.
@@ -226,6 +244,11 @@ $(ENVTEST): $(LOCALBIN)
 golangci-lint: $(GOLANGCI_LINT) ## Download golangci-lint locally if necessary.
 $(GOLANGCI_LINT): $(LOCALBIN)
 	$(curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/HEAD/install.sh | sh -s -- -b $(LOCALBIN) $(GOLANGCI_LINT_VERSION))
+
+.PHONY: goreleaser
+goreleaser: $(GORELEASER) ## Download goreleaser locally if necessary.
+$(GORELEASER): $(LOCALBIN)
+	$(call go-install-tool,$(GORELEASER),github.com/goreleaser/goreleaser/v2,$(GORELEASER_VERSION))
 
 # go-install-tool will 'go install' any package with custom target and name of binary, if it doesn't exist
 # $1 - target path with name of binary

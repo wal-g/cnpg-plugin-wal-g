@@ -1,13 +1,42 @@
-# This is an example .goreleaser.yml file with some sensible defaults.
-# Make sure to check the documentation at https://goreleaser.com
+version: 2
 project_name: cnpg-plugin-wal-g
+
+release:
+  github:
+    owner: wal-g
+    name: wal-g
+
+env:
+  - GO111MODULE=on
+  - CGO_ENABLED=0
 
 before:
   hooks:
-    - go mod tidy
+    - go mod download
+
+builds:
+  - id: "walg-plugin"
+    main: "./cmd/main.go"
+    binary: "cnpg-plugin-wal-g"
+    flags:
+      - -trimpath
+    ldflags:  # https://pkg.go.dev/cmd/go#hdr-Compile_packages_and_dependencies / https://pkg.go.dev/cmd/link
+      - >-
+        {{- if not .IsSnapshot }}
+          -s -w
+          {{- end }}
+        -X github.com/wal-g/cnpg-plugin-wal-g/pkg/version.version={{.Version}} 
+        -X github.com/wal-g/cnpg-plugin-wal-g/pkg/version.commitHash={{.ShortCommit}}
+        -X github.com/wal-g/cnpg-plugin-wal-g/pkg/version.buildDate={{.Date}}
+    goos:
+      - linux  # Only linux currently supported due to wal-g building limitations
+    goarch:
+      - amd64  # Only amd64 currently supported due to wal-g building limitations
+
+dist: output
 
 archives:
-  - format: tar.gz
+  - formats: [ 'tar.gz' ]
     name_template: >-
       {{ .ProjectName }}_
       {{- .Version }}_
@@ -21,9 +50,6 @@ archives:
 
 checksum:
   name_template: 'checksums.txt'
-
-snapshot:
-  name_template: "{{ incpatch .Version }}-next"
 
 changelog:
   sort: asc

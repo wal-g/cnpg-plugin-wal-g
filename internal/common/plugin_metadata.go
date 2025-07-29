@@ -16,7 +16,10 @@ limitations under the License.
 
 package common
 
-import "github.com/cloudnative-pg/cnpg-i/pkg/identity"
+import (
+	"github.com/cloudnative-pg/cnpg-i/pkg/identity"
+	"github.com/wal-g/cnpg-plugin-wal-g/pkg/version"
+)
 
 // PluginName is the name of the plugin from the instance manager
 // Point-of-view
@@ -25,13 +28,13 @@ const PluginName = "cnpg-extensions.yandex.cloud"
 // PluginMetadata is the metadata of this plugin.
 var PluginMetadata = identity.GetPluginMetadataResponse{
 	Name:          PluginName,
-	Version:       "0.0.1", // x-release-please-version
+	Version:       version.GetVersion(),
 	DisplayName:   "CNPGYandexExtensions",
 	ProjectUrl:    "https://github.com/wal-g/cnpg-plugin-wal-g",
 	RepositoryUrl: "https://github.com/wal-g/cnpg-plugin-wal-g",
 	License:       "APACHE 2.0",
 	LicenseUrl:    "https://github.com/wal-g/cnpg-plugin-wal-g/LICENSE",
-	Maturity:      "alpha",
+	Maturity:      "beta",
 }
 
 const PluginModeNormal = "normal"

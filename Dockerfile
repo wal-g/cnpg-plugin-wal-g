@@ -1,36 +1,14 @@
-# Build the manager binary
-FROM docker.io/golang:1.23-bookworm AS builder
-ARG TARGETOS
-ARG TARGETARCH
-
-WORKDIR /workspace
-# Copy the Go Modules manifests
-COPY go.mod go.mod
-COPY go.sum go.sum
-# cache deps before building and copying source so that we don't need to re-download as much
-# and so that source changes don't invalidate our downloaded layer
-RUN go mod download
-
-# Copy the go source
-COPY api/ api/
-COPY cmd/ cmd/
-COPY internal/ internal/
-COPY pkg/ pkg/
-
-# Build extensions binary
-RUN GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} go build -a -o cnpg-plugin-wal-g cmd/main.go
-
-
 # WAL-G Build section
 # Need to build from sources, because binary distributions do not include necessary base OS libs
-FROM docker.io/golang:1.23-bookworm AS walg-builder
+# Use docker.io/golang@1.23-bookworm as of 29.07.2025
+FROM docker.io/golang@sha256:a9f66e33b22953f2a5340c36bc5aceef29c1ac8f2ad7c362bf151f9571788eb6 AS walg-builder
 
 LABEL org.opencontainers.image.source=https://github.com/wal-g/cnpg-plugin-wal-g
 LABEL org.opencontainers.image.description="CloudNativePG WAL-G Backup Plugin"
 LABEL org.opencontainers.image.licenses="Apache-2.0"
 
-ARG TARGETOS
-ARG TARGETARCH
+ARG TARGETOS=linux
+ARG TARGETARCH=amd64
 ARG WALG_VERSION=v3.0.5
 ARG WALG_REPO=https://github.com/wal-g/wal-g
 
@@ -46,13 +24,13 @@ RUN git clone --depth 1 --branch ${WALG_VERSION} ${WALG_REPO} $(go env GOPATH)/s
 
 # Preparing && building necessary dependencies
 RUN cd $(go env GOPATH)/src/github.com/wal-g/wal-g && \
-    export GOOS=${TARGETOS:-linux} && \
+    export GOOS=${TARGETOS} && \
     export GOARCH=${TARGETARCH} && \
     make deps
 
 # Build wal-g for postgresql
 RUN cd $(go env GOPATH)/src/github.com/wal-g/wal-g && \
-    export GOOS=${TARGETOS:-linux} && \
+    export GOOS=${TARGETOS} && \
     export GOARCH=${TARGETARCH} && \
     make pg_build && make pg_install
 
@@ -63,7 +41,7 @@ FROM docker.io/debian:bookworm-slim AS runtime
 RUN apt update && apt install -y ca-certificates && apt-get clean && rm -rf /var/lib/apt/lists/*
 RUN groupadd -o -g 26 postgres && useradd -ms /bin/bash -u 26 -g postgres postgres
 WORKDIR /home/postgres
-COPY --from=builder /workspace/cnpg-plugin-wal-g /usr/local/bin/cnpg-plugin-wal-g
+COPY --chmod=0755 /output/walg-plugin_linux_amd64_v1/cnpg-plugin-wal-g /usr/local/bin/cnpg-plugin-wal-g
 COPY --from=walg-builder /wal-g /usr/local/bin/wal-g
 # Using same user as postgres user in postgresql instances to be able to manage files in PGDATA
 USER 26:26
