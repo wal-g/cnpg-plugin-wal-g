@@ -1,6 +1,20 @@
-# Image URL to use all building/pushing image targets
-IMG ?= ghcr.io/wal-g/cnpg-plugin-wal-g
-TAG ?= 0.0.0
+GIT_COMMIT ?= $(shell git rev-parse --short HEAD)
+GIT_TAG ?= $(shell git describe --tags --exact-match 2>/dev/null || echo "v0.0.0-dev" )
+
+DATE ?= $(shell date --iso-8601=seconds)
+GO_VERSION_FLAGS ?= -X github.com/wal-g/cnpg-plugin-wal-g/pkg/version.version=$(GIT_TAG) \
+				    -X github.com/wal-g/cnpg-plugin-wal-g/pkg/version.commitHash=$(GIT_COMMIT) \
+				    -X github.com/wal-g/cnpg-plugin-wal-g/pkg/version.buildDate=$(DATE)
+
+DOCKER_IMG ?= ghcr.io/wal-g/cnpg-plugin-wal-g
+DOCKER_TAG = $(shell tag="$(GIT_TAG)"; [[ $$tag =~ ^v[0-9]+\.[0-9]+\.[0-9]+ ]] && tag="$${tag:1}"; echo "$$tag")
+HELM_TAG = $(DOCKER_TAG)-helm-chart
+
+ifeq ($(TAG),"v0.0.0-dev")
+	LDFLAGS = -ldflags "-s -w $(GO_VERSION_FLAGS)"
+else
+	LDFLAGS = -ldflags "$(GO_VERSION_FLAGS)"
+endif
 
 # Get the currently used golang install path (in GOPATH/bin, unless GOBIN is set)
 ifeq (,$(shell go env GOBIN))
@@ -92,34 +106,46 @@ lint-config: golangci-lint ## Verify golangci-lint linter configuration
 	$(GOLANGCI_LINT) config verify
 
 ##@ Build
-
 .PHONY: build
 build: manifests generate fmt vet ## Build manager binary.
-	go build -o bin/cnpg-plugin-wal-g cmd/main.go
+	mkdir -p output
+	CGO_ENABLED=0 GOOS=linux GOARCH=${GOARCH} go build ${LDFLAGS} -o output/cnpg-plugin-wal-g ./cmd/main.go
 
 .PHONY: run
 run: manifests generate fmt vet ## Run a controller from your host.
 	go run ./cmd/main.go
 
 .PHONY: docker-build
-docker-build: manifests generate fmt vet ## Build docker image with the manager.
-	$(CONTAINER_TOOL) build -t ${IMG}:${TAG} . 
+docker-build: build ## Build docker image with the manager.
+	$(CONTAINER_TOOL) build -t ${DOCKER_IMG}:${DOCKER_TAG} .
 
 .PHONY: docker-push
 docker-push: ## Push docker image with the manager.
-	$(CONTAINER_TOOL) push ${IMG}:${TAG}
+	@if [ "$(GIT_TAG)" = "v0.0.0-dev" ]; then \
+		echo "ERROR: VERSION is v0.0.0-dev, aborting publish!"; \
+		exit 1; \
+	fi
+	@echo "Publishing docker image ${DOCKER_IMG}:${DOCKER_TAG}..."
+	$(CONTAINER_TOOL) push ${DOCKER_IMG}:${DOCKER_TAG}
 
 .PHONY: helm-package
 helm-package: manifests
+	sed -i 's/version: "0.0.0-dev-helm-chart"/version: "$(HELM_TAG)"/' chart/Chart.yaml
+	sed -i 's/appVersion: "0.0.0-dev"/appVersion: "$(DOCKER_TAG)"/' chart/Chart.yaml
 	$(HELM) package ./chart
 
 .PHONY: helm-push
 helm-push: manifests
-	$(HELM) push ${CHART} oci://ghcr.io/wal-g
+	@if [ "$(GIT_TAG)" = "v0.0.0-dev" ]; then \
+		echo "ERROR: VERSION is v0.0.0-dev, aborting publish!"; \
+		exit 1; \
+	fi
+	@echo "Publishing helm package oci://ghcr.io/wal-g:$(HELM_TAG) ..."
+	$(HELM) push ./cnpg-plugin-wal-g-$(HELM_TAG).tgz oci://ghcr.io/wal-g
 
 .PHONY: release
-release: docker-buildx helm-package helm-push ## Build and push multi-platform images and helm chart for release
-	@echo "Release completed successfully"
+release: build-installer docker-build docker-push helm-package helm-push
+	@echo "Release artifacts published successfully"
 
 # PLATFORMS defines the target platforms for the manager image be built to provide support to multiple
 # architectures. (i.e. make docker-buildx IMG=myregistry/mypoperator:0.0.1). To use this option you need to:
@@ -134,15 +160,14 @@ docker-buildx: ## Build and push docker image for the manager for cross-platform
 	sed -e '1 s/\(^FROM\)/FROM --platform=\$$\{BUILDPLATFORM\}/; t' -e ' 1,// s//FROM --platform=\$$\{BUILDPLATFORM\}/' Dockerfile > Dockerfile.cross
 	- $(CONTAINER_TOOL) buildx create --name cnpg-plugin-wal-g-builder
 	$(CONTAINER_TOOL) buildx use cnpg-plugin-wal-g-builder
-	- $(CONTAINER_TOOL) buildx build --push --platform=$(PLATFORMS) --tag ${IMG} -f Dockerfile.cross .
+	- $(CONTAINER_TOOL) buildx build --push --platform=$(PLATFORMS) --tag ${DOCKER_IMG} -f Dockerfile.cross .
 	- $(CONTAINER_TOOL) buildx rm cnpg-plugin-wal-g-builder
 	rm Dockerfile.cross
 
 .PHONY: build-installer
 build-installer: manifests generate kustomize ## Generate a consolidated YAML with CRDs and deployment.
 	mkdir -p dist
-	cd config/manager && $(KUSTOMIZE) edit set image controller=${IMG}
-	$(KUSTOMIZE) build config/default > dist/install.yaml
+	$(KUSTOMIZE) build config/default | IMG=${DOCKER_IMG} TAG=${DOCKER_TAG} envsubst > dist/install.yaml
 
 ##@ Deployment
 
@@ -160,13 +185,13 @@ uninstall: manifests kustomize ## Uninstall CRDs from the K8s cluster specified 
 
 .PHONY: deploy
 deploy: manifests kustomize ## Deploy controller to the K8s cluster specified in ~/.kube/config.
-	cd config/manager && $(KUSTOMIZE) edit set image controller=${IMG}:${TAG}
-	$(KUSTOMIZE) build config/default | IMG=${IMG} TAG=${TAG} envsubst | $(KUBECTL) apply -f -
+	cd config/manager && $(KUSTOMIZE) edit set image controller=${DOCKER_IMG}:${DOCKER_TAG}
+	$(KUSTOMIZE) build config/default | IMG=${DOCKER_IMG} TAG=${DOCKER_TAG} envsubst | $(KUBECTL) apply -f -
 
 .PHONY: deploy-kind
 deploy-kind: manifests kustomize ## Deploy controller to the K8s cluster specified in ~/.kube/config.
-	kind load docker-image ${IMG}:${TAG} -n cnpg-wal-g
-	$(KUSTOMIZE) build config/kind | IMG=${IMG} TAG=${TAG} envsubst | $(KUBECTL) apply -f -
+	kind load docker-image ${DOCKER_IMG}:${DOCKER_TAG} -n cnpg-wal-g
+	$(KUSTOMIZE) build config/kind | IMG=${DOCKER_IMG} TAG=${DOCKER_TAG} envsubst | $(KUBECTL) apply -f -
 	$(KUBECTL) rollout restart deployment/cnpg-plugin-wal-g-controller-manager -n cnpg-system
 	$(KUBECTL) rollout status deployment/cnpg-plugin-wal-g-controller-manager -n cnpg-system --timeout=120s
 
@@ -188,7 +213,8 @@ HELM ?= helm
 KUSTOMIZE ?= $(LOCALBIN)/kustomize
 CONTROLLER_GEN ?= $(LOCALBIN)/controller-gen
 ENVTEST ?= $(LOCALBIN)/setup-envtest
-GOLANGCI_LINT = $(LOCALBIN)/golangci-lint
+GOLANGCI_LINT ?= $(LOCALBIN)/golangci-lint
+GORELEASER ?= $(LOCALBIN)/goreleaser
 
 ## Tool Versions
 KUSTOMIZE_VERSION ?= v5.6.0
@@ -198,6 +224,7 @@ ENVTEST_VERSION ?= $(shell go list -m -f "{{ .Version }}" sigs.k8s.io/controller
 #ENVTEST_K8S_VERSION is the version of Kubernetes to use for setting up ENVTEST binaries (i.e. 1.31)
 ENVTEST_K8S_VERSION ?= $(shell go list -m -f "{{ .Version }}" k8s.io/api | awk -F'[v.]' '{printf "1.%d", $$3}')
 GOLANGCI_LINT_VERSION ?= v2.1.6
+GORELEASER_VERSION ?= v2.11.1
 
 .PHONY: kustomize
 kustomize: $(KUSTOMIZE) ## Download kustomize locally if necessary.
@@ -225,7 +252,12 @@ $(ENVTEST): $(LOCALBIN)
 .PHONY: golangci-lint
 golangci-lint: $(GOLANGCI_LINT) ## Download golangci-lint locally if necessary.
 $(GOLANGCI_LINT): $(LOCALBIN)
-	$(curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/HEAD/install.sh | sh -s -- -b $(LOCALBIN) $(GOLANGCI_LINT_VERSION))
+	$(shell curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/HEAD/install.sh | sh -s -- -b $(LOCALBIN) $(GOLANGCI_LINT_VERSION))
+
+.PHONY: goreleaser
+goreleaser: $(GORELEASER) ## Download goreleaser locally if necessary.
+$(GORELEASER): $(LOCALBIN)
+	$(call go-install-tool,$(GORELEASER),github.com/goreleaser/goreleaser/v2,$(GORELEASER_VERSION))
 
 # go-install-tool will 'go install' any package with custom target and name of binary, if it doesn't exist
 # $1 - target path with name of binary

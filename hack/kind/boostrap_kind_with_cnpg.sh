@@ -19,7 +19,7 @@ kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/
 
 # Install CNPG
 kubectl apply --server-side -f \
-  https://raw.githubusercontent.com/cloudnative-pg/cloudnative-pg/release-1.25/releases/cnpg-1.25.1.yaml
+  https://raw.githubusercontent.com/cloudnative-pg/cloudnative-pg/release-1.26/releases/cnpg-1.26.0.yaml
 
 # Wait for CNPG manager deployment is ready
 kubectl rollout status deployment/cnpg-controller-manager -n cnpg-system --timeout=180s

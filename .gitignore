@@ -6,6 +6,8 @@
 *.dylib
 bin/*
 Dockerfile.cross
+output
+config/samples/custom
 
 # Helm chart packages and archives
 *.tgz

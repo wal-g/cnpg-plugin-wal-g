@@ -1,15 +1,31 @@
 # CloudNativePG WAL-G Backup Plugin
 
+*Status:* EXPERIMENTAL
+
 This plugin adds backup and restore functionality to [CloudNativePG](https://cloudnative-pg.io/) by leveraging [WAL-G](https://github.com/wal-g/wal-g). It communicates with CloudNativePG through the `cnpg-i` interface, enabling seamless integration for managing PostgreSQL backups and restores in Kubernetes environments.
 
 ## Features
 
-- [x] WAL archivation/restoration
-- [x] Full and incremental basebackups creation
-- [x] Restore to any `wal-g`-created backup including PITR
+- Backup:
+- [x] Full and incremental backups creation
+- [x] Continuous WAL archivation/restoration
+- [x] Encryption with symmetric key via `libsodium`
+- [ ] Encryption with asymmetric key via `GPG` (planned)
+
+- Restore:
+- [x] Restore to any `wal-g`-created backup
+- [x] Point-in-time Recovery (PITR) supporting timestamp/transaction XID/LSN
+
+- Storage:
+- [x] S3-compatible storage support (AWS S3, MinIO)
+- [ ] Azure (currently not planned, need community support)
+- [ ] GCS (currently not planned, need community support)
+
+- Lifecycle:
 - [x] Retention and auto-removal of outdated backups and WALs
-- [x] Encryption via `libsodium`
-- [x] S3-compatible storage support
+- [ ] Marking Backups as persistent (protect from removing from storage, even if `Backup` or `BackupConfig` custom resource deleted) (planned)
+- [ ] Monitoring (planned)
+- [ ] `BackupConfig` Status displaying for last recoverability point, last successful backup, storage consumption (planned)
 
 ## Dependencies
 
@@ -33,11 +49,11 @@ This plugin adds backup and restore functionality to [CloudNativePG](https://clo
 2) Install latest plugin release into `cnpg-system` namespace (that should be the same namespace where `cloudnative-pg` installed)
 - via Helm:
     ```sh
-    helm -n cnpg-system upgrade --install oci://ghcr.io/wal-g/cnpg-plugin-wal-g:0.1.1-helm-chart
+    helm -n cnpg-system upgrade --install oci://ghcr.io/wal-g/cnpg-plugin-wal-g:0.2.0-helm-chart
     ```
 - or via static manifest
     ```sh
-    kubectl apply -f https://raw.githubusercontent.com/wal-g/cnpg-plugin-wal-g/v0.1.1/dist/install.yaml
+    kubectl apply -f https://raw.githubusercontent.com/wal-g/cnpg-plugin-wal-g/v0.2.0/dist/install.yaml
     ```
 
 3) **Adjust** sample manifests from `config/samples/new-cluster` and apply
@@ -137,3 +153,19 @@ make uninstall
 ```sh
 make undeploy
 ```
+
+### Releasing new version
+
+```sh
+# 1) Choose new tag
+export GIT_TAG=v0.2.0
+# 2) Make installer file (./dist/install.yaml) with new tag and commit
+make build-installer && git add ./dist/install.yaml && git commit -m "Bump installer to version $GIT_TAG" && git push
+# 3) Create new tag
+git tag -m "Version $GIT_TAG" $GIT_TAG
+# 4) Push new tag and commit
+git push origin $GIT_TAG
+# 5) Unset GIT_TAG variable
+unset GIT_TAG
+```
+

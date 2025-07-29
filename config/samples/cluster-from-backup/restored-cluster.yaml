@@ -1,0 +1,59 @@
+# This example demonstrates new cluster, which will be restored to the latest point of existing cluster
+# We only need proper BackupConfig resource from old cluster to perform restore.
+#
+# We also need to create new BackupConfig for storing restored cluster backups and WALs
+# It can reuse same S3 credentials secrets and same bucket, but it must have another prefix (at least) 
+#
+# Is is DANGEROUS to use existing BackupConfig as storage for new backups/WALs for restored cluster, NEVER do this!
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: restored-cluster-on-latest-timestamp
+spec:
+  instances: 3
+  storage:
+    size: 1Gi
+  plugins:
+  - name: cnpg-extensions.yandex.cloud
+    isWALArchiver: true
+    parameters:
+      backupConfig: restored-cluster-backup-config  # New BackupConfig - to store new backups/WALs for restored cluster
+  bootstrap:
+    recovery:
+      source: walg-backup  # Name of item in externalClusters pointing plugin with proper backupConfig
+      recoveryTarget:  # Optional, see: https://cloudnative-pg.io/documentation/1.20/recovery/#recovery-targets
+        targetTime: "2025-04-28 18:30:00.00000+03"  # As an example for PITR - specify targetTime to restore to
+                                                    # Most suitable backup will be chosen automatically
+  externalClusters:
+  - name: walg-backup
+    plugin:
+      name: cnpg-extensions.yandex.cloud
+      parameters:
+        backupConfig: example-backup-config  # Name of BackupConfig to restore from  
+---
+apiVersion: cnpg-extensions.yandex.cloud/v1beta1
+kind: BackupConfig
+metadata:
+  name: restored-cluster-backup-config
+spec:
+  storage:
+    type: s3
+    s3:
+      prefix: s3://<BUCKET_NAME>/<ANOTHER_PREFIX_NAME_FOR_RESTORED_CLUSTER>
+      region: ru-central1
+      endpointUrl: https://storage.yandexcloud.net
+      forcePathStyle: false
+      storageClass: STANDARD
+      accessKeyId:
+        name: "example-s3-credentials"  # Reuse existing secret from './config/samples/new-cluster' to access S3
+        key: "accessKey"
+      accessKeySecret:
+        name: "example-s3-credentials"  # Reuse existing secret from './config/samples/new-cluster' to access S3
+        key: "secret"
+  retention:
+    ignoreForManualBackups: true
+    minBackupsToKeep: 2
+    deleteBackupsAfter: 1d
+  encryption:
+    method: libsodium
+    encryptionSecret: example-encryption-secret  # Reuse secret from './config/samples/new-cluster' for encryption
