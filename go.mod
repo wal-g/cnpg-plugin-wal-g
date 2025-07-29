@@ -1,8 +1,8 @@
 module github.com/wal-g/cnpg-plugin-wal-g
 
-go 1.24.5
+go 1.23.5
 
-godebug default=go1.24
+godebug default=go1.23
 
 require (
 	github.com/cloudnative-pg/cloudnative-pg v1.25.1
