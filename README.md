@@ -53,11 +53,11 @@ This plugin adds backup and restore functionality to [CloudNativePG](https://clo
 2) Install latest plugin release into `cnpg-system` namespace (that should be the same namespace where `cloudnative-pg` installed)
 - via Helm:
     ```sh
-    helm -n cnpg-system upgrade --install cnpg-plugin-wal-g oci://ghcr.io/wal-g/cnpg-plugin-wal-g:0.2.0-helm-chart 
+    helm -n cnpg-system upgrade --install cnpg-plugin-wal-g oci://ghcr.io/wal-g/cnpg-plugin-wal-g:0.2.1-helm-chart 
     ```
 - or via static manifest
     ```sh
-    kubectl apply -f https://raw.githubusercontent.com/wal-g/cnpg-plugin-wal-g/v0.2.0/dist/install.yaml
+    kubectl apply -f https://raw.githubusercontent.com/wal-g/cnpg-plugin-wal-g/v0.2.1/dist/install.yaml
     ```
 
 3) **Adjust** sample manifests from `config/samples/new-cluster` and apply

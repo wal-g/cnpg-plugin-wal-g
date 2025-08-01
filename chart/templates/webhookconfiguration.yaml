@@ -1,0 +1,52 @@
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: MutatingWebhookConfiguration
+metadata:
+  name: cnpg-plugin-wal-g-mutating-webhook-configuration  # FIXME: Should not be hardcoded, used in plugin to generate PKI
+webhooks:
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    service:
+      name: {{ include "cnpg-plugin-wal-g.fullname" . }}-webhook-service
+      namespace: {{ .Release.Namespace }}
+      path: /mutate-cnpg-extensions-yandex-cloud-v1beta1-backupconfig
+  failurePolicy: Fail
+  name: mbackupconfig-v1beta1.kb.io
+  rules:
+  - apiGroups:
+    - cnpg-extensions.yandex.cloud
+    apiVersions:
+    - v1beta1
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - backupconfigs
+  sideEffects: None
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingWebhookConfiguration
+metadata:
+  name: cnpg-plugin-wal-g-validating-webhook-configuration  # FIXME: Should not be hardcoded, used in plugin to generate PKI
+webhooks:
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    service:
+      name: {{ include "cnpg-plugin-wal-g.fullname" . }}-webhook-service
+      namespace: {{ .Release.Namespace }}
+      path: /validate-cnpg-extensions-yandex-cloud-v1beta1-backupconfig
+  failurePolicy: Fail
+  name: vbackupconfig-v1beta1.kb.io
+  rules:
+  - apiGroups:
+    - cnpg-extensions.yandex.cloud
+    apiVersions:
+    - v1beta1
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - backupconfigs
+  sideEffects: None

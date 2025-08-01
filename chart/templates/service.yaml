@@ -26,3 +26,19 @@ spec:
   selector:
     {{- include "cnpg-plugin-wal-g.selectorLabels" . | nindent 4 }}
   sessionAffinity: None
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    {{- include "cnpg-plugin-wal-g.labels" . | nindent 4 }}
+  name: {{ include "cnpg-plugin-wal-g.fullname" . }}-webhook-service
+spec:
+  type: ClusterIP
+  ports:
+    - port: 443
+      protocol: TCP
+      targetPort: 9443
+  selector:
+    {{- include "cnpg-plugin-wal-g.selectorLabels" . | nindent 4 }}
+  sessionAffinity: None

@@ -15,11 +15,13 @@ rules:
   - delete
   - get
   - list
+  - patch
   - watch
 - apiGroups:
   - admissionregistration.k8s.io
   resources:
   - mutatingwebhookconfigurations
+  - validatingwebhookconfigurations
   verbs:
   - get
   - patch
