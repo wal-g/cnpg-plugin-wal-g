@@ -18,13 +18,18 @@ package controller
 
 import (
 	"context"
+	"fmt"
+	"time"
 
+	cnpgv1 "github.com/cloudnative-pg/cloudnative-pg/api/v1"
 	"github.com/go-logr/logr"
 	v1beta1 "github.com/wal-g/cnpg-plugin-wal-g/api/v1beta1"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
+
+const backupConfigFinalizerName = "cnpg-plugin-wal-g.yandex.cloud/backup-config-cleanup"
 
 // BackupConfigReconciler reconciles a BackupConfig object
 type BackupConfigReconciler struct {
@@ -48,8 +53,59 @@ type BackupConfigReconciler struct {
 func (r *BackupConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	logger := logr.FromContextOrDiscard(ctx)
 	logger.V(1).Info("Running Reconcile for BackupConfig")
+
+	backupConfig := &v1beta1.BackupConfig{}
+	if err := r.Get(ctx, req.NamespacedName, backupConfig); err != nil {
+		// The Backup resource may have been deleted
+		return ctrl.Result{}, client.IgnoreNotFound(err)
+	}
+
 	// TODO(endevir): Check && report connection status into Status subresource
 	// TODO(endevir): Watch for secrets name change and reconcile cluster role
+
+	if !backupConfig.DeletionTimestamp.IsZero() {
+		// BackupConfig is marked for deletion
+
+		if !containsString(backupConfig.Finalizers, backupConfigFinalizerName) {
+			return ctrl.Result{}, nil // Nothing to do if finalizer is not specified
+		}
+
+		// List all backups potentially referencing this backup config
+		backupList := cnpgv1.BackupList{}
+		if err := r.List(ctx, &backupList,
+			client.InNamespace(req.Namespace),
+		); err != nil {
+			return ctrl.Result{}, err
+		}
+
+		var foundRef bool
+		for _, b := range backupList.Items {
+			for _, owner := range b.OwnerReferences {
+				if owner.Kind == "BackupConfig" &&
+					owner.Name == backupConfig.Name {
+					foundRef = true
+					break
+				}
+			}
+			if foundRef {
+				break
+			}
+		}
+
+		if foundRef {
+			logger.Info("Blocking deletion: still has one or more dependent Backup")
+			return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
+		}
+
+		// No child backups: remove finalizer
+		backupConfig.Finalizers = removeString(backupConfig.Finalizers, backupConfigFinalizerName)
+		if err := r.Update(ctx, backupConfig); err != nil {
+			logger.Error(err, "while removing cleanup finalizer from BackupConfig")
+			return ctrl.Result{}, fmt.Errorf("while removing cleanup finalizer from BackupConfig: %w", err)
+		}
+
+		return ctrl.Result{}, nil
+	}
 
 	return ctrl.Result{}, nil
 }
