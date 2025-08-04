@@ -172,14 +172,14 @@ func (r *BackupReconciler) reconcileRelatedBackupsMetadata(ctx context.Context, 
 		return err
 	}
 
-	// Get BackupConfig with secrets
-	backupConfigWithSecrets, err := v1beta1.GetBackupConfigWithSecretsForBackup(ctx, r.Client, backup)
+	// Get BackupConfig
+	backupConfig, err := v1beta1.GetBackupConfigForBackup(ctx, r.Client, backup)
 	if err != nil {
 		logger.Error(err, "while prefetching secrets data")
 		return err
 	}
 
-	_, err = r.reconcileBackupMetadata(ctx, backup, backupConfigWithSecrets, cluster)
+	_, err = r.reconcileBackupMetadata(ctx, backup, backupConfig, cluster)
 	if err != nil {
 		return fmt.Errorf("while reconciling backup %s annotations: %w", backup.Name, err)
 	}
@@ -187,7 +187,7 @@ func (r *BackupReconciler) reconcileRelatedBackupsMetadata(ctx context.Context, 
 	// If current backup is incremental - we need to update other backups annotations
 	// to update their dependent backups list
 	if backup.Labels[v1beta1.BackupTypeLabelName] == string(v1beta1.BackupTypeIncremental) {
-		backupsToReconcile, err := r.listBackupsOwnedByBackupConfig(ctx, backupConfigWithSecrets)
+		backupsToReconcile, err := r.listBackupsOwnedByBackupConfig(ctx, backupConfig)
 		if err != nil {
 			return err
 		}
@@ -195,7 +195,7 @@ func (r *BackupReconciler) reconcileRelatedBackupsMetadata(ctx context.Context, 
 			if backupsToReconcile[i].Name == backup.Name {
 				continue
 			}
-			_, err = r.reconcileBackupMetadata(ctx, &backupsToReconcile[i], backupConfigWithSecrets, cluster)
+			_, err = r.reconcileBackupMetadata(ctx, &backupsToReconcile[i], backupConfig, cluster)
 			if err != nil {
 				logger.Error(err, "while reconciling backup annotations", "backup.Name", backupsToReconcile[i].Name)
 			}
@@ -219,7 +219,7 @@ func (r *BackupReconciler) reconcileRelatedBackupsMetadata(ctx context.Context, 
 func (r *BackupReconciler) reconcileBackupMetadata(
 	ctx context.Context,
 	backup *cnpgv1.Backup,
-	backupConfig *v1beta1.BackupConfigWithSecrets,
+	backupConfig *v1beta1.BackupConfig,
 	cluster *cnpgv1.Cluster,
 ) (bool, error) {
 	logger := logr.FromContextOrDiscard(ctx)
@@ -285,7 +285,7 @@ func (r *BackupReconciler) reconcileBackupMetadata(
 
 func (r *BackupReconciler) listBackupsOwnedByBackupConfig(
 	ctx context.Context,
-	backupConfig *v1beta1.BackupConfigWithSecrets,
+	backupConfig *v1beta1.BackupConfig,
 ) ([]cnpgv1.Backup, error) {
 	// List all backups in the same namespace
 	backupsList := cnpgv1.BackupList{}

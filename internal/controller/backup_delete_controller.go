@@ -71,7 +71,7 @@ func (b *BackupDeletionController) Start(ctx context.Context) error {
 func (b *BackupDeletionController) EnqueueBackupDeletion(ctx context.Context, backup *cnpgv1.Backup) error {
 	logger := logr.FromContextOrDiscard(ctx).WithName("BackupDeletionController")
 	// Get BackupConfig with secrets for the backup
-	backupConfigWithSecrets, err := v1beta1.GetBackupConfigWithSecretsForBackup(ctx, b.Client, backup)
+	backupConfig, err := v1beta1.GetBackupConfigForBackup(ctx, b.Client, backup)
 	if err != nil {
 		return fmt.Errorf("failed to get BackupConfig for Backup: %w", err)
 	}
@@ -79,7 +79,7 @@ func (b *BackupDeletionController) EnqueueBackupDeletion(ctx context.Context, ba
 	backupKey := client.ObjectKeyFromObject(backup)
 
 	// Create queue key from BackupConfig namespace and name
-	queueKey := backupConfigWithSecrets.Namespace + "/" + backupConfigWithSecrets.Name
+	queueKey := backupConfig.Namespace + "/" + backupConfig.Name
 
 	// Check if queue exists, if not create it
 	b.queueMX.Lock()
@@ -147,11 +147,6 @@ func (b *BackupDeletionController) deleteWALGBackup(ctx context.Context, backupK
 		return fmt.Errorf("while getting backup %v: %w", backupKey, err)
 	}
 
-	backupConfig, err := v1beta1.GetBackupConfigWithSecretsForBackup(ctx, b.Client, backup)
-	if err != nil {
-		return fmt.Errorf("while getting backupconfig for backup %v: %w", backupKey, err)
-	}
-
 	if backup.Labels == nil || backup.Annotations == nil {
 		logger.Info(
 			"Cannot delete backup because it has missing plugin labels or annotations",
@@ -200,7 +195,13 @@ func (b *BackupDeletionController) deleteWALGBackup(ctx context.Context, backupK
 				v1beta1.BackupPgVersionLabelName, backup.Labels[v1beta1.BackupPgVersionLabelName], err,
 			)
 		}
-		result, err := walg.DeleteBackup(ctx, backupConfig, pgVersion, backup.Status.BackupID)
+
+		backupConfigWithSecrets, err := v1beta1.GetBackupConfigWithSecretsForBackup(ctx, b.Client, backup)
+		if err != nil {
+			return fmt.Errorf("while getting backupconfig with secrets for backup %v: %w", backupKey, err)
+		}
+
+		result, err := walg.DeleteBackup(ctx, backupConfigWithSecrets, pgVersion, backup.Status.BackupID)
 		if err != nil {
 			return fmt.Errorf(
 				"while wal-g backup removal: error %w\nWAL-G stdout: %s\nWAL-G stderr: %s",
