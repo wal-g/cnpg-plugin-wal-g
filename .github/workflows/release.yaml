@@ -51,6 +51,12 @@ jobs:
         with:
           version: 'latest'
 
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
+      - name: Set up docker buildx
+        uses: docker/setup-buildx-action@v3
       - name: Package and push release packages
         run: |
           make release

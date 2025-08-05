@@ -1,6 +1,8 @@
 # More info: https://docs.docker.com/engine/reference/builder/#dockerignore-file
 # Ignore build and test binaries.
 bin/
+output/
+Dockerfile
 
 # Helm chart packages and archives
 *.tgz
