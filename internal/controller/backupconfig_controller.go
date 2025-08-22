@@ -79,8 +79,8 @@ func (r *BackupConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		}
 
 		var foundRef bool
-		for _, b := range backupList.Items {
-			for _, owner := range b.OwnerReferences {
+		for i := range backupList.Items {
+			for _, owner := range backupList.Items[i].OwnerReferences {
 				if owner.Kind == "BackupConfig" &&
 					owner.Name == backupConfig.Name {
 					foundRef = true
