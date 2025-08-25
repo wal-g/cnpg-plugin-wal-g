@@ -10,7 +10,6 @@ import (
 	"github.com/go-logr/logr"
 	"github.com/wal-g/cnpg-plugin-wal-g/api/v1beta1"
 	"github.com/wal-g/cnpg-plugin-wal-g/internal/util/walg"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -169,23 +168,7 @@ func (b *BackupDeletionController) deleteWALGBackup(ctx context.Context, backupK
 	}
 
 	// Delete physical backup only if .Status.BackupID is present
-	// and if source cluster is still present
-	deletePhysicalBackup := backup.Status.BackupID != ""
-	if deletePhysicalBackup {
-		// Get the cluster
-		cluster := &cnpgv1.Cluster{}
-		err := b.Get(ctx, client.ObjectKey{Namespace: backup.Namespace, Name: backup.Spec.Cluster.Name}, cluster)
-		switch {
-		case apierrors.IsNotFound(err):
-			logger.Info("Cluster of existing Backup not found, skipping backup data deletion")
-			deletePhysicalBackup = false
-		case err != nil:
-			logger.Error(err, "Failed to get Cluster of existing Backup")
-			return err
-		}
-	}
-
-	if deletePhysicalBackup {
+	if backup.Status.BackupID != "" {
 		// Delete the backup using WAL-G
 		logger.Info("Deleting backup from WAL-G", "backupID", backup.Status.BackupID)
 		pgVersion, err := strconv.Atoi(backup.Labels[v1beta1.BackupPgVersionLabelName])

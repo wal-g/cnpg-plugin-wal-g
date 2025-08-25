@@ -29,8 +29,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-const backupConfigFinalizerName = "cnpg-plugin-wal-g.yandex.cloud/backup-config-cleanup"
-
 // BackupConfigReconciler reconciles a BackupConfig object
 type BackupConfigReconciler struct {
 	client.Client
@@ -66,7 +64,7 @@ func (r *BackupConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request
 	if !backupConfig.DeletionTimestamp.IsZero() {
 		// BackupConfig is marked for deletion
 
-		if !containsString(backupConfig.Finalizers, backupConfigFinalizerName) {
+		if !containsString(backupConfig.Finalizers, v1beta1.BackupConfigFinalizerName) {
 			return ctrl.Result{}, nil // Nothing to do if finalizer is not specified
 		}
 
@@ -98,7 +96,7 @@ func (r *BackupConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		}
 
 		// No child backups: remove finalizer
-		backupConfig.Finalizers = removeString(backupConfig.Finalizers, backupConfigFinalizerName)
+		backupConfig.Finalizers = removeString(backupConfig.Finalizers, v1beta1.BackupConfigFinalizerName)
 		if err := r.Update(ctx, backupConfig); err != nil {
 			logger.Error(err, "while removing cleanup finalizer from BackupConfig")
 			return ctrl.Result{}, fmt.Errorf("while removing cleanup finalizer from BackupConfig: %w", err)
