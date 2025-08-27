@@ -91,7 +91,7 @@ func init() {
 	// +kubebuilder:scaffold:scheme
 }
 
-// nolint:gocyclo
+// nolint:gocyclo,funlen
 func Start(ctx context.Context) error {
 	var tlsOpts []func(*tls.Config)
 
