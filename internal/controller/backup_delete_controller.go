@@ -14,26 +14,44 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-// BackupDeletionController handles Backup deletion requests and processes them
-// sequentally per BackupConfig to prevent operator from overloading
+// ResourceType defines the type of resource being deleted
+type ResourceType string
+
+const (
+	// ResourceTypeBackup represents a Backup resource
+	ResourceTypeBackup ResourceType = "Backup"
+	// ResourceTypeBackupConfig represents a BackupConfig resource
+	ResourceTypeBackupConfig ResourceType = "BackupConfig"
+)
+
+// DeletionRequest represents a request to delete a resource
+type DeletionRequest struct {
+	// Type of resource to delete
+	Type ResourceType
+	// NamespacedName of the resource
+	Key types.NamespacedName
+}
+
+// BackupDeletionController handles Backup and BackupConfig deletion requests and processes them
+// sequentially per BackupConfig to prevent operator from overloading
 // and wal-g collisions at deleting backups at the same storage
 type BackupDeletionController struct {
 	client.Client
 
-	// Backup deletion queues, each BackupConfig should have its own queue to make its backups deletion serialized
+	// Deletion queues, each BackupConfig should have its own queue to make its deletions serialized
 	// Key - BackupConfig.Namespace + "/" + BackupConfig.Name
-	// Values - Backup object keys
-	backupDeletionQueues map[string](chan types.NamespacedName)
-	queueMX              sync.Mutex
-	queueCtxCancels      map[string]context.CancelFunc // Cancel functions for queue processing goroutines contexts
+	// Values - DeletionRequest objects
+	deletionQueues  map[string](chan DeletionRequest)
+	queueMX         sync.Mutex
+	queueCtxCancels map[string]context.CancelFunc // Cancel functions for queue processing goroutines contexts
 }
 
 // NewBackupDeletionController creates a new BackupDeletionController
 func NewBackupDeletionController(client client.Client) *BackupDeletionController {
 	return &BackupDeletionController{
-		Client:               client,
-		backupDeletionQueues: make(map[string]chan types.NamespacedName),
-		queueCtxCancels:      map[string]context.CancelFunc{},
+		Client:          client,
+		deletionQueues:  make(map[string]chan DeletionRequest),
+		queueCtxCancels: map[string]context.CancelFunc{},
 	}
 }
 
@@ -58,7 +76,7 @@ func (b *BackupDeletionController) Start(ctx context.Context) error {
 			// Cancel the context for this queue's goroutine
 			cancelFunc()
 			// Remove queue
-			delete(b.backupDeletionQueues, queueKey)
+			delete(b.deletionQueues, queueKey)
 		}()
 	}
 
@@ -68,7 +86,6 @@ func (b *BackupDeletionController) Start(ctx context.Context) error {
 // EnqueueBackupDeletion adds a Backup to the deletion queue for its BackupConfig
 // If the queue doesn't exist, it creates a new one and starts a goroutine to process it
 func (b *BackupDeletionController) EnqueueBackupDeletion(ctx context.Context, backup *cnpgv1.Backup) error {
-	logger := logr.FromContextOrDiscard(ctx).WithName("BackupDeletionController")
 	// Get BackupConfig with secrets for the backup
 	backupConfig, err := v1beta1.GetBackupConfigForBackup(ctx, b.Client, backup)
 	if err != nil {
@@ -80,58 +97,100 @@ func (b *BackupDeletionController) EnqueueBackupDeletion(ctx context.Context, ba
 	// Create queue key from BackupConfig namespace and name
 	queueKey := backupConfig.Namespace + "/" + backupConfig.Name
 
+	// Create deletion request
+	request := DeletionRequest{
+		Type: ResourceTypeBackup,
+		Key:  backupKey,
+	}
+
+	// Enqueue the deletion request
+	return b.enqueueDeletionRequest(ctx, queueKey, request)
+}
+
+// EnqueueBackupConfigDeletion adds a BackupConfig to the deletion queue
+// If the queue doesn't exist, it creates a new one and starts a goroutine to process it
+func (b *BackupDeletionController) EnqueueBackupConfigDeletion(ctx context.Context, backupConfig *v1beta1.BackupConfig) error {
+	backupConfigKey := client.ObjectKeyFromObject(backupConfig)
+
+	// Create queue key from BackupConfig namespace and name
+	queueKey := backupConfig.Namespace + "/" + backupConfig.Name
+
+	// Create deletion request
+	request := DeletionRequest{
+		Type: ResourceTypeBackupConfig,
+		Key:  backupConfigKey,
+	}
+
+	// Enqueue the deletion request
+	return b.enqueueDeletionRequest(ctx, queueKey, request)
+}
+
+// enqueueDeletionRequest adds a deletion request to the appropriate queue
+// If the queue doesn't exist, it creates a new one and starts a goroutine to process it
+func (b *BackupDeletionController) enqueueDeletionRequest(
+	ctx context.Context,
+	queueKey string,
+	request DeletionRequest,
+) error {
+	logger := logr.FromContextOrDiscard(ctx).WithName("BackupDeletionController")
 	// Check if queue exists, if not create it
 	b.queueMX.Lock()
 	defer b.queueMX.Unlock()
-	_, exists := b.backupDeletionQueues[queueKey]
+	_, exists := b.deletionQueues[queueKey]
 
 	if !exists {
 		// Need to create a new queue
-		// Check again in case another goroutine created it while we were waiting for the lock
-		_, exists = b.backupDeletionQueues[queueKey]
-		if !exists {
-			// Create a new buffered queue with size 128
-			b.backupDeletionQueues[queueKey] = make(chan types.NamespacedName, 128)
+		// Create a new buffered queue with size 128
+		b.deletionQueues[queueKey] = make(chan DeletionRequest, 128)
 
-			// Create a derived context for this queue's processing goroutine
-			queueCtx, cancelFunc := context.WithCancel(logr.NewContext(context.Background(), logger))
+		// Create a derived context for this queue's processing goroutine
+		queueCtx, cancelFunc := context.WithCancel(logr.NewContext(context.Background(), logger))
 
-			b.queueCtxCancels[queueKey] = cancelFunc
+		b.queueCtxCancels[queueKey] = cancelFunc
 
-			// Start a goroutine to process this queue
-			go b.processBackupDeletionQueue(queueCtx, queueKey)
-		}
+		// Start a goroutine to process this queue
+		go b.processDeletionQueue(queueCtx, queueKey)
 	}
 
-	// Try to add the backup to the queue
+	// Try to add the request to the queue
 	select {
-	case b.backupDeletionQueues[queueKey] <- backupKey:
-		logger.Info("Enqueued backup for deletion", "backup", backupKey)
+	case b.deletionQueues[queueKey] <- request:
+		logger.Info("Enqueued resource for deletion", "type", request.Type, "key", request.Key)
 		return nil
 	default:
 		// Queue is full
-		return fmt.Errorf("deletion queue for BackupConfig %s is full", queueKey)
+		return fmt.Errorf("deletion queue for %s is full", queueKey)
 	}
 }
 
-// processBackupDeletionQueue processes backups from the deletion queue
-func (b *BackupDeletionController) processBackupDeletionQueue(
+// processDeletionQueue processes deletion requests from the queue
+func (b *BackupDeletionController) processDeletionQueue(
 	ctx context.Context,
 	queueKey string,
 ) {
-	logger := logr.FromContextOrDiscard(ctx).WithName("BackupDeletionQueue").WithValues("queueKey", queueKey)
-	logger.Info("Starting backup deletion queue processor")
+	logger := logr.FromContextOrDiscard(ctx)
+	logger.Info("Starting deletion queue processor")
 
 	for {
 		select {
 		case <-ctx.Done():
-			logger.Info("Stopping backup deletion queue processor")
+			logger.Info("Stopping deletion queue processor")
 			return
-		case backupKey := <-b.backupDeletionQueues[queueKey]:
-			logger.Info("Processing wal-g backup deletion", "backup", backupKey)
-			err := b.deleteWALGBackup(ctx, backupKey)
+		case request := <-b.deletionQueues[queueKey]:
+			logger.Info("Processing deletion request", "type", request.Type, "key", request.Key)
+
+			var err error
+			switch request.Type {
+			case ResourceTypeBackup:
+				err = b.deleteWALGBackup(ctx, request.Key)
+			case ResourceTypeBackupConfig:
+				err = b.deleteBackupConfig(ctx, request.Key)
+			default:
+				err = fmt.Errorf("unknown resource type: %s", request.Type)
+			}
+
 			if err != nil {
-				logger.Error(err, "Failed to delete backup", "backup", backupKey)
+				logger.Error(err, "Failed to process deletion request", "type", request.Type, "key", request.Key)
 			}
 		}
 	}
@@ -200,6 +259,50 @@ func (b *BackupDeletionController) deleteWALGBackup(ctx context.Context, backupK
 	if err := b.Update(ctx, backup); err != nil {
 		logger.Error(err, "while removing cleanup finalizer from Backup")
 		return fmt.Errorf("while removing cleanup finalizer from Backup: %w", err)
+	}
+
+	return nil
+}
+
+// deleteBackupConfig cleans up backup storage specified in BackupConfig (if needed) and removes finalizer from BackupConfig object
+func (b *BackupDeletionController) deleteBackupConfig(ctx context.Context, backupConfigKey client.ObjectKey) error {
+	logger := logr.FromContextOrDiscard(ctx)
+	backupConfig := &v1beta1.BackupConfig{}
+	err := b.Get(ctx, backupConfigKey, backupConfig)
+	if err != nil {
+		// If the BackupConfig is already gone, there's nothing to do
+		return client.IgnoreNotFound(err)
+	}
+
+	backupConfigWithSecrets, err := backupConfig.PrefetchSecretsData(ctx, b)
+	if err != nil {
+		return fmt.Errorf(
+			"while fetching secrets data for backupConfig %v: %w",
+			client.ObjectKeyFromObject(backupConfig),
+			err,
+		)
+	}
+
+	// Performing cleanup for all known PG versions (to remove both old-version backups and current backups)
+	for pgVersion := 11; pgVersion <= 19; pgVersion++ {
+		result, err := walg.DeleteAllBackupsAndWALsInStorage(ctx, backupConfigWithSecrets, pgVersion)
+		if err != nil {
+			return fmt.Errorf(
+				"while wal-g storage cleanup: error %w\nWAL-G stdout: %s\nWAL-G stderr: %s",
+				err,
+				string(result.Stdout()),
+				string(result.Stderr()),
+			)
+		}
+	}
+
+	// Remove our finalizer from the list and update
+	if containsString(backupConfig.Finalizers, v1beta1.BackupConfigFinalizerName) {
+		backupConfig.Finalizers = removeString(backupConfig.Finalizers, v1beta1.BackupConfigFinalizerName)
+		if err := b.Update(ctx, backupConfig); err != nil {
+			logger.Error(err, "while removing cleanup finalizer from BackupConfig")
+			return fmt.Errorf("while removing cleanup finalizer from BackupConfig: %w", err)
+		}
 	}
 
 	return nil

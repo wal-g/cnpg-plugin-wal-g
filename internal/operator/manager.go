@@ -236,7 +236,7 @@ func Start(ctx context.Context) error {
 	if err = (&controller.BackupConfigReconciler{
 		Client: mgr.GetClient(),
 		Scheme: mgr.GetScheme(),
-	}).SetupWithManager(mgr); err != nil {
+	}).SetupWithManager(mgr, backupDeletionController); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "BackupConfigReconciler")
 		return err
 	}

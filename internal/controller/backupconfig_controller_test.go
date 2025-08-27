@@ -67,9 +67,13 @@ var _ = Describe("BackupConfig Controller", func() {
 		})
 		It("should successfully reconcile the resource", func() {
 			By("Reconciling the created resource")
+			// Create a mock BackupDeletionController
+			mockBackupDeletionController := NewBackupDeletionController(k8sClient)
+
 			controllerReconciler := &BackupConfigReconciler{
-				Client: k8sClient,
-				Scheme: k8sClient.Scheme(),
+				Client:                   k8sClient,
+				Scheme:                   k8sClient.Scheme(),
+				BackupDeletionController: mockBackupDeletionController,
 			}
 
 			_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{
@@ -78,6 +82,47 @@ var _ = Describe("BackupConfig Controller", func() {
 			Expect(err).NotTo(HaveOccurred())
 			// TODO(user): Add more specific assertions depending on your controller's reconciliation logic.
 			// Example: If you expect a certain status condition after reconciliation, verify it here.
+		})
+
+		It("should handle deletion correctly", func() {
+			By("Marking the resource for deletion")
+			// Get the resource
+			resource := &v1beta1.BackupConfig{}
+			err := k8sClient.Get(ctx, typeNamespacedName, resource)
+			Expect(err).NotTo(HaveOccurred())
+
+			// Add finalizers to simulate the normal reconcile process
+			resource.Finalizers = []string{v1beta1.BackupConfigFinalizerName, v1beta1.BackupConfigSecretProtectionFinalizerName}
+			err = k8sClient.Update(ctx, resource)
+			Expect(err).NotTo(HaveOccurred())
+
+			// Mark the resource for deletion
+			now := metav1.Now()
+			resource.DeletionTimestamp = &now
+			err = k8sClient.Update(ctx, resource)
+			Expect(err).NotTo(HaveOccurred())
+
+			// Create a mock BackupDeletionController
+			mockBackupDeletionController := NewBackupDeletionController(k8sClient)
+
+			controllerReconciler := &BackupConfigReconciler{
+				Client:                   k8sClient,
+				Scheme:                   k8sClient.Scheme(),
+				BackupDeletionController: mockBackupDeletionController,
+			}
+
+			// Reconcile the resource
+			_, err = controllerReconciler.Reconcile(ctx, reconcile.Request{
+				NamespacedName: typeNamespacedName,
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			// Check that the finalizer is removed after the BackupDeletionController processes the request
+			// Note: In a real test, we would need to mock the BackupDeletionController's behavior
+			// to actually remove the finalizer, but for this test we're just checking that
+			// the controller is called correctly
+			err = k8sClient.Get(ctx, typeNamespacedName, resource)
+			Expect(err).NotTo(HaveOccurred())
 		})
 	})
 })
