@@ -21,8 +21,11 @@ import (
 	"fmt"
 	"time"
 
+	cnpgv1 "github.com/cloudnative-pg/cloudnative-pg/api/v1"
 	"github.com/go-logr/logr"
+	"github.com/samber/lo"
 	v1beta1 "github.com/wal-g/cnpg-plugin-wal-g/api/v1beta1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -63,6 +66,27 @@ func (r *BackupConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request
 
 	if !backupConfig.DeletionTimestamp.IsZero() {
 		// BackupConfig is marked for deletion
+		if !containsString(backupConfig.Finalizers, v1beta1.BackupConfigFinalizerName) {
+			return ctrl.Result{}, nil // Nothing to do if finalizer is not specified
+		}
+
+		// List all backups potentially referencing this backup config
+		backupList := cnpgv1.BackupList{}
+		if err := r.List(ctx, &backupList, client.InNamespace(req.Namespace)); err != nil {
+			return ctrl.Result{}, err
+		}
+
+		// Check if there is at leas one Backup resource with OwnerReference matching current Backup
+		foundChildBackup := lo.ContainsBy(backupList.Items, func(b cnpgv1.Backup) bool {
+			return lo.ContainsBy(b.OwnerReferences, func(owner metav1.OwnerReference) bool {
+				return owner.Kind == "BackupConfig" && owner.Name == backupConfig.Name
+			})
+		})
+
+		if foundChildBackup {
+			logger.Info("Blocking BackupConfig deletion: still has one or more dependent Backup, retrying in 30 seconds")
+			return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
+		}
 
 		// Handle backup config cleanup finalizer
 		if containsString(backupConfig.Finalizers, v1beta1.BackupConfigFinalizerName) {
@@ -85,11 +109,6 @@ func (r *BackupConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request
 
 	if !containsString(backupConfig.Finalizers, v1beta1.BackupConfigFinalizerName) {
 		backupConfig.Finalizers = append(backupConfig.Finalizers, v1beta1.BackupConfigFinalizerName)
-		finalizersChanged = true
-	}
-
-	if !containsString(backupConfig.Finalizers, v1beta1.BackupConfigSecretFinalizerName) {
-		backupConfig.Finalizers = append(backupConfig.Finalizers, v1beta1.BackupConfigSecretFinalizerName)
 		finalizersChanged = true
 	}
 

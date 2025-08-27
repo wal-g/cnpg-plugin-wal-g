@@ -88,8 +88,12 @@ func (b *BackupDeletionController) Start(ctx context.Context) error {
 func (b *BackupDeletionController) EnqueueBackupDeletion(ctx context.Context, backup *cnpgv1.Backup) error {
 	// Get BackupConfig with secrets for the backup
 	backupConfig, err := v1beta1.GetBackupConfigForBackup(ctx, b.Client, backup)
-	if err != nil {
+	if client.IgnoreNotFound(err) != nil {
 		return fmt.Errorf("failed to get BackupConfig for Backup: %w", err)
+	}
+	if err != nil {
+		// If BackupConfig not found, then it's already deleted, just remove finalizer from Backup and do nothing else
+		return removeBackupFinalizer(ctx, backup, b.Client)
 	}
 
 	backupKey := client.ObjectKeyFromObject(backup)
@@ -226,41 +230,52 @@ func (b *BackupDeletionController) deleteWALGBackup(ctx context.Context, backupK
 		return nil // Nothing to do if finalizer is not specified
 	}
 
-	// Delete physical backup only if .Status.BackupID is present
-	if backup.Status.BackupID != "" {
-		// Delete the backup using WAL-G
-		logger.Info("Deleting backup from WAL-G", "backupID", backup.Status.BackupID)
-		pgVersion, err := strconv.Atoi(backup.Labels[v1beta1.BackupPgVersionLabelName])
-		if err != nil {
-			return fmt.Errorf(
-				"while wal-g backup removal: error cannot parse pgVersion from Backup label %s: '%s': %w",
-				v1beta1.BackupPgVersionLabelName, backup.Labels[v1beta1.BackupPgVersionLabelName], err,
-			)
-		}
-
-		backupConfigWithSecrets, err := v1beta1.GetBackupConfigWithSecretsForBackup(ctx, b.Client, backup)
-		if err != nil {
-			return fmt.Errorf("while getting backupconfig with secrets for backup %v: %w", backupKey, err)
-		}
-
-		result, err := walg.DeleteBackup(ctx, backupConfigWithSecrets, pgVersion, backup.Status.BackupID)
-		if err != nil {
-			return fmt.Errorf(
-				"while wal-g backup removal: error %w\nWAL-G stdout: %s\nWAL-G stderr: %s",
-				err,
-				string(result.Stdout()),
-				string(result.Stderr()),
-			)
-		}
+	if backup.Status.BackupID == "" {
+		// if .Status.BackupID not present - physical backup does not exist and just removing finalizer
+		return removeBackupFinalizer(ctx, backup, b.Client)
 	}
 
-	// Remove our finalizer from the list and update
+	pgVersion, err := strconv.Atoi(backup.Labels[v1beta1.BackupPgVersionLabelName])
+	if err != nil {
+		return fmt.Errorf(
+			"while wal-g backup removal: error cannot parse pgVersion from Backup label %s: '%s': %w",
+			v1beta1.BackupPgVersionLabelName, backup.Labels[v1beta1.BackupPgVersionLabelName], err,
+		)
+	}
+
+	backupConfigWithSecrets, err := v1beta1.GetBackupConfigWithSecretsForBackup(ctx, b.Client, backup)
+	if client.IgnoreNotFound(err) != nil {
+		return fmt.Errorf("while getting backupconfig with secrets for backup %v: %w", backupKey, err)
+	}
+	if err != nil {
+		// If BackupConfig not found, then it's already deleted, just remove finalizer and do nothing else
+		return removeBackupFinalizer(ctx, backup, b.Client)
+	}
+
+	// Delete the backup using WAL-G
+	logger.Info("Deleting backup from storage via WAL-G", "backupID", backup.Status.BackupID)
+	result, err := walg.DeleteBackup(ctx, backupConfigWithSecrets, pgVersion, backup.Status.BackupID)
+	if err != nil {
+		return fmt.Errorf(
+			"while wal-g backup removal: error %w\nWAL-G stdout: %s\nWAL-G stderr: %s",
+			err,
+			string(result.Stdout()),
+			string(result.Stderr()),
+		)
+	}
+
+	return removeBackupFinalizer(ctx, backup, b.Client)
+}
+
+func removeBackupFinalizer(ctx context.Context, backup *cnpgv1.Backup, client client.Client) error {
+	if !containsString(backup.Finalizers, v1beta1.BackupFinalizerName) {
+		return nil
+	}
+
 	backup.Finalizers = removeString(backup.Finalizers, v1beta1.BackupFinalizerName)
-	if err := b.Update(ctx, backup); err != nil {
-		logger.Error(err, "while removing cleanup finalizer from Backup")
+	if err := client.Update(ctx, backup); err != nil {
 		return fmt.Errorf("while removing cleanup finalizer from Backup: %w", err)
 	}
-
 	return nil
 }
 
