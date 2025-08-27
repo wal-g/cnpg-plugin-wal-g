@@ -92,7 +92,7 @@ var _ = Describe("BackupConfig Controller", func() {
 			Expect(err).NotTo(HaveOccurred())
 
 			// Add finalizers to simulate the normal reconcile process
-			resource.Finalizers = []string{v1beta1.BackupConfigFinalizerName, v1beta1.BackupConfigSecretProtectionFinalizerName}
+			resource.Finalizers = []string{v1beta1.BackupConfigFinalizerName, v1beta1.BackupConfigSecretFinalizerName}
 			err = k8sClient.Update(ctx, resource)
 			Expect(err).NotTo(HaveOccurred())
 

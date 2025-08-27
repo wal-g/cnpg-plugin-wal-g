@@ -261,6 +261,15 @@ func Start(ctx context.Context) error {
 		return err
 	}
 
+	// Register the SecretReconciler
+	if err = (&controller.SecretReconciler{
+		Client: mgr.GetClient(),
+		Scheme: mgr.GetScheme(),
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "SecretReconciler")
+		return err
+	}
+
 	// nolint:goconst
 	kubeClient, err := client.New(mgr.GetConfig(), client.Options{Scheme: scheme})
 	if err != nil {

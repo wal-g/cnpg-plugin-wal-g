@@ -88,8 +88,8 @@ func (r *BackupConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		finalizersChanged = true
 	}
 
-	if !containsString(backupConfig.Finalizers, v1beta1.BackupConfigSecretProtectionFinalizerName) {
-		backupConfig.Finalizers = append(backupConfig.Finalizers, v1beta1.BackupConfigSecretProtectionFinalizerName)
+	if !containsString(backupConfig.Finalizers, v1beta1.BackupConfigSecretFinalizerName) {
+		backupConfig.Finalizers = append(backupConfig.Finalizers, v1beta1.BackupConfigSecretFinalizerName)
 		finalizersChanged = true
 	}
 
@@ -97,6 +97,15 @@ func (r *BackupConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		if err := r.Update(ctx, backupConfig); err != nil {
 			logger.Error(err, "while adding finalizers to BackupConfig")
 			return ctrl.Result{}, fmt.Errorf("while adding finalizers to BackupConfig: %w", err)
+		}
+	}
+
+	backupConfigSecrets := getSecretReferencesFromBackupConfig(backupConfig)
+	for _, secretRef := range backupConfigSecrets {
+		err := setFinalizerOnSecret(ctx, r.Client, secretRef)
+		if err != nil {
+			logger.Error(err, "Failed to set finalizer on secret", "secretName", secretRef.Name)
+			// continuing anyway
 		}
 	}
 
