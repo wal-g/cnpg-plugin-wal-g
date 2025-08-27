@@ -21,6 +21,10 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
+// Finalizer added to CNPG BackupConfig resources managed by plugin
+// It is used to ensure that backup removed from storage before Backup resource deleted
+const BackupConfigFinalizerName = "cnpg-plugin-wal-g.yandex.cloud/backup-config-cleanup"
+
 // S3StorageConfig defines S3-specific configuration for object storage
 type S3StorageConfig struct {
 	// e.g. s3://bucket/path/to/folder

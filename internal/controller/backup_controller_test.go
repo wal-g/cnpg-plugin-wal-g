@@ -285,22 +285,6 @@ var _ = Describe("BackupReconciler", func() {
 			// Create test objects
 			backupConfig, s3Secret := createTestBackupConfig("test-backupconfig", "default")
 
-			// Create a mock BackupConfigWithSecrets
-			backupConfigWithSecrets := &v1beta1.BackupConfigWithSecrets{
-				BackupConfig: *backupConfig,
-				Spec: v1beta1.BackupConfigSpecWithSecrets{
-					BackupConfigSpec: backupConfig.Spec,
-					Storage: v1beta1.StorageConfigWithSecrets{
-						StorageConfig: backupConfig.Spec.Storage,
-						S3: &v1beta1.S3StorageConfigWithSecrets{
-							S3StorageConfig: *backupConfig.Spec.Storage.S3,
-							AccessKeyID:     "test-access-key-id",
-							AccessKeySecret: "test-access-key-secret",
-						},
-					},
-				},
-			}
-
 			backup1 := createTestBackup("test-backup-1", "default", "test-cluster", "base_000000010000000100000001", true)
 			backup2 := createTestBackup("test-backup-2", "default", "test-cluster", "base_000000010000000100000002", true)
 			backup3 := createTestBackup("test-backup-3", "default", "test-cluster", "base_000000010000000100000003", false) // No owner ref
@@ -315,7 +299,7 @@ var _ = Describe("BackupReconciler", func() {
 			}
 
 			// Call listBackupsOwnedByBackupConfig
-			backups, err := reconciler.listBackupsOwnedByBackupConfig(testCtx, backupConfigWithSecrets)
+			backups, err := reconciler.listBackupsOwnedByBackupConfig(testCtx, backupConfig)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(backups).To(HaveLen(2))
 
@@ -333,22 +317,6 @@ var _ = Describe("BackupReconciler", func() {
 			backup := createTestBackup("test-backup", "default", "test-cluster", "", true)
 			cluster := createTestCluster("test-cluster", "default")
 
-			// Create a mock BackupConfigWithSecrets
-			backupConfigWithSecrets := &v1beta1.BackupConfigWithSecrets{
-				BackupConfig: *backupConfig,
-				Spec: v1beta1.BackupConfigSpecWithSecrets{
-					BackupConfigSpec: backupConfig.Spec,
-					Storage: v1beta1.StorageConfigWithSecrets{
-						StorageConfig: backupConfig.Spec.Storage,
-						S3: &v1beta1.S3StorageConfigWithSecrets{
-							S3StorageConfig: *backupConfig.Spec.Storage.S3,
-							AccessKeyID:     "test-access-key-id",
-							AccessKeySecret: "test-access-key-secret",
-						},
-					},
-				},
-			}
-
 			// Create fake client with objects
 			fakeClient := setupFakeBackupClient(backupConfig, s3Secret, backup, cluster)
 
@@ -359,7 +327,7 @@ var _ = Describe("BackupReconciler", func() {
 			}
 
 			// Call reconcileBackupMetadata
-			updated, err := reconciler.reconcileBackupMetadata(testCtx, backup, backupConfigWithSecrets, cluster)
+			updated, err := reconciler.reconcileBackupMetadata(testCtx, backup, backupConfig, cluster)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(updated).To(BeTrue())
 
@@ -382,22 +350,6 @@ var _ = Describe("BackupReconciler", func() {
 			// Set PostgreSQL version in cluster image
 			cluster.Spec.ImageName = "ghcr.io/cloudnative-pg/postgresql:14.0"
 
-			// Create a mock BackupConfigWithSecrets
-			backupConfigWithSecrets := &v1beta1.BackupConfigWithSecrets{
-				BackupConfig: *backupConfig,
-				Spec: v1beta1.BackupConfigSpecWithSecrets{
-					BackupConfigSpec: backupConfig.Spec,
-					Storage: v1beta1.StorageConfigWithSecrets{
-						StorageConfig: backupConfig.Spec.Storage,
-						S3: &v1beta1.S3StorageConfigWithSecrets{
-							S3StorageConfig: *backupConfig.Spec.Storage.S3,
-							AccessKeyID:     "test-access-key-id",
-							AccessKeySecret: "test-access-key-secret",
-						},
-					},
-				},
-			}
-
 			// Create fake client with objects
 			fakeClient := setupFakeBackupClient(backupConfig, s3Secret, backup, cluster)
 
@@ -408,7 +360,7 @@ var _ = Describe("BackupReconciler", func() {
 			}
 
 			// Call reconcileBackupMetadata
-			updated, err := reconciler.reconcileBackupMetadata(testCtx, backup, backupConfigWithSecrets, cluster)
+			updated, err := reconciler.reconcileBackupMetadata(testCtx, backup, backupConfig, cluster)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(updated).To(BeTrue())
 			Expect(backup.Labels).To(HaveKeyWithValue(v1beta1.BackupTypeLabelName, string(v1beta1.BackupTypeFull)))
@@ -435,22 +387,6 @@ var _ = Describe("BackupReconciler", func() {
 			// Set PostgreSQL version in cluster image
 			cluster.Spec.ImageName = "ghcr.io/cloudnative-pg/postgresql:15.0"
 
-			// Create a mock BackupConfigWithSecrets
-			backupConfigWithSecrets := &v1beta1.BackupConfigWithSecrets{
-				BackupConfig: *backupConfig,
-				Spec: v1beta1.BackupConfigSpecWithSecrets{
-					BackupConfigSpec: backupConfig.Spec,
-					Storage: v1beta1.StorageConfigWithSecrets{
-						StorageConfig: backupConfig.Spec.Storage,
-						S3: &v1beta1.S3StorageConfigWithSecrets{
-							S3StorageConfig: *backupConfig.Spec.Storage.S3,
-							AccessKeyID:     "test-access-key-id",
-							AccessKeySecret: "test-access-key-secret",
-						},
-					},
-				},
-			}
-
 			// Create fake client with objects
 			fakeClient := setupFakeBackupClient(backupConfig, s3Secret, backup, cluster)
 
@@ -461,7 +397,7 @@ var _ = Describe("BackupReconciler", func() {
 			}
 
 			// Call reconcileBackupMetadata
-			updated, err := reconciler.reconcileBackupMetadata(testCtx, backup, backupConfigWithSecrets, cluster)
+			updated, err := reconciler.reconcileBackupMetadata(testCtx, backup, backupConfig, cluster)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(updated).To(BeTrue())
 			Expect(backup.Labels).To(HaveKeyWithValue(v1beta1.BackupTypeLabelName, string(v1beta1.BackupTypeIncremental)))
@@ -489,22 +425,6 @@ var _ = Describe("BackupReconciler", func() {
 			// Set PostgreSQL version in cluster image
 			cluster.Spec.ImageName = "ghcr.io/cloudnative-pg/postgresql:14.0"
 
-			// Create a mock BackupConfigWithSecrets
-			backupConfigWithSecrets := &v1beta1.BackupConfigWithSecrets{
-				BackupConfig: *backupConfig,
-				Spec: v1beta1.BackupConfigSpecWithSecrets{
-					BackupConfigSpec: backupConfig.Spec,
-					Storage: v1beta1.StorageConfigWithSecrets{
-						StorageConfig: backupConfig.Spec.Storage,
-						S3: &v1beta1.S3StorageConfigWithSecrets{
-							S3StorageConfig: *backupConfig.Spec.Storage.S3,
-							AccessKeyID:     "test-access-key-id",
-							AccessKeySecret: "test-access-key-secret",
-						},
-					},
-				},
-			}
-
 			// Create fake client with objects
 			fakeClient := setupFakeBackupClient(backupConfig, s3Secret, baseBackup, dependentBackup, cluster)
 
@@ -515,7 +435,7 @@ var _ = Describe("BackupReconciler", func() {
 			}
 
 			// Call reconcileBackupMetadata
-			updated, err := reconciler.reconcileBackupMetadata(testCtx, baseBackup, backupConfigWithSecrets, cluster)
+			updated, err := reconciler.reconcileBackupMetadata(testCtx, baseBackup, backupConfig, cluster)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(updated).To(BeTrue())
 			Expect(baseBackup.Labels).To(HaveKeyWithValue(v1beta1.BackupTypeLabelName, string(v1beta1.BackupTypeFull)))
@@ -544,22 +464,6 @@ var _ = Describe("BackupReconciler", func() {
 			// Set PostgreSQL version in cluster image
 			cluster.Spec.ImageName = "ghcr.io/cloudnative-pg/postgresql:14.0"
 
-			// Create a mock BackupConfigWithSecrets
-			backupConfigWithSecrets := &v1beta1.BackupConfigWithSecrets{
-				BackupConfig: *backupConfig,
-				Spec: v1beta1.BackupConfigSpecWithSecrets{
-					BackupConfigSpec: backupConfig.Spec,
-					Storage: v1beta1.StorageConfigWithSecrets{
-						StorageConfig: backupConfig.Spec.Storage,
-						S3: &v1beta1.S3StorageConfigWithSecrets{
-							S3StorageConfig: *backupConfig.Spec.Storage.S3,
-							AccessKeyID:     "test-access-key-id",
-							AccessKeySecret: "test-access-key-secret",
-						},
-					},
-				},
-			}
-
 			// Create fake client with objects
 			fakeClient := setupFakeBackupClient(backupConfig, s3Secret, baseBackup, directDependentBackup, indirectDependentBackup, cluster)
 
@@ -570,7 +474,7 @@ var _ = Describe("BackupReconciler", func() {
 			}
 
 			// Call reconcileBackupMetadata
-			updated, err := reconciler.reconcileBackupMetadata(testCtx, baseBackup, backupConfigWithSecrets, cluster)
+			updated, err := reconciler.reconcileBackupMetadata(testCtx, baseBackup, backupConfig, cluster)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(updated).To(BeTrue())
 			Expect(baseBackup.Labels).To(HaveKeyWithValue(v1beta1.BackupTypeLabelName, string(v1beta1.BackupTypeFull)))
@@ -602,22 +506,6 @@ var _ = Describe("BackupReconciler", func() {
 				v1beta1.BackupAllDependentsAnnotationName:    "",
 			}
 
-			// Create a mock BackupConfigWithSecrets
-			backupConfigWithSecrets := &v1beta1.BackupConfigWithSecrets{
-				BackupConfig: *backupConfig,
-				Spec: v1beta1.BackupConfigSpecWithSecrets{
-					BackupConfigSpec: backupConfig.Spec,
-					Storage: v1beta1.StorageConfigWithSecrets{
-						StorageConfig: backupConfig.Spec.Storage,
-						S3: &v1beta1.S3StorageConfigWithSecrets{
-							S3StorageConfig: *backupConfig.Spec.Storage.S3,
-							AccessKeyID:     "test-access-key-id",
-							AccessKeySecret: "test-access-key-secret",
-						},
-					},
-				},
-			}
-
 			// Create fake client with objects
 			fakeClient := setupFakeBackupClient(backupConfig, s3Secret, backup, cluster)
 
@@ -628,7 +516,7 @@ var _ = Describe("BackupReconciler", func() {
 			}
 
 			// Call reconcileBackupMetadata
-			updated, err := reconciler.reconcileBackupMetadata(testCtx, backup, backupConfigWithSecrets, cluster)
+			updated, err := reconciler.reconcileBackupMetadata(testCtx, backup, backupConfig, cluster)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(updated).To(BeFalse())
 		})
@@ -648,22 +536,6 @@ var _ = Describe("BackupReconciler", func() {
 			dependentBackup.Finalizers = append(dependentBackup.Finalizers, v1beta1.BackupFinalizerName)
 			dependentBackup.DeletionTimestamp = &now
 
-			// Create a mock BackupConfigWithSecrets
-			backupConfigWithSecrets := &v1beta1.BackupConfigWithSecrets{
-				BackupConfig: *backupConfig,
-				Spec: v1beta1.BackupConfigSpecWithSecrets{
-					BackupConfigSpec: backupConfig.Spec,
-					Storage: v1beta1.StorageConfigWithSecrets{
-						StorageConfig: backupConfig.Spec.Storage,
-						S3: &v1beta1.S3StorageConfigWithSecrets{
-							S3StorageConfig: *backupConfig.Spec.Storage.S3,
-							AccessKeyID:     "test-access-key-id",
-							AccessKeySecret: "test-access-key-secret",
-						},
-					},
-				},
-			}
-
 			// Create fake client with objects
 			fakeClient := setupFakeBackupClient(backupConfig, s3Secret, baseBackup, dependentBackup, cluster)
 
@@ -674,7 +546,7 @@ var _ = Describe("BackupReconciler", func() {
 			}
 
 			// Call reconcileBackupMetadata on the base backup
-			updated, err := reconciler.reconcileBackupMetadata(testCtx, baseBackup, backupConfigWithSecrets, cluster)
+			updated, err := reconciler.reconcileBackupMetadata(testCtx, baseBackup, backupConfig, cluster)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(updated).To(BeTrue())
 
@@ -708,22 +580,6 @@ var _ = Describe("BackupReconciler", func() {
 			// Create a new dependent backup
 			newDependentBackup := createTestBackup("new-dependent", "default", "test-cluster", "base_000000010000000100000002_D_000000010000000100000001", true)
 
-			// Create a mock BackupConfigWithSecrets
-			backupConfigWithSecrets := &v1beta1.BackupConfigWithSecrets{
-				BackupConfig: *backupConfig,
-				Spec: v1beta1.BackupConfigSpecWithSecrets{
-					BackupConfigSpec: backupConfig.Spec,
-					Storage: v1beta1.StorageConfigWithSecrets{
-						StorageConfig: backupConfig.Spec.Storage,
-						S3: &v1beta1.S3StorageConfigWithSecrets{
-							S3StorageConfig: *backupConfig.Spec.Storage.S3,
-							AccessKeyID:     "test-access-key-id",
-							AccessKeySecret: "test-access-key-secret",
-						},
-					},
-				},
-			}
-
 			// Create fake client with objects
 			fakeClient := setupFakeBackupClient(backupConfig, s3Secret, parentBackup, newDependentBackup, cluster)
 
@@ -734,7 +590,7 @@ var _ = Describe("BackupReconciler", func() {
 			}
 
 			// Call reconcileBackupMetadata on the parent backup
-			updated, err := reconciler.reconcileBackupMetadata(testCtx, parentBackup, backupConfigWithSecrets, cluster)
+			updated, err := reconciler.reconcileBackupMetadata(testCtx, parentBackup, backupConfig, cluster)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(updated).To(BeTrue(), "Parent backup should be updated with new dependent")
 
@@ -755,7 +611,7 @@ var _ = Describe("BackupReconciler", func() {
 			reconciler.Client = fakeClient
 
 			// Call reconcileBackupMetadata again on the parent backup
-			updated, err = reconciler.reconcileBackupMetadata(testCtx, parentBackup, backupConfigWithSecrets, cluster)
+			updated, err = reconciler.reconcileBackupMetadata(testCtx, parentBackup, backupConfig, cluster)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(updated).To(BeTrue(), "Parent backup should be updated with indirect dependent")
 
