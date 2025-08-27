@@ -64,45 +64,89 @@ func (r *BackupConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request
 	if !backupConfig.DeletionTimestamp.IsZero() {
 		// BackupConfig is marked for deletion
 
-		if !containsString(backupConfig.Finalizers, v1beta1.BackupConfigFinalizerName) {
-			return ctrl.Result{}, nil // Nothing to do if finalizer is not specified
-		}
+		// Handle backup config cleanup finalizer
+		if containsString(backupConfig.Finalizers, v1beta1.BackupConfigFinalizerName) {
+			// List all backups potentially referencing this backup config
+			backupList := cnpgv1.BackupList{}
+			if err := r.List(ctx, &backupList,
+				client.InNamespace(req.Namespace),
+			); err != nil {
+				return ctrl.Result{}, err
+			}
 
-		// List all backups potentially referencing this backup config
-		backupList := cnpgv1.BackupList{}
-		if err := r.List(ctx, &backupList,
-			client.InNamespace(req.Namespace),
-		); err != nil {
-			return ctrl.Result{}, err
-		}
-
-		var foundRef bool
-		for i := range backupList.Items {
-			for _, owner := range backupList.Items[i].OwnerReferences {
-				if owner.Kind == "BackupConfig" &&
-					owner.Name == backupConfig.Name {
-					foundRef = true
+			var foundRef bool
+			for i := range backupList.Items {
+				for _, owner := range backupList.Items[i].OwnerReferences {
+					if owner.Kind == "BackupConfig" &&
+						owner.Name == backupConfig.Name {
+						foundRef = true
+						break
+					}
+				}
+				if foundRef {
 					break
 				}
 			}
+
 			if foundRef {
-				break
+				logger.Info("Blocking deletion: still has one or more dependent Backup")
+				return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
+			}
+
+			// No child backups: remove backup cleanup finalizer
+			backupConfig.Finalizers = removeString(backupConfig.Finalizers, v1beta1.BackupConfigFinalizerName)
+			if err := r.Update(ctx, backupConfig); err != nil {
+				logger.Error(err, "while removing cleanup finalizer from BackupConfig")
+				return ctrl.Result{}, fmt.Errorf("while removing cleanup finalizer from BackupConfig: %w", err)
+			}
+
+			// After removing the backup cleanup finalizer, requeue to handle the secret protection finalizer
+			return ctrl.Result{Requeue: true}, nil
+		}
+
+		// Handle secret protection finalizer
+		if containsString(backupConfig.Finalizers, v1beta1.BackupConfigSecretProtectionFinalizerName) {
+			// Check if any secrets referenced by this BackupConfig are still in use by other BackupConfigs
+			secretsInUse, err := r.areSecretsStillInUse(ctx, backupConfig)
+			if err != nil {
+				logger.Error(err, "while checking if secrets are still in use")
+				return ctrl.Result{}, fmt.Errorf("while checking if secrets are still in use: %w", err)
+			}
+
+			if secretsInUse {
+				logger.Info("Blocking deletion: secrets are still in use by other BackupConfigs")
+				return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
+			}
+
+			// No secrets in use: remove secret protection finalizer
+			backupConfig.Finalizers = removeString(backupConfig.Finalizers, v1beta1.BackupConfigSecretProtectionFinalizerName)
+			if err := r.Update(ctx, backupConfig); err != nil {
+				logger.Error(err, "while removing secret protection finalizer from BackupConfig")
+				return ctrl.Result{}, fmt.Errorf("while removing secret protection finalizer from BackupConfig: %w", err)
 			}
 		}
 
-		if foundRef {
-			logger.Info("Blocking deletion: still has one or more dependent Backup")
-			return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
-		}
-
-		// No child backups: remove finalizer
-		backupConfig.Finalizers = removeString(backupConfig.Finalizers, v1beta1.BackupConfigFinalizerName)
-		if err := r.Update(ctx, backupConfig); err != nil {
-			logger.Error(err, "while removing cleanup finalizer from BackupConfig")
-			return ctrl.Result{}, fmt.Errorf("while removing cleanup finalizer from BackupConfig: %w", err)
-		}
-
 		return ctrl.Result{}, nil
+	}
+
+	// Add finalizers if they don't exist
+	finalizersChanged := false
+
+	if !containsString(backupConfig.Finalizers, v1beta1.BackupConfigFinalizerName) {
+		backupConfig.Finalizers = append(backupConfig.Finalizers, v1beta1.BackupConfigFinalizerName)
+		finalizersChanged = true
+	}
+
+	if !containsString(backupConfig.Finalizers, v1beta1.BackupConfigSecretProtectionFinalizerName) {
+		backupConfig.Finalizers = append(backupConfig.Finalizers, v1beta1.BackupConfigSecretProtectionFinalizerName)
+		finalizersChanged = true
+	}
+
+	if finalizersChanged {
+		if err := r.Update(ctx, backupConfig); err != nil {
+			logger.Error(err, "while adding finalizers to BackupConfig")
+			return ctrl.Result{}, fmt.Errorf("while adding finalizers to BackupConfig: %w", err)
+		}
 	}
 
 	return ctrl.Result{}, nil
@@ -114,4 +158,93 @@ func (r *BackupConfigReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		For(&v1beta1.BackupConfig{}).
 		Named("backupconfig").
 		Complete(r)
+}
+
+// areSecretsStillInUse checks if any secrets referenced by this BackupConfig are still in use by other BackupConfigs
+func (r *BackupConfigReconciler) areSecretsStillInUse(ctx context.Context, backupConfig *v1beta1.BackupConfig) (bool, error) {
+	logger := logr.FromContextOrDiscard(ctx)
+
+	// Get a list of secret names referenced by this BackupConfig
+	secretNames, err := r.getReferencedSecretNames(backupConfig)
+	if err != nil {
+		return false, err
+	}
+
+	if len(secretNames) == 0 {
+		return false, nil
+	}
+
+	// List all BackupConfigs in the same namespace
+	backupConfigList := &v1beta1.BackupConfigList{}
+	if err := r.List(ctx, backupConfigList, client.InNamespace(backupConfig.Namespace)); err != nil {
+		return false, err
+	}
+
+	// Check if any other BackupConfig references the same secrets
+	for _, otherBC := range backupConfigList.Items {
+		// Skip the current BackupConfig and any that are being deleted
+		if otherBC.Name == backupConfig.Name || !otherBC.DeletionTimestamp.IsZero() {
+			continue
+		}
+
+		otherSecretNames, err := r.getReferencedSecretNames(&otherBC)
+		if err != nil {
+			logger.Error(err, "while getting referenced secret names from other BackupConfig",
+				"backupConfig", otherBC.Name)
+			continue
+		}
+
+		// Check if any secret is referenced by both BackupConfigs
+		for _, secretName := range secretNames {
+			for _, otherSecretName := range otherSecretNames {
+				if secretName == otherSecretName {
+					logger.Info("Secret is still in use by another BackupConfig",
+						"secretName", secretName,
+						"backupConfig", otherBC.Name)
+					return true, nil
+				}
+			}
+		}
+	}
+
+	return false, nil
+}
+
+// getReferencedSecretNames returns a list of secret names referenced by the BackupConfig
+func (r *BackupConfigReconciler) getReferencedSecretNames(backupConfig *v1beta1.BackupConfig) ([]string, error) {
+	secretNames := []string{}
+
+	// Check S3 storage secrets
+	if backupConfig.Spec.Storage.StorageType == v1beta1.StorageTypeS3 && backupConfig.Spec.Storage.S3 != nil {
+		if backupConfig.Spec.Storage.S3.AccessKeyIDRef != nil {
+			secretNames = append(secretNames, backupConfig.Spec.Storage.S3.AccessKeyIDRef.Name)
+		}
+
+		if backupConfig.Spec.Storage.S3.AccessKeySecretRef != nil {
+			secretNames = append(secretNames, backupConfig.Spec.Storage.S3.AccessKeySecretRef.Name)
+		}
+	}
+
+	// Check encryption secrets
+	if backupConfig.Spec.Encryption.Method != "" && backupConfig.Spec.Encryption.Method != "none" {
+		secretName := backupConfig.Spec.Encryption.ExistingEncryptionSecretName
+		if secretName == "" {
+			// If not explicitly specified, the secret name is derived from the BackupConfig name
+			secretName = fmt.Sprintf("%s-encryption", backupConfig.Name)
+		}
+		secretNames = append(secretNames, secretName)
+	}
+
+	// Remove duplicates
+	uniqueSecretNames := []string{}
+	secretMap := make(map[string]bool)
+
+	for _, name := range secretNames {
+		if _, exists := secretMap[name]; !exists {
+			secretMap[name] = true
+			uniqueSecretNames = append(uniqueSecretNames, name)
+		}
+	}
+
+	return uniqueSecretNames, nil
 }
