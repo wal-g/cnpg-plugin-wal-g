@@ -1,10 +1,12 @@
 #!/bin/bash
 set -euxo pipefail
 
+K8S_VERSION=${K8S_VERSION:-v1.32.2}
+
 cd "$(dirname "$0")"
 
 # Create kind cluster
-kind create cluster --config ./kind.yaml 
+kind create cluster --config ./kind.yaml --image "kindest/node:${K8S_VERSION}"
 
 # Install cilium
 helm repo add cilium https://helm.cilium.io/
@@ -19,7 +21,7 @@ kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/
 
 # Install CNPG
 kubectl apply --server-side -f \
-  https://raw.githubusercontent.com/cloudnative-pg/cloudnative-pg/release-1.26/releases/cnpg-1.26.0.yaml
+  https://raw.githubusercontent.com/cloudnative-pg/cloudnative-pg/release-1.27/releases/cnpg-1.27.0.yaml
 
 # Wait for CNPG manager deployment is ready
 kubectl rollout status deployment/cnpg-controller-manager -n cnpg-system --timeout=180s
