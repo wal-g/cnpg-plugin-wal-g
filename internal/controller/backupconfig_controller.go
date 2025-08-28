@@ -23,7 +23,9 @@ import (
 
 	cnpgv1 "github.com/cloudnative-pg/cloudnative-pg/api/v1"
 	"github.com/go-logr/logr"
+	"github.com/samber/lo"
 	v1beta1 "github.com/wal-g/cnpg-plugin-wal-g/api/v1beta1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -32,7 +34,8 @@ import (
 // BackupConfigReconciler reconciles a BackupConfig object
 type BackupConfigReconciler struct {
 	client.Client
-	Scheme *runtime.Scheme
+	Scheme                   *runtime.Scheme
+	BackupDeletionController *BackupDeletionController
 }
 
 // Alphabetical order to not repeat or miss permissions
@@ -63,53 +66,75 @@ func (r *BackupConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request
 
 	if !backupConfig.DeletionTimestamp.IsZero() {
 		// BackupConfig is marked for deletion
-
 		if !containsString(backupConfig.Finalizers, v1beta1.BackupConfigFinalizerName) {
 			return ctrl.Result{}, nil // Nothing to do if finalizer is not specified
 		}
 
 		// List all backups potentially referencing this backup config
 		backupList := cnpgv1.BackupList{}
-		if err := r.List(ctx, &backupList,
-			client.InNamespace(req.Namespace),
-		); err != nil {
+		if err := r.List(ctx, &backupList, client.InNamespace(req.Namespace)); err != nil {
 			return ctrl.Result{}, err
 		}
 
-		var foundRef bool
-		for i := range backupList.Items {
-			for _, owner := range backupList.Items[i].OwnerReferences {
-				if owner.Kind == "BackupConfig" &&
-					owner.Name == backupConfig.Name {
-					foundRef = true
-					break
-				}
-			}
-			if foundRef {
-				break
-			}
+		// Check if there is at leas one Backup resource with OwnerReference matching current Backup
+		foundChildBackup := lo.ContainsBy(backupList.Items, func(b cnpgv1.Backup) bool {
+			return lo.ContainsBy(b.OwnerReferences, func(owner metav1.OwnerReference) bool {
+				return owner.Kind == "BackupConfig" && owner.Name == backupConfig.Name
+			})
+		})
+
+		if foundChildBackup {
+			logger.Info("Blocking BackupConfig deletion: still has one or more dependent Backup, retrying in 30 seconds")
+			return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
 		}
 
-		if foundRef {
-			logger.Info("Blocking deletion: still has one or more dependent Backup")
-			return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
-		}
+		// Handle backup config cleanup finalizer
+		if containsString(backupConfig.Finalizers, v1beta1.BackupConfigFinalizerName) {
+			logger.Info("Enqueuing BackupConfig for cleanup", "backupConfig", backupConfig.Name)
 
-		// No child backups: remove finalizer
-		backupConfig.Finalizers = removeString(backupConfig.Finalizers, v1beta1.BackupConfigFinalizerName)
-		if err := r.Update(ctx, backupConfig); err != nil {
-			logger.Error(err, "while removing cleanup finalizer from BackupConfig")
-			return ctrl.Result{}, fmt.Errorf("while removing cleanup finalizer from BackupConfig: %w", err)
+			if err := r.BackupDeletionController.EnqueueBackupConfigDeletion(ctx, backupConfig); err != nil {
+				logger.Error(err, "Failed to enqueue BackupConfig for cleanup")
+				return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
+			}
+
+			// After handling the backup cleanup finalizer, requeue to handle the secret protection finalizer
+			return ctrl.Result{RequeueAfter: 45 * time.Second}, nil
 		}
 
 		return ctrl.Result{}, nil
+	}
+
+	// Add finalizers if they don't exist
+	finalizersChanged := false
+
+	if !containsString(backupConfig.Finalizers, v1beta1.BackupConfigFinalizerName) {
+		backupConfig.Finalizers = append(backupConfig.Finalizers, v1beta1.BackupConfigFinalizerName)
+		finalizersChanged = true
+	}
+
+	if finalizersChanged {
+		if err := r.Update(ctx, backupConfig); err != nil {
+			logger.Error(err, "while adding finalizers to BackupConfig")
+			return ctrl.Result{}, fmt.Errorf("while adding finalizers to BackupConfig: %w", err)
+		}
+	}
+
+	backupConfigSecrets := getSecretReferencesFromBackupConfig(backupConfig)
+	for _, secretRef := range backupConfigSecrets {
+		err := setFinalizerOnSecret(ctx, r.Client, secretRef)
+		if err != nil {
+			logger.Error(err, "Failed to set finalizer on secret", "secretName", secretRef.Name)
+			// continuing anyway
+		}
 	}
 
 	return ctrl.Result{}, nil
 }
 
 // SetupWithManager sets up the controller with the Manager.
-func (r *BackupConfigReconciler) SetupWithManager(mgr ctrl.Manager) error {
+func (r *BackupConfigReconciler) SetupWithManager(mgr ctrl.Manager, backupDeletionController *BackupDeletionController) error {
+	r.BackupDeletionController = backupDeletionController
+
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&v1beta1.BackupConfig{}).
 		Named("backupconfig").

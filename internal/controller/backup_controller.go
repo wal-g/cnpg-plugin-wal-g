@@ -168,15 +168,13 @@ func (r *BackupReconciler) reconcileRelatedBackupsMetadata(ctx context.Context, 
 	err := r.Get(ctx, client.ObjectKey{Namespace: backup.Namespace, Name: backup.Spec.Cluster.Name}, cluster)
 	// Tolerating non-existing cluster, this only blocks PG version evaluation
 	if err != nil && !apierrors.IsNotFound(err) {
-		logger.Error(err, "Failed to get Cluster for Backup")
-		return err
+		return fmt.Errorf("on reconcileRelatedBackupsMetadata: %w", err)
 	}
 
 	// Get BackupConfig
 	backupConfig, err := v1beta1.GetBackupConfigForBackup(ctx, r.Client, backup)
 	if err != nil {
-		logger.Error(err, "while prefetching secrets data")
-		return err
+		return fmt.Errorf("on reconcileRelatedBackupsMetadata: %w", err)
 	}
 
 	_, err = r.reconcileBackupMetadata(ctx, backup, backupConfig, cluster)

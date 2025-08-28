@@ -201,6 +201,17 @@ func DeleteBackup(
 	return result, err
 }
 
+func DeleteAllBackupsAndWALsInStorage(
+	ctx context.Context,
+	backupConfig *v1beta1.BackupConfigWithSecrets,
+	pgMajorVersion int,
+) (*cmd.RunResult, error) {
+	return cmd.New("wal-g", "delete", "everything", "FORCE", "--confirm").
+		WithContext(ctx).
+		WithEnv(NewConfigFromBackupConfig(backupConfig, pgMajorVersion).ToEnvMap()).
+		Run()
+}
+
 // GetDependentBackups returns a list of backups that depend on the current backup.
 // This is determined by analyzing backup names, where delta backups include their base backup's WAL ID.
 // For example:

@@ -16,6 +16,7 @@ rules:
   - get
   - list
   - patch
+  - update
   - watch
 - apiGroups:
   - admissionregistration.k8s.io
