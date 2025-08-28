@@ -27,7 +27,7 @@ const BackupConfigFinalizerName = "cnpg-plugin-wal-g.yandex.cloud/backup-config-
 
 // Finalizer added to CNPG BackupConfig resources to protect Secrets from accidental deletion
 // It is used to ensure that Secrets are not deleted while they are still referenced by a BackupConfig
-const BackupConfigSecretFinalizerName = "cnpg-plugin-wal-g.yandex.cloud/used-by-backup-config"
+const BackupConfigSecretFinalizerName = "cnpg-plugin-wal-g.yandex.cloud/backup-config-secret-protection"
 
 // S3StorageConfig defines S3-specific configuration for object storage
 type S3StorageConfig struct {

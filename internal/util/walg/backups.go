@@ -206,7 +206,7 @@ func DeleteAllBackupsAndWALsInStorage(
 	backupConfig *v1beta1.BackupConfigWithSecrets,
 	pgMajorVersion int,
 ) (*cmd.RunResult, error) {
-	return cmd.New("wal-g", "delete", "everything", "--confirm").
+	return cmd.New("wal-g", "delete", "everything", "FORCE", "--confirm").
 		WithContext(ctx).
 		WithEnv(NewConfigFromBackupConfig(backupConfig, pgMajorVersion).ToEnvMap()).
 		Run()
