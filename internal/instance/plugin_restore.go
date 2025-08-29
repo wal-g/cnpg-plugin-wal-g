@@ -152,7 +152,7 @@ func (r RestoreJobHooksImpl) downloadBackupIntoDir(
 		return fmt.Errorf("backup request failed: no PG_MAJOR env variable specified")
 	}
 
-	result, err := cmd.New("wal-g", "backup-fetch", targetDir, walgBackupName).
+	result, err := cmd.New("wal-g", "backup-fetch", "--turbo", targetDir, walgBackupName).
 		WithContext(ctx).
 		WithEnv(walg.NewConfigFromBackupConfig(config, pgMajorVersion).ToEnvMap()).
 		Run()
