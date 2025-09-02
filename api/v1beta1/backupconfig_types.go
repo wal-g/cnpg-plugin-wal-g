@@ -51,8 +51,26 @@ type S3StorageConfig struct {
 	// "REDUCED_REDUNDANCY" for Reduced Redundancy.
 	StorageClass string `json:"storageClass,omitempty"`
 
+	// Custom CA certificate reference for S3 endpoint
+	// Can be specified in either ConfigMap or Secret
+	CustomCA *CustomCAReference `json:"customCA,omitempty"`
+
 	AccessKeyIDRef     *corev1.SecretKeySelector `json:"accessKeyId,omitempty"`
 	AccessKeySecretRef *corev1.SecretKeySelector `json:"accessKeySecret,omitempty"`
+}
+
+// CustomCAReference defines a reference to a custom CA certificate stored in a ConfigMap or Secret
+type CustomCAReference struct {
+	// Kind of the resource containing the CA certificate
+	// Can be either "ConfigMap" or "Secret"
+	// +kubebuilder:validation:Enum=ConfigMap;Secret
+	Kind string `json:"kind"`
+
+	// Name of the ConfigMap or Secret containing the CA certificate
+	Name string `json:"name"`
+
+	// Key in the ConfigMap or Secret containing the CA certificate
+	Key string `json:"key"`
 }
 
 type StorageType string

@@ -221,6 +221,32 @@ spec:
                         - key
                         type: object
                         x-kubernetes-map-type: atomic
+                      customCA:
+                        description: |-
+                          Custom CA certificate reference for S3 endpoint
+                          Can be specified in either ConfigMap or Secret
+                        properties:
+                          key:
+                            description: Key in the ConfigMap or Secret containing
+                              the CA certificate
+                            type: string
+                          kind:
+                            description: |-
+                              Kind of the resource containing the CA certificate
+                              Can be either "ConfigMap" or "Secret"
+                            enum:
+                            - ConfigMap
+                            - Secret
+                            type: string
+                          name:
+                            description: Name of the ConfigMap or Secret containing
+                              the CA certificate
+                            type: string
+                        required:
+                        - key
+                        - kind
+                        - name
+                        type: object
                       endpointUrl:
                         description: S3 endpoint url
                         type: string
