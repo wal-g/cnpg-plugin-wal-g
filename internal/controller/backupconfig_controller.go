@@ -47,6 +47,7 @@ type BackupConfigReconciler struct {
 // +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=rolebindings,verbs=create;patch;update;get;list;watch
 // +kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=roles,verbs=create;patch;update;get;list;watch
 // +kubebuilder:rbac:groups="",resources=secrets,verbs=create;patch;list;get;watch;delete
+// +kubebuilder:rbac:groups="",resources=configmaps,verbs=patch;update;list;get;watch
 // +kubebuilder:rbac:groups="apps",resources=deployments,verbs=get;create;delete;update;patch;list;watch
 
 // For more details, check Reconcile and its Result here:
