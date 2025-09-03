@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strconv"
 	"sync"
+	"time"
 
 	cnpgv1 "github.com/cloudnative-pg/cloudnative-pg/api/v1"
 	"github.com/go-logr/logr"
@@ -22,6 +23,10 @@ const (
 	ResourceTypeBackup ResourceType = "Backup"
 	// ResourceTypeBackupConfig represents a BackupConfig resource
 	ResourceTypeBackupConfig ResourceType = "BackupConfig"
+
+	// Timeout for resource cleanup, if exceeded - deletion process will be aborted and retried
+	// Needed to prevent stuck on deletion when incorrect BackupConfig / etc.
+	DeletionRequestTimeout time.Duration = 10 * time.Minute
 )
 
 // DeletionRequest represents a request to delete a resource
@@ -183,12 +188,15 @@ func (b *BackupDeletionController) processDeletionQueue(
 		case request := <-b.deletionQueues[queueKey]:
 			logger.Info("Processing deletion request", "type", request.Type, "key", request.Key)
 
+			ctxWithTimeout, cancel := context.WithTimeout(ctx, DeletionRequestTimeout)
+			defer cancel() // releases timeout resources if deletion completes before timeout elapses
+
 			var err error
 			switch request.Type {
 			case ResourceTypeBackup:
-				err = b.deleteWALGBackup(ctx, request.Key)
+				err = b.deleteWALGBackup(ctxWithTimeout, request.Key)
 			case ResourceTypeBackupConfig:
-				err = b.deleteBackupConfig(ctx, request.Key)
+				err = b.deleteBackupConfig(ctxWithTimeout, request.Key)
 			default:
 				err = fmt.Errorf("unknown resource type: %s", request.Type)
 			}

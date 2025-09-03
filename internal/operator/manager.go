@@ -270,6 +270,15 @@ func Start(ctx context.Context) error {
 		return err
 	}
 
+	// Register the ConfigMapReconciler
+	if err = (&controller.ConfigMapReconciler{
+		Client: mgr.GetClient(),
+		Scheme: mgr.GetScheme(),
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "ConfigMapReconciler")
+		return err
+	}
+
 	// nolint:goconst
 	kubeClient, err := client.New(mgr.GetConfig(), client.Options{Scheme: scheme})
 	if err != nil {
