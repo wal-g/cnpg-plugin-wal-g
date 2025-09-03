@@ -58,6 +58,7 @@ type Config struct {
 	WalgNetworkRateLimit              int    `json:"WALG_NETWORK_RATE_LIMIT,omitempty"`
 	WalgPgpKeyPath                    string `json:"WALG_PGP_KEY_PATH,omitempty"`
 	WalgPrefetchDir                   string `json:"WALG_PREFETCH_DIR,omitempty"`
+	WalgS3CACertFile                  string `json:"WALG_S3_CA_CERT_FILE,omitempty"`
 	WalgS3StorageClass                string `json:"WALG_S3_STORAGE_CLASS,omitempty"`
 	WalgTarDisableFsync               string `json:"WALG_TAR_DISABLE_FSYNC,omitempty"`
 	WalgUploadConcurrency             int    `json:"WALG_UPLOAD_CONCURRENCY,omitempty"`
@@ -97,6 +98,21 @@ func NewConfigFromBackupConfig(backupConfig *v1beta1.BackupConfigWithSecrets, pg
 		config.AWSS3ForcePathStyle = backupConfig.Spec.Storage.S3.ForcePathStyle
 		config.WaleS3Prefix = fmt.Sprintf("%s/%d", backupConfig.Spec.Storage.S3.Prefix, pgMajorVersion)
 		config.WalgS3StorageClass = backupConfig.Spec.Storage.S3.StorageClass
+
+		// Handle custom CA certificate if provided
+		if backupConfig.Spec.Storage.S3.CustomCA != nil && backupConfig.Spec.Storage.S3.CACertData != "" {
+			caFilePath, err := ensureCACertFile(
+				backupConfig.Namespace,
+				backupConfig.Name,
+				backupConfig.Spec.Storage.S3.CACertData,
+			)
+			if err != nil {
+				// Log the error but continue without CA certificate
+				panic(fmt.Sprintf("Warning: Failed to ensure CA certificate file: %s", err.Error()))
+			} else if caFilePath != "" {
+				config.WalgS3CACertFile = caFilePath
+			}
+		}
 	}
 
 	// Configure encryption if enabled

@@ -25,9 +25,13 @@ import (
 // It is used to ensure that backup removed from storage before Backup resource deleted
 const BackupConfigFinalizerName = "cnpg-plugin-wal-g.yandex.cloud/backup-config-cleanup"
 
-// Finalizer added to CNPG BackupConfig resources to protect Secrets from accidental deletion
+// Finalizer added to Secret resources referenced by BackupConfig to protect from accidental deletion
 // It is used to ensure that Secrets are not deleted while they are still referenced by a BackupConfig
 const BackupConfigSecretFinalizerName = "cnpg-plugin-wal-g.yandex.cloud/backup-config-secret-protection"
+
+// Finalizer added to ConfigMap resources referenced by BackupConfig to protect from accidental deletion
+// It is used to ensure that ConfigMap are not deleted while they are still referenced by a BackupConfig
+const BackupConfigCMFinalizerName = "cnpg-plugin-wal-g.yandex.cloud/backup-config-configmap-protection"
 
 // S3StorageConfig defines S3-specific configuration for object storage
 type S3StorageConfig struct {
@@ -51,8 +55,26 @@ type S3StorageConfig struct {
 	// "REDUCED_REDUNDANCY" for Reduced Redundancy.
 	StorageClass string `json:"storageClass,omitempty"`
 
+	// Custom CA certificate reference for S3 endpoint
+	// Can be specified in either ConfigMap or Secret
+	CustomCA *CustomCAReference `json:"customCA,omitempty"`
+
 	AccessKeyIDRef     *corev1.SecretKeySelector `json:"accessKeyId,omitempty"`
 	AccessKeySecretRef *corev1.SecretKeySelector `json:"accessKeySecret,omitempty"`
+}
+
+// CustomCAReference defines a reference to a custom CA certificate stored in a ConfigMap or Secret
+type CustomCAReference struct {
+	// Kind of the resource containing the CA certificate
+	// Can be either "ConfigMap" or "Secret"
+	// +kubebuilder:validation:Enum=ConfigMap;Secret
+	Kind string `json:"kind"`
+
+	// Name of the ConfigMap or Secret containing the CA certificate
+	Name string `json:"name"`
+
+	// Key in the ConfigMap or Secret containing the CA certificate
+	Key string `json:"key"`
 }
 
 type StorageType string

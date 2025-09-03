@@ -30,6 +30,7 @@ type S3StorageConfigWithSecrets struct {
 	S3StorageConfig
 	AccessKeyID     string
 	AccessKeySecret string
+	CACertData      string // Custom CA certificate data for S3 endpoint
 }
 
 // storageConfigWithSecrets defines object storage configuration extended with secrets data
@@ -156,10 +157,41 @@ func (b *BackupConfig) makeS3StorageConfigWithPrefilledSecrets(
 		return nil, err
 	}
 
+	// Create a deep copy of the S3StorageConfig to preserve all fields, including CustomCA
+	s3Config := b.Spec.Storage.S3.DeepCopy()
+
+	// Extract CA certificate data if CustomCA is specified
+	var caCertData string
+	if s3Config.CustomCA != nil {
+		var certData []byte
+		var err error
+
+		switch s3Config.CustomCA.Kind {
+		case "Secret":
+			certData, err = extractValueFromSecret(ctx, c, &v1.SecretKeySelector{
+				LocalObjectReference: v1.LocalObjectReference{Name: s3Config.CustomCA.Name},
+				Key:                  s3Config.CustomCA.Key,
+			}, b.Namespace)
+		case "ConfigMap":
+			certData, err = extractValueFromConfigMap(ctx, c, &v1.ConfigMapKeySelector{
+				LocalObjectReference: v1.LocalObjectReference{Name: s3Config.CustomCA.Name},
+				Key:                  s3Config.CustomCA.Key,
+			}, b.Namespace)
+		default:
+			return nil, fmt.Errorf("unsupported CustomCA kind: %s", s3Config.CustomCA.Kind)
+		}
+
+		if err != nil {
+			return nil, fmt.Errorf("failed to extract CA certificate data: %w", err)
+		}
+		caCertData = string(certData)
+	}
+
 	return &S3StorageConfigWithSecrets{
-		S3StorageConfig: *b.Spec.Storage.S3.DeepCopy(),
+		S3StorageConfig: *s3Config,
 		AccessKeyID:     string(accessKeyID),
 		AccessKeySecret: string(accessKeySecret),
+		CACertData:      caCertData,
 	}, nil
 }
 
@@ -185,4 +217,29 @@ func extractValueFromSecret(
 	}
 
 	return value, nil
+}
+
+// extractValueFromConfigMap extracts a value from a ConfigMap
+func extractValueFromConfigMap(
+	ctx context.Context,
+	c client.Client,
+	configMapReference *v1.ConfigMapKeySelector,
+	namespace string,
+) ([]byte, error) {
+	if configMapReference == nil {
+		return nil, fmt.Errorf("configMapReference is nil")
+	}
+
+	configMap := &v1.ConfigMap{}
+	err := c.Get(ctx, client.ObjectKey{Namespace: namespace, Name: configMapReference.Name}, configMap)
+	if err != nil {
+		return nil, fmt.Errorf("while getting ConfigMap %s: %w", configMapReference.Name, err)
+	}
+
+	value, ok := configMap.Data[configMapReference.Key]
+	if !ok {
+		return nil, fmt.Errorf("missing key %s, inside ConfigMap %s", configMapReference.Key, configMapReference.Name)
+	}
+
+	return []byte(value), nil
 }

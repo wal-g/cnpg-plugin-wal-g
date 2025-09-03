@@ -32,17 +32,25 @@ func getSecretReferencesFromBackupConfig(backupConfig *v1beta1.BackupConfig) []t
 
 	// Add S3 storage credentials if they exist
 	if backupConfig.Spec.Storage.S3 != nil {
-		if backupConfig.Spec.Storage.S3.AccessKeyIDRef != nil {
+		s3 := backupConfig.Spec.Storage.S3
+		if s3.AccessKeyIDRef != nil {
 			secretRefs = append(secretRefs, types.NamespacedName{
 				Namespace: backupConfig.Namespace,
-				Name:      backupConfig.Spec.Storage.S3.AccessKeyIDRef.Name,
+				Name:      s3.AccessKeyIDRef.Name,
 			})
 		}
 
-		if backupConfig.Spec.Storage.S3.AccessKeySecretRef != nil {
+		if s3.AccessKeySecretRef != nil {
 			secretRefs = append(secretRefs, types.NamespacedName{
 				Namespace: backupConfig.Namespace,
-				Name:      backupConfig.Spec.Storage.S3.AccessKeySecretRef.Name,
+				Name:      s3.AccessKeySecretRef.Name,
+			})
+		}
+
+		if s3.CustomCA != nil && s3.CustomCA.Kind == "Secret" {
+			secretRefs = append(secretRefs, types.NamespacedName{
+				Namespace: backupConfig.Namespace,
+				Name:      s3.CustomCA.Name,
 			})
 		}
 	}
@@ -82,38 +90,4 @@ func isSecretReferencedByAnyBackupConfig(
 	}
 
 	return false, nil
-}
-
-// setFinalizerOnSecret sets the BackupConfigSecretFinalizerName finalizer on a secret
-func setFinalizerOnSecret(
-	ctx context.Context,
-	c client.Client,
-	secretRef types.NamespacedName,
-) error {
-	secret := &corev1.Secret{}
-	if err := c.Get(ctx, secretRef, secret); err != nil {
-		return client.IgnoreNotFound(err)
-	}
-
-	if containsString(secret.Finalizers, v1beta1.BackupConfigSecretFinalizerName) {
-		return nil
-	}
-
-	secret.Finalizers = append(secret.Finalizers, v1beta1.BackupConfigSecretFinalizerName)
-	return c.Update(ctx, secret)
-}
-
-// removeFinalizerFromSecret removes the BackupConfigSecretFinalizerName finalizer from a secret
-// if it's no longer referenced by any BackupConfig
-func removeFinalizerFromSecret(
-	ctx context.Context,
-	c client.Client,
-	secret *corev1.Secret,
-) error {
-	if !containsString(secret.Finalizers, v1beta1.BackupConfigSecretFinalizerName) {
-		return nil
-	}
-
-	secret.Finalizers = removeString(secret.Finalizers, v1beta1.BackupConfigSecretFinalizerName)
-	return c.Update(ctx, secret)
 }

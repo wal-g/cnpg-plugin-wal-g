@@ -88,6 +88,7 @@ func Start(ctx context.Context) error {
 			Cache: &client.CacheOptions{
 				DisableFor: []client.Object{
 					&corev1.Secret{},
+					&corev1.ConfigMap{},
 					&v1beta1.BackupConfig{},
 					&cnpgv1.Cluster{},
 					&cnpgv1.Backup{},

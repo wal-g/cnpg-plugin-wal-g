@@ -166,7 +166,7 @@ docker-buildx: ## Build and push docker image for the manager for cross-platform
 		--build-arg GIT_TAG="$(GIT_TAG)" \
 		--build-arg GIT_COMMIT="$(GIT_COMMIT)" \
 		--target=runtime \
-		--tag ${DOCKER_IMG} -f Dockerfile .
+		--tag ${DOCKER_IMG}:${DOCKER_TAG} -f Dockerfile .
 
 .PHONY: build-installer
 build-installer: manifests generate kustomize ## Generate a consolidated YAML with CRDs and deployment.

@@ -36,12 +36,21 @@ func BuildRoleForBackupConfigs(
 ) {
 	backupConfigNames := stringset.New()
 	secretsNames := stringset.New()
+	configMapsNames := stringset.New()
 
 	for i := range backupConfigs {
 		backupConfigNames.Put(backupConfigs[i].Name)
 		if backupConfigs[i].Spec.Storage.StorageType == v1beta1.StorageTypeS3 {
 			secretsNames.Put(backupConfigs[i].Spec.Storage.S3.AccessKeyIDRef.Name)
 			secretsNames.Put(backupConfigs[i].Spec.Storage.S3.AccessKeySecretRef.Name)
+
+			if backupConfigs[i].Spec.Storage.S3.CustomCA != nil {
+				if backupConfigs[i].Spec.Storage.S3.CustomCA.Kind == "Secret" {
+					secretsNames.Put(backupConfigs[i].Spec.Storage.S3.CustomCA.Name)
+				} else {
+					configMapsNames.Put(backupConfigs[i].Spec.Storage.S3.CustomCA.Name)
+				}
+			}
 		}
 
 		// Add encryption secrets to the list of secrets that need permissions
@@ -73,6 +82,12 @@ func BuildRoleForBackupConfigs(
 			Verbs:         []string{"watch", "get", "list"},
 			Resources:     []string{"secrets"},
 			ResourceNames: secretsNames.ToSortedList(),
+		},
+		{
+			APIGroups:     []string{""},
+			Verbs:         []string{"watch", "get", "list"},
+			Resources:     []string{"configmaps"},
+			ResourceNames: configMapsNames.ToSortedList(),
 		},
 	}
 }

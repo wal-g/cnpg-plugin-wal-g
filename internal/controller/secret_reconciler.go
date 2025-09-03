@@ -27,6 +27,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
 
 // SecretReconciler reconciles Secret objects to protect them from accidental deletion
@@ -67,8 +68,11 @@ func (r *SecretReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 			return ctrl.Result{RequeueAfter: 1 * time.Minute}, nil
 		}
 
-		if err := removeFinalizerFromSecret(ctx, r.Client, secret); err != nil {
-			return ctrl.Result{}, fmt.Errorf("while removing finalizer from secret %s: %w", secret.Name, err)
+		// Remove finalizer and update Secret, if it is needed
+		if controllerutil.RemoveFinalizer(secret, v1beta1.BackupConfigSecretFinalizerName) {
+			if err := r.Update(ctx, secret); err != nil {
+				return ctrl.Result{}, fmt.Errorf("while removing finalizer from secret %s: %w", secret.Name, err)
+			}
 		}
 		return ctrl.Result{}, nil
 	}
@@ -81,9 +85,9 @@ func (r *SecretReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 
 	// If the Secret is not referenced and has our finalizer, remove it
 	// If the Secret IS referenced - BackupConfig reconciler should add finalizer on Secret
-	if !isReferenced && containsString(secret.Finalizers, v1beta1.BackupConfigSecretFinalizerName) {
+	if !isReferenced && controllerutil.RemoveFinalizer(secret, v1beta1.BackupConfigSecretFinalizerName) {
 		logger.Info("Removing finalizer from Secret", "secret", secret.Name)
-		if err := removeFinalizerFromSecret(ctx, r.Client, secret); err != nil {
+		if err := r.Update(ctx, secret); err != nil {
 			return ctrl.Result{}, err
 		}
 	}
