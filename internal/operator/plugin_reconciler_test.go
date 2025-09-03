@@ -136,6 +136,11 @@ var _ = Describe("ReconcilerImplementation", func() {
 								},
 								Key: "access-key-secret",
 							},
+							CustomCA: &v1beta1.CustomCAReference{
+								Kind: "ConfigMap",
+								Name: "test-ca-configmap",
+								Key:  "ca.crt",
+							},
 						},
 					},
 					Retention: v1beta1.BackupRetentionConfig{
@@ -187,7 +192,7 @@ var _ = Describe("ReconcilerImplementation", func() {
 				Name:      controller.GetRoleNameForBackupConfig(testCluster.Name),
 			}, &role)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(role.Rules).To(HaveLen(3))
+			Expect(role.Rules).To(HaveLen(4))
 
 			// Check if the Role has the correct rules
 			Expect(role.Rules[0].APIGroups).To(ContainElement("cnpg-extensions.yandex.cloud"))
@@ -203,6 +208,11 @@ var _ = Describe("ReconcilerImplementation", func() {
 			Expect(role.Rules[2].Resources).To(ContainElement("secrets"))
 			Expect(role.Rules[2].Verbs).To(ContainElements("watch", "get", "list"))
 			Expect(role.Rules[2].ResourceNames).To(ContainElement("test-secret"))
+
+			Expect(role.Rules[3].APIGroups).To(ContainElement(""))
+			Expect(role.Rules[3].Resources).To(ContainElement("configmaps"))
+			Expect(role.Rules[3].Verbs).To(ContainElements("watch", "get", "list"))
+			Expect(role.Rules[3].ResourceNames).To(ContainElement("test-ca-configmap"))
 
 			// Check if RoleBinding was created
 			var roleBinding rbacv1.RoleBinding
@@ -274,7 +284,7 @@ var _ = Describe("ReconcilerImplementation", func() {
 				Name:      controller.GetRoleNameForBackupConfig(testCluster.Name),
 			}, &role)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(role.Rules).To(HaveLen(3))
+			Expect(role.Rules).To(HaveLen(4))
 			Expect(role.Rules[2].ResourceNames).To(ContainElement("new-test-secret"))
 		})
 
@@ -351,7 +361,7 @@ var _ = Describe("ReconcilerImplementation", func() {
 				Name:      controller.GetRoleNameForBackupConfig(testCluster.Name),
 			}, &role)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(role.Rules).To(HaveLen(3))
+			Expect(role.Rules).To(HaveLen(4))
 			Expect(role.Rules[0].ResourceNames).To(ContainElements("test-backup-config", "recovery-backup-config"))
 			Expect(role.Rules[2].ResourceNames).To(ContainElements("test-secret", "recovery-secret"))
 		})
@@ -449,7 +459,7 @@ var _ = Describe("ReconcilerImplementation", func() {
 				Name:      controller.GetRoleNameForBackupConfig(testCluster.Name),
 			}, &role)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(role.Rules).To(HaveLen(3))
+			Expect(role.Rules).To(HaveLen(4))
 		})
 
 		It("should update an existing Role when it changes", func() {
@@ -473,7 +483,7 @@ var _ = Describe("ReconcilerImplementation", func() {
 				Name:      controller.GetRoleNameForBackupConfig(testCluster.Name),
 			}, &role)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(role.Rules).To(HaveLen(3))
+			Expect(role.Rules).To(HaveLen(4))
 			Expect(role.Rules[2].ResourceNames).To(ContainElement("new-test-secret"))
 		})
 	})

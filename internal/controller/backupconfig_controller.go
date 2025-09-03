@@ -25,10 +25,12 @@ import (
 	"github.com/go-logr/logr"
 	"github.com/samber/lo"
 	v1beta1 "github.com/wal-g/cnpg-plugin-wal-g/api/v1beta1"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
 
 // BackupConfigReconciler reconciles a BackupConfig object
@@ -122,10 +124,33 @@ func (r *BackupConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request
 
 	backupConfigSecrets := getSecretReferencesFromBackupConfig(backupConfig)
 	for _, secretRef := range backupConfigSecrets {
-		err := setFinalizerOnSecret(ctx, r.Client, secretRef)
-		if err != nil {
-			logger.Error(err, "Failed to set finalizer on secret", "secretName", secretRef.Name)
-			// continuing anyway
+		secret := &corev1.Secret{}
+		if err := r.Get(ctx, secretRef, secret); err != nil {
+			logger.Error(err, "Failed to get secret referenced by BackupConfig", "secret.Name", secretRef.Name)
+			continue // process other secrets
+		}
+		if !controllerutil.AddFinalizer(secret, v1beta1.BackupConfigSecretFinalizerName) {
+			continue // finalizer already exists, no need to update Secret
+		}
+		if err := r.Update(ctx, secret); err != nil {
+			logger.Error(err, "Failed to update secret referenced by BackupConfig", "secret.Name", secretRef.Name)
+			continue // process other secrets
+		}
+	}
+
+	backupConfigCMs := getConfigMapReferencesFromBackupConfig(backupConfig)
+	for _, cmRef := range backupConfigCMs {
+		configMap := &corev1.ConfigMap{}
+		if err := r.Get(ctx, cmRef, configMap); err != nil {
+			logger.Error(err, "Failed to get configmap referenced by BackupConfig", "configmap.Name", cmRef.Name)
+			continue // process other configmaps
+		}
+		if !controllerutil.AddFinalizer(configMap, v1beta1.BackupConfigCMFinalizerName) {
+			continue // finalizer already exists, no need to update ConfigMap
+		}
+		if err := r.Update(ctx, configMap); err != nil {
+			logger.Error(err, "Failed to update configmap referenced by BackupConfig", "configmap.Name", cmRef.Name)
+			continue // process other configmaps
 		}
 	}
 

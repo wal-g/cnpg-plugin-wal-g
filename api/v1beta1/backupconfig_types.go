@@ -25,9 +25,13 @@ import (
 // It is used to ensure that backup removed from storage before Backup resource deleted
 const BackupConfigFinalizerName = "cnpg-plugin-wal-g.yandex.cloud/backup-config-cleanup"
 
-// Finalizer added to CNPG BackupConfig resources to protect Secrets from accidental deletion
+// Finalizer added to Secret resources referenced by BackupConfig to protect from accidental deletion
 // It is used to ensure that Secrets are not deleted while they are still referenced by a BackupConfig
 const BackupConfigSecretFinalizerName = "cnpg-plugin-wal-g.yandex.cloud/backup-config-secret-protection"
+
+// Finalizer added to ConfigMap resources referenced by BackupConfig to protect from accidental deletion
+// It is used to ensure that ConfigMap are not deleted while they are still referenced by a BackupConfig
+const BackupConfigCMFinalizerName = "cnpg-plugin-wal-g.yandex.cloud/backup-config-configmap-protection"
 
 // S3StorageConfig defines S3-specific configuration for object storage
 type S3StorageConfig struct {
