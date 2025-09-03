@@ -122,6 +122,14 @@ func (r *BackupConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		}
 	}
 
+	r.reconcileReferencedSecrets(ctx, backupConfig)
+	r.reconcileReferencedConfigMaps(ctx, backupConfig)
+
+	return ctrl.Result{}, nil
+}
+
+func (r *BackupConfigReconciler) reconcileReferencedSecrets(ctx context.Context, backupConfig *v1beta1.BackupConfig) {
+	logger := logr.FromContextOrDiscard(ctx)
 	backupConfigSecrets := getSecretReferencesFromBackupConfig(backupConfig)
 	for _, secretRef := range backupConfigSecrets {
 		secret := &corev1.Secret{}
@@ -137,7 +145,10 @@ func (r *BackupConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request
 			continue // process other secrets
 		}
 	}
+}
 
+func (r *BackupConfigReconciler) reconcileReferencedConfigMaps(ctx context.Context, backupConfig *v1beta1.BackupConfig) {
+	logger := logr.FromContextOrDiscard(ctx)
 	backupConfigCMs := getConfigMapReferencesFromBackupConfig(backupConfig)
 	for _, cmRef := range backupConfigCMs {
 		configMap := &corev1.ConfigMap{}
@@ -153,8 +164,6 @@ func (r *BackupConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request
 			continue // process other configmaps
 		}
 	}
-
-	return ctrl.Result{}, nil
 }
 
 // SetupWithManager sets up the controller with the Manager.
