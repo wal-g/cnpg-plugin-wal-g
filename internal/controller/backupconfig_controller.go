@@ -100,8 +100,8 @@ func (r *BackupConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request
 				return ctrl.Result{RequeueAfter: 5 * time.Second}, nil
 			}
 
-			// After handling the backup cleanup finalizer, requeue to handle the secret protection finalizer
-			return ctrl.Result{RequeueAfter: 45 * time.Second}, nil
+			// Requeue with bigger timeout than  to handle if backup needs retry deletion
+			return ctrl.Result{RequeueAfter: DeletionRequestTimeout + 2*time.Minute}, nil
 		}
 
 		return ctrl.Result{}, nil
