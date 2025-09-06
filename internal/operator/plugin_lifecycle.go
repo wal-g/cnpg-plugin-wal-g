@@ -30,6 +30,7 @@ import (
 	"github.com/go-logr/logr"
 	"github.com/spf13/viper"
 	"github.com/wal-g/cnpg-plugin-wal-g/api/v1beta1"
+	"github.com/wal-g/cnpg-plugin-wal-g/internal/common"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/utils/ptr"
@@ -319,7 +320,9 @@ func reconcilePodSpecWithPluginSidecar(
 		}
 	}
 
-	if err := injectPluginSidecarPodSpec(spec, &sidecarConfig, jobRole); err != nil {
+	restartPolicy := common.GetInitContainerRestartPolicy(cluster)
+
+	if err := injectPluginSidecarPodSpec(spec, &sidecarConfig, jobRole, restartPolicy); err != nil {
 		return err
 	}
 
@@ -335,6 +338,7 @@ func injectPluginSidecarPodSpec(
 	spec *corev1.PodSpec,
 	sidecar *corev1.Container,
 	mainContainerName string,
+	restartPolicy *corev1.ContainerRestartPolicy,
 ) error {
 	injectPluginVolumePodSpec(spec, mainContainerName)
 	sidecar = sidecar.DeepCopy()
@@ -366,7 +370,11 @@ func injectPluginSidecarPodSpec(
 
 	// Do not modify the passed sidecar definition
 	sidecar.VolumeMounts = append(sidecar.VolumeMounts, volumeMounts...)
-	sidecar.RestartPolicy = ptr.To(corev1.ContainerRestartPolicyAlways)
+
+	if restartPolicy != nil {
+		sidecar.RestartPolicy = restartPolicy
+	}
+
 	spec.InitContainers = append(spec.InitContainers, *sidecar)
 	return nil
 }
