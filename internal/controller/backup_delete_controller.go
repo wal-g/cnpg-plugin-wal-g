@@ -11,6 +11,7 @@ import (
 	"github.com/go-logr/logr"
 	"github.com/wal-g/cnpg-plugin-wal-g/api/v1beta1"
 	"github.com/wal-g/cnpg-plugin-wal-g/internal/util/walg"
+	"golang.org/x/sync/semaphore"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -46,17 +47,20 @@ type BackupDeletionController struct {
 	// Deletion queues, each BackupConfig should have its own queue to make its deletions serialized
 	// Key - BackupConfig.Namespace + "/" + BackupConfig.Name
 	// Values - DeletionRequest objects
-	deletionQueues  map[string](chan DeletionRequest)
-	queueMX         sync.Mutex
-	queueCtxCancels map[string]context.CancelFunc // Cancel functions for queue processing goroutines contexts
+	deletionQueues    map[string](chan DeletionRequest)
+	queueMX           sync.Mutex
+	queueCtxCancels   map[string]context.CancelFunc // Cancel functions for queue processing goroutines contexts
+	deletionSemaphore *semaphore.Weighted
 }
 
 // NewBackupDeletionController creates a new BackupDeletionController
 func NewBackupDeletionController(client client.Client) *BackupDeletionController {
+	deletionSemaphore := semaphore.NewWeighted(int64(10))
 	return &BackupDeletionController{
-		Client:          client,
-		deletionQueues:  make(map[string]chan DeletionRequest),
-		queueCtxCancels: map[string]context.CancelFunc{},
+		Client:            client,
+		deletionQueues:    make(map[string]chan DeletionRequest),
+		queueCtxCancels:   map[string]context.CancelFunc{},
+		deletionSemaphore: deletionSemaphore,
 	}
 }
 
@@ -194,6 +198,7 @@ func (b *BackupDeletionController) processDeletionQueue(
 			var err error
 			switch request.Type {
 			case ResourceTypeBackup:
+				logger.Info("Dequeued wal-g backup for deletion", "backup", request.Key)
 				err = b.deleteWALGBackup(ctxWithTimeout, request.Key)
 			case ResourceTypeBackupConfig:
 				err = b.deleteBackupConfig(ctxWithTimeout, request.Key)
@@ -211,8 +216,15 @@ func (b *BackupDeletionController) processDeletionQueue(
 // deleteWALGBackup deletes the physical backup via WAL-G (could be long running) and removes finalizer from Backup resource after successful deletion
 func (b *BackupDeletionController) deleteWALGBackup(ctx context.Context, backupKey client.ObjectKey) error {
 	logger := logr.FromContextOrDiscard(ctx)
+	err := b.deletionSemaphore.Acquire(ctx, 1)
+	if err != nil {
+		return fmt.Errorf("acquire deletion semaphore for backup %v: %w", backupKey, err)
+	}
+	defer b.deletionSemaphore.Release(1)
+
+	logger.Info("Started processing wal-g backup deletion", "backup", backupKey)
 	backup := &cnpgv1.Backup{}
-	err := b.Get(ctx, backupKey, backup)
+	err = b.Get(ctx, backupKey, backup)
 	if err != nil {
 		return fmt.Errorf("while getting backup %v: %w", backupKey, err)
 	}
