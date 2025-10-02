@@ -686,7 +686,8 @@ var _ = Describe("LifecycleImplementation", func() {
 				Image: sidecarImageString,
 			}
 
-			err := injectPluginSidecarPodSpec(podSpec, sidecar, "postgres")
+			policy := corev1.ContainerRestartPolicyAlways
+			err := injectPluginSidecarPodSpec(podSpec, sidecar, "postgres", &policy)
 			Expect(err).NotTo(HaveOccurred())
 
 			// Check that the sidecar container was added
@@ -724,7 +725,8 @@ var _ = Describe("LifecycleImplementation", func() {
 				Image: sidecarImageString,
 			}
 
-			err := injectPluginSidecarPodSpec(podSpec, sidecar, "postgres")
+			policy := corev1.ContainerRestartPolicyAlways
+			err := injectPluginSidecarPodSpec(podSpec, sidecar, "postgres", &policy)
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(Equal("main container not found"))
 		})
@@ -748,7 +750,8 @@ var _ = Describe("LifecycleImplementation", func() {
 				Image: sidecarImageString,
 			}
 
-			err := injectPluginSidecarPodSpec(podSpec, sidecar, "postgres")
+			policy := corev1.ContainerRestartPolicyAlways
+			err := injectPluginSidecarPodSpec(podSpec, sidecar, "postgres", &policy)
 			Expect(err).NotTo(HaveOccurred())
 
 			// Check that no additional sidecar was added
@@ -851,6 +854,93 @@ var _ = Describe("LifecycleImplementation", func() {
 
 			role := getCNPGJobRole(job)
 			Expect(role).To(Equal(""))
+		})
+	})
+
+	Describe("GetInitContainerRestartPolicy", func() {
+		It("should handle sidecarRestartPolicy parameter correctly", func() {
+			// Test Always
+			clusterAlways := &cnpgv1.Cluster{
+				Spec: cnpgv1.ClusterSpec{
+					Plugins: []cnpgv1.PluginConfiguration{
+						{
+							Name: common.PluginName,
+							Parameters: map[string]string{
+								"sidecarRestartPolicy": "Always",
+							},
+						},
+					},
+				},
+			}
+
+			policy := common.GetInitContainerRestartPolicy(clusterAlways)
+			Expect(policy).NotTo(BeNil())
+			Expect(*policy).To(Equal(corev1.ContainerRestartPolicyAlways))
+
+			// Test unset
+			clusterUnset := &cnpgv1.Cluster{
+				Spec: cnpgv1.ClusterSpec{
+					Plugins: []cnpgv1.PluginConfiguration{
+						{
+							Name: common.PluginName,
+							Parameters: map[string]string{
+								"sidecarRestartPolicy": "unset",
+							},
+						},
+					},
+				},
+			}
+
+			policy = common.GetInitContainerRestartPolicy(clusterUnset)
+			Expect(policy).To(BeNil())
+		})
+	})
+
+	Describe("injectPluginSidecarPodSpec with restart policy", func() {
+		var (
+			podSpec  *corev1.PodSpec
+			sidecar  *corev1.Container
+			mainName string
+		)
+
+		BeforeEach(func() {
+			podSpec = &corev1.PodSpec{
+				Containers: []corev1.Container{
+					{
+						Name: "postgres",
+						VolumeMounts: []corev1.VolumeMount{
+							{
+								Name:      "pgdata",
+								MountPath: "/var/lib/postgresql/data",
+							},
+						},
+					},
+				},
+			}
+
+			sidecar = &corev1.Container{
+				Name:  "plugin-yandex-extensions",
+				Image: "test-image:latest",
+			}
+
+			mainName = "postgres"
+		})
+
+		It("should handle restart policy correctly", func() {
+			// Test with restart policy
+			policy := corev1.ContainerRestartPolicyAlways
+			err := injectPluginSidecarPodSpec(podSpec, sidecar, mainName, &policy)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(podSpec.InitContainers).To(HaveLen(1))
+			Expect(podSpec.InitContainers[0].RestartPolicy).NotTo(BeNil())
+			Expect(*podSpec.InitContainers[0].RestartPolicy).To(Equal(corev1.ContainerRestartPolicyAlways))
+
+			// Reset and test without restart policy
+			podSpec.InitContainers = nil
+			err = injectPluginSidecarPodSpec(podSpec, sidecar, mainName, nil)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(podSpec.InitContainers).To(HaveLen(1))
+			Expect(podSpec.InitContainers[0].RestartPolicy).To(BeNil())
 		})
 	})
 })
