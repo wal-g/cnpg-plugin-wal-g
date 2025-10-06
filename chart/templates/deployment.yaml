@@ -69,6 +69,9 @@ spec:
             name: cnpgi-client
           - mountPath: /run/secrets/cnpg-plugin-wal-g/webhook
             name: webhook-certificates
+      {{- if .Values.priorityClassName }}
+      priorityClassName: {{ .Values.priorityClassName }}
+      {{- end }}
       volumes:
       - name: cnpgi-server
         secret:
