@@ -275,6 +275,15 @@ spec:
                 required:
                 - type
                 type: object
+              tarDisableFsync:
+                description: 'Disable calling fsync after writing files when extracting
+                  tar files. Default: false.'
+                type: boolean
+              tarSizeThreshold:
+                description: 'Threshold in bytes is size of one backup bundle. Default:
+                  1073741823.'
+                format: int64
+                type: integer
               uploadConcurrency:
                 description: How many concurrency streams to use during backup uploading.
                   Default value is evaluated at runtime
