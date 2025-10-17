@@ -112,6 +112,11 @@ func (in *BackupConfigSpec) DeepCopyInto(out *BackupConfigSpec) {
 		*out = new(int)
 		**out = **in
 	}
+	if in.TarSizeThreshold != nil {
+		in, out := &in.TarSizeThreshold, &out.TarSizeThreshold
+		*out = new(int64)
+		**out = **in
+	}
 	out.Retention = in.Retention
 	in.Storage.DeepCopyInto(&out.Storage)
 	in.Resources.DeepCopyInto(&out.Resources)

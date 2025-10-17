@@ -112,6 +112,12 @@ type BackupConfigSpec struct {
 	// Determines how many delta backups can be between full backups. Defaults to 0.
 	DeltaMaxSteps int `json:"deltaMaxSteps,omitempty"`
 
+	// Disable calling fsync after writing files when extracting tar files. Default: false.
+	TarDisableFsync bool `json:"tarDisableFsync,omitempty"`
+
+	// Threshold in bytes is size of one backup bundle. Default: 1073741823.
+	TarSizeThreshold *int64 `json:"tarSizeThreshold,omitempty"`
+
 	// Backups retention configuration
 	Retention BackupRetentionConfig `json:"retention,omitempty"`
 

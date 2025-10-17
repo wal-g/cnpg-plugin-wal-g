@@ -61,6 +61,7 @@ type Config struct {
 	WalgS3CACertFile                  string `json:"WALG_S3_CA_CERT_FILE,omitempty"`
 	WalgS3StorageClass                string `json:"WALG_S3_STORAGE_CLASS,omitempty"`
 	WalgTarDisableFsync               string `json:"WALG_TAR_DISABLE_FSYNC,omitempty"`
+	WalgTarSizeThreshold              int64  `json:"WALG_TAR_SIZE_THRESHOLD,omitempty"`
 	WalgUploadConcurrency             int    `json:"WALG_UPLOAD_CONCURRENCY,omitempty"`
 	WalgUploadDiskConcurrency         int    `json:"WALG_UPLOAD_DISK_CONCURRENCY,omitempty"`
 }
@@ -124,6 +125,7 @@ func NewConfigFromBackupConfig(backupConfig *v1beta1.BackupConfigWithSecrets, pg
 	}
 	config.WalgDeltaMaxSteps = backupConfig.Spec.DeltaMaxSteps
 	config.WalgDownloadFileRetries = backupConfig.Spec.DownloadFileRetries
+	config.WalgTarDisableFsync = strconv.FormatBool(backupConfig.Spec.TarDisableFsync)
 
 	if backupConfig.Spec.DownloadConcurrency != nil {
 		config.WalgDownloadConcurrency = *backupConfig.Spec.DownloadConcurrency
@@ -139,6 +141,9 @@ func NewConfigFromBackupConfig(backupConfig *v1beta1.BackupConfigWithSecrets, pg
 	}
 	if backupConfig.Spec.UploadDiskConcurrency != nil {
 		config.WalgUploadDiskConcurrency = *backupConfig.Spec.UploadDiskConcurrency
+	}
+	if backupConfig.Spec.TarSizeThreshold != nil {
+		config.WalgTarSizeThreshold = *backupConfig.Spec.TarSizeThreshold
 	}
 	return &config
 }
@@ -198,7 +203,7 @@ func (c *Config) ToEnvMap() map[string]string {
 		}
 
 		switch fieldValueKind {
-		case reflect.Int:
+		case reflect.Int, reflect.Int64:
 			fieldValue = strconv.FormatInt(val.Field(i).Int(), 10)
 		case reflect.String:
 			fieldValue = val.Field(i).String()
