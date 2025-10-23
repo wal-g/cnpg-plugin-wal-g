@@ -1,0 +1,27 @@
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: cluster-example
+spec:
+  instances: 3
+  plugins:
+  - name: cnpg-extensions.yandex.cloud      # Should always be "cnpg-extensions.yandex.cloud" for wal-g plugin
+    isWALArchiver: true                     # Set to true to enable continuous WAL archiving
+    parameters:
+      backupConfig: example-backup-config   # Name of BackupConfig used to create backups
+  storage:
+    size: 1Gi
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: ScheduledBackup
+metadata:
+  name: backup-example
+spec:
+  schedule: "0 */15 * * * *"                # Each 15 minutes create backup
+  backupOwnerReference: self                # Important: use "self" to make BackupConfig retention work!
+  cluster:
+    name: cluster-example                   # Name of cluster to create backups from
+  method: plugin                            # Should always be "plugin" to make use wal-g plugin
+  pluginConfiguration:
+    name: cnpg-extensions.yandex.cloud      # Should always be "cnpg-extensions.yandex.cloud" for wal-g plugin
+  immediate: true                           # Create Backup immediately after ScheduledBackup creation

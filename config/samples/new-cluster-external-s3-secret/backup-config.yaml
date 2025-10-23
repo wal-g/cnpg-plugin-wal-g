@@ -1,0 +1,43 @@
+apiVersion: cnpg-extensions.yandex.cloud/v1beta1
+kind: BackupConfig
+metadata:
+  name: example-backup-config
+spec:
+  deltaMaxSteps: 7 # How many incremental backups can be created before creating new full backup (optional, default: 0)
+  storage:
+    type: s3  # Type of storage (only S3 supported currently)
+    s3:       # S3 storage configuration
+      prefixFrom:
+        secretRef: # Can also be "configMapRef" if configMap is used
+          name: s3-connection-settings
+          key: prefix
+      regionFrom:
+        secretRef: # Can also be "configMapRef" if configMap is used
+          name: s3-connection-settings
+          key: region
+      endpointFrom:
+        secretRef: # Can also be "configMapRef" if configMap is used
+          name: s3-connection-settings
+          key: endpoint
+      accessKeyId: # Should reference Secret resource only!
+        name: s3-connection-settings
+        key: accessKey
+      accessKeySecret: # Should reference Secret resource only!
+        name: s3-connection-settings
+        key: secret
+  retention: # Retention config explained at `cnpg-plugin-wal-g/config/samples/new-cluster/backup-config.yaml`
+    ignoreForManualBackups: true
+    minBackupsToKeep: 5
+    deleteBackupsAfter: 1d
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: s3-connection-settings
+type: Opaque
+stringData:
+  prefix: s3://<S3_BUCKET_NAME>/<S3_PREFIX_NAME>
+  region: us-east-1
+  endpoint: https://example.endpoint.com/
+  accessKey: <S3_ACCESS_KEY>
+  secret: <S3_SECRET_KEY>
