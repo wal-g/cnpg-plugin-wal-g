@@ -31,6 +31,10 @@ type S3StorageConfigWithSecrets struct {
 	AccessKeyID     string
 	AccessKeySecret string
 	CACertData      string // Custom CA certificate data for S3 endpoint
+	// Resolved values from references
+	ResolvedPrefix      string // Resolved value from Prefix or PrefixFrom
+	ResolvedRegion      string // Resolved value from Region or RegionFrom
+	ResolvedEndpointURL string // Resolved value from EndpointURL or EndpointURLFrom
 }
 
 // storageConfigWithSecrets defines object storage configuration extended with secrets data
@@ -187,11 +191,32 @@ func (b *BackupConfig) makeS3StorageConfigWithPrefilledSecrets(
 		caCertData = string(certData)
 	}
 
+	// Resolve prefix value
+	resolvedPrefix, err := b.resolveStringValue(ctx, c, s3Config.Prefix, s3Config.PrefixFrom, "prefix")
+	if err != nil {
+		return nil, err
+	}
+
+	// Resolve region value
+	resolvedRegion, err := b.resolveStringValue(ctx, c, s3Config.Region, s3Config.RegionFrom, "region")
+	if err != nil {
+		return nil, err
+	}
+
+	// Resolve endpoint URL value
+	resolvedEndpointURL, err := b.resolveStringValue(ctx, c, s3Config.EndpointURL, s3Config.EndpointURLFrom, "endpointUrl")
+	if err != nil {
+		return nil, err
+	}
+
 	return &S3StorageConfigWithSecrets{
-		S3StorageConfig: *s3Config,
-		AccessKeyID:     string(accessKeyID),
-		AccessKeySecret: string(accessKeySecret),
-		CACertData:      caCertData,
+		S3StorageConfig:     *s3Config,
+		AccessKeyID:         string(accessKeyID),
+		AccessKeySecret:     string(accessKeySecret),
+		CACertData:          caCertData,
+		ResolvedPrefix:      resolvedPrefix,
+		ResolvedRegion:      resolvedRegion,
+		ResolvedEndpointURL: resolvedEndpointURL,
 	}, nil
 }
 
@@ -242,4 +267,73 @@ func extractValueFromConfigMap(
 	}
 
 	return []byte(value), nil
+}
+
+// resolveStringValue resolves a string value from either direct value or ValueFromSource reference
+// It ensures mutual exclusivity between direct value and reference
+func (b *BackupConfig) resolveStringValue(
+	ctx context.Context,
+	c client.Client,
+	directValue string,
+	valueFrom *ValueFromSource,
+	fieldName string,
+) (string, error) {
+	// Check mutual exclusivity
+	if directValue != "" && valueFrom != nil {
+		return "", fmt.Errorf("cannot specify both %s and %sFrom", fieldName, fieldName)
+	}
+
+	// If direct value is provided, use it
+	if directValue != "" {
+		return directValue, nil
+	}
+
+	// If no reference is provided, return empty string
+	if valueFrom == nil {
+		return "", nil
+	}
+
+	// Extract value from reference
+	return extractValueFromSource(ctx, c, valueFrom, b.Namespace)
+}
+
+// extractValueFromSource extracts a value from either Secret or ConfigMap reference
+func extractValueFromSource(
+	ctx context.Context,
+	c client.Client,
+	valueFrom *ValueFromSource,
+	namespace string,
+) (string, error) {
+	if valueFrom == nil {
+		return "", fmt.Errorf("valueFrom is nil")
+	}
+
+	// Check mutual exclusivity between SecretKeyRef and ConfigMapKeyRef
+	if valueFrom.SecretKeyRef != nil && valueFrom.ConfigMapKeyRef != nil {
+		return "", fmt.Errorf("cannot specify both secretKeyRef and configMapKeyRef")
+	}
+
+	if valueFrom.SecretKeyRef == nil && valueFrom.ConfigMapKeyRef == nil {
+		return "", fmt.Errorf("must specify either secretKeyRef or configMapKeyRef")
+	}
+
+	// Extract from Secret
+	if valueFrom.SecretKeyRef != nil {
+		data, err := extractValueFromSecret(ctx, c, valueFrom.SecretKeyRef, namespace)
+		if err != nil {
+			return "", err
+		}
+		return string(data), nil
+	}
+
+	// Extract from ConfigMap
+	if valueFrom.ConfigMapKeyRef != nil {
+		data, err := extractValueFromConfigMap(ctx, c, valueFrom.ConfigMapKeyRef, namespace)
+		if err != nil {
+			return "", err
+		}
+		return string(data), nil
+	}
+
+	return "", fmt.Errorf("no valid reference found")
 }

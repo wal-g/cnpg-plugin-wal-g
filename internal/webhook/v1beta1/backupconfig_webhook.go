@@ -111,6 +111,7 @@ func (v *BackupConfigCustomValidator) validateBackupConfig(backupconfig *v1beta1
 	type validationFunc func(*v1beta1.BackupConfig) (admission.Warnings, error)
 	validations := []validationFunc{
 		v.validateStorage,
+		v.validateS3MutualExclusivity,
 	}
 
 	var allWarnings admission.Warnings
@@ -142,4 +143,82 @@ func (v *BackupConfigCustomValidator) validateStorage(backupconfig *v1beta1.Back
 		return admission.Warnings{}, fmt.Errorf("failed to get S3-specific configuration for object storage")
 	}
 	return nil, nil
+}
+
+// validateS3MutualExclusivity validates mutual exclusivity constraints for S3 configuration
+func (v *BackupConfigCustomValidator) validateS3MutualExclusivity(backupconfig *v1beta1.BackupConfig) (admission.Warnings, error) {
+	if backupconfig.Spec.Storage.S3 == nil {
+		return nil, nil
+	}
+
+	s3Config := backupconfig.Spec.Storage.S3
+
+	// Validate prefix mutual exclusivity
+	if s3Config.Prefix != "" && s3Config.PrefixFrom != nil {
+		return admission.Warnings{}, fmt.Errorf("cannot specify both prefix and prefixFrom")
+	}
+
+	// Validate region mutual exclusivity
+	if s3Config.Region != "" && s3Config.RegionFrom != nil {
+		return admission.Warnings{}, fmt.Errorf("cannot specify both region and regionFrom")
+	}
+
+	// Validate endpointUrl mutual exclusivity
+	if s3Config.EndpointURL != "" && s3Config.EndpointURLFrom != nil {
+		return admission.Warnings{}, fmt.Errorf("cannot specify both endpointUrl and endpointUrlFrom")
+	}
+
+	// Validate ValueFromSource references
+	if err := v.validateValueFromSource(s3Config.PrefixFrom, "prefixFrom"); err != nil {
+		return admission.Warnings{}, err
+	}
+
+	if err := v.validateValueFromSource(s3Config.RegionFrom, "regionFrom"); err != nil {
+		return admission.Warnings{}, err
+	}
+
+	if err := v.validateValueFromSource(s3Config.EndpointURLFrom, "endpointUrlFrom"); err != nil {
+		return admission.Warnings{}, err
+	}
+
+	return nil, nil
+}
+
+// validateValueFromSource validates a ValueFromSource reference
+func (v *BackupConfigCustomValidator) validateValueFromSource(valueFrom *v1beta1.ValueFromSource, fieldName string) error {
+	if valueFrom == nil {
+		return nil
+	}
+
+	// Check mutual exclusivity between SecretKeyRef and ConfigMapKeyRef
+	if valueFrom.SecretKeyRef != nil && valueFrom.ConfigMapKeyRef != nil {
+		return fmt.Errorf("%s cannot specify both secretKeyRef and configMapKeyRef", fieldName)
+	}
+
+	// Ensure at least one reference is provided
+	if valueFrom.SecretKeyRef == nil && valueFrom.ConfigMapKeyRef == nil {
+		return fmt.Errorf("%s must specify either secretKeyRef or configMapKeyRef", fieldName)
+	}
+
+	// Validate SecretKeyRef
+	if valueFrom.SecretKeyRef != nil {
+		if valueFrom.SecretKeyRef.Name == "" {
+			return fmt.Errorf("%s.secretKeyRef.name cannot be empty", fieldName)
+		}
+		if valueFrom.SecretKeyRef.Key == "" {
+			return fmt.Errorf("%s.secretKeyRef.key cannot be empty", fieldName)
+		}
+	}
+
+	// Validate ConfigMapKeyRef
+	if valueFrom.ConfigMapKeyRef != nil {
+		if valueFrom.ConfigMapKeyRef.Name == "" {
+			return fmt.Errorf("%s.configMapKeyRef.name cannot be empty", fieldName)
+		}
+		if valueFrom.ConfigMapKeyRef.Key == "" {
+			return fmt.Errorf("%s.configMapKeyRef.key cannot be empty", fieldName)
+		}
+	}
+
+	return nil
 }

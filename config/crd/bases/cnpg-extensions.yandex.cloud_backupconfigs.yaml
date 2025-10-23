@@ -248,8 +248,63 @@ spec:
                         - name
                         type: object
                       endpointUrl:
-                        description: S3 endpoint url
+                        description: |-
+                          S3 endpoint url
+                          Mutually exclusive with EndpointURLFrom
                         type: string
+                      endpointUrlFrom:
+                        description: |-
+                          Reference to get endpoint URL value from Secret or ConfigMap
+                          Mutually exclusive with EndpointURL
+                        properties:
+                          configMapKeyRef:
+                            description: Reference to a key in a ConfigMap
+                            properties:
+                              key:
+                                description: The key to select.
+                                type: string
+                              name:
+                                default: ""
+                                description: |-
+                                  Name of the referent.
+                                  This field is effectively required, but due to backwards compatibility is
+                                  allowed to be empty. Instances of this type with an empty value here are
+                                  almost certainly wrong.
+                                  More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                                type: string
+                              optional:
+                                description: Specify whether the ConfigMap or its
+                                  key must be defined
+                                type: boolean
+                            required:
+                            - key
+                            type: object
+                            x-kubernetes-map-type: atomic
+                          secretKeyRef:
+                            description: Reference to a key in a Secret
+                            properties:
+                              key:
+                                description: The key of the secret to select from.  Must
+                                  be a valid secret key.
+                                type: string
+                              name:
+                                default: ""
+                                description: |-
+                                  Name of the referent.
+                                  This field is effectively required, but due to backwards compatibility is
+                                  allowed to be empty. Instances of this type with an empty value here are
+                                  almost certainly wrong.
+                                  More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                                type: string
+                              optional:
+                                description: Specify whether the Secret or its key
+                                  must be defined
+                                type: boolean
+                            required:
+                            - key
+                            type: object
+                            x-kubernetes-map-type: atomic
+                        type: object
                       forcePathStyle:
                         description: |-
                           To enable path-style addressing (i.e., http://s3.amazonaws.com/BUCKET/KEY)
@@ -257,11 +312,121 @@ spec:
                           sub-domain style bucket URLs (i.e., http://BUCKET.s3.amazonaws.com/KEY)
                         type: boolean
                       prefix:
-                        description: e.g. s3://bucket/path/to/folder
+                        description: |-
+                          e.g. s3://bucket/path/to/folder
+                          Mutually exclusive with PrefixFrom
                         type: string
+                      prefixFrom:
+                        description: |-
+                          Reference to get prefix value from Secret or ConfigMap
+                          Mutually exclusive with Prefix
+                        properties:
+                          configMapKeyRef:
+                            description: Reference to a key in a ConfigMap
+                            properties:
+                              key:
+                                description: The key to select.
+                                type: string
+                              name:
+                                default: ""
+                                description: |-
+                                  Name of the referent.
+                                  This field is effectively required, but due to backwards compatibility is
+                                  allowed to be empty. Instances of this type with an empty value here are
+                                  almost certainly wrong.
+                                  More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                                type: string
+                              optional:
+                                description: Specify whether the ConfigMap or its
+                                  key must be defined
+                                type: boolean
+                            required:
+                            - key
+                            type: object
+                            x-kubernetes-map-type: atomic
+                          secretKeyRef:
+                            description: Reference to a key in a Secret
+                            properties:
+                              key:
+                                description: The key of the secret to select from.  Must
+                                  be a valid secret key.
+                                type: string
+                              name:
+                                default: ""
+                                description: |-
+                                  Name of the referent.
+                                  This field is effectively required, but due to backwards compatibility is
+                                  allowed to be empty. Instances of this type with an empty value here are
+                                  almost certainly wrong.
+                                  More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                                type: string
+                              optional:
+                                description: Specify whether the Secret or its key
+                                  must be defined
+                                type: boolean
+                            required:
+                            - key
+                            type: object
+                            x-kubernetes-map-type: atomic
+                        type: object
                       region:
-                        description: S3 Region
+                        description: |-
+                          S3 Region
+                          Mutually exclusive with RegionFrom
                         type: string
+                      regionFrom:
+                        description: |-
+                          Reference to get region value from Secret or ConfigMap
+                          Mutually exclusive with Region
+                        properties:
+                          configMapKeyRef:
+                            description: Reference to a key in a ConfigMap
+                            properties:
+                              key:
+                                description: The key to select.
+                                type: string
+                              name:
+                                default: ""
+                                description: |-
+                                  Name of the referent.
+                                  This field is effectively required, but due to backwards compatibility is
+                                  allowed to be empty. Instances of this type with an empty value here are
+                                  almost certainly wrong.
+                                  More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                                type: string
+                              optional:
+                                description: Specify whether the ConfigMap or its
+                                  key must be defined
+                                type: boolean
+                            required:
+                            - key
+                            type: object
+                            x-kubernetes-map-type: atomic
+                          secretKeyRef:
+                            description: Reference to a key in a Secret
+                            properties:
+                              key:
+                                description: The key of the secret to select from.  Must
+                                  be a valid secret key.
+                                type: string
+                              name:
+                                default: ""
+                                description: |-
+                                  Name of the referent.
+                                  This field is effectively required, but due to backwards compatibility is
+                                  allowed to be empty. Instances of this type with an empty value here are
+                                  almost certainly wrong.
+                                  More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                                type: string
+                              optional:
+                                description: Specify whether the Secret or its key
+                                  must be defined
+                                type: boolean
+                            required:
+                            - key
+                            type: object
+                            x-kubernetes-map-type: atomic
+                        type: object
                       storageClass:
                         description: |-
                           S3 storage class used for backup files.
