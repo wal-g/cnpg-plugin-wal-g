@@ -44,6 +44,34 @@ func BuildRoleForBackupConfigs(
 			secretsNames.Put(backupConfigs[i].Spec.Storage.S3.AccessKeyIDRef.Name)
 			secretsNames.Put(backupConfigs[i].Spec.Storage.S3.AccessKeySecretRef.Name)
 
+			// Add permissions for new ValueFromSource references
+			if backupConfigs[i].Spec.Storage.S3.PrefixFrom != nil {
+				if backupConfigs[i].Spec.Storage.S3.PrefixFrom.SecretKeyRef != nil {
+					secretsNames.Put(backupConfigs[i].Spec.Storage.S3.PrefixFrom.SecretKeyRef.Name)
+				}
+				if backupConfigs[i].Spec.Storage.S3.PrefixFrom.ConfigMapKeyRef != nil {
+					configMapsNames.Put(backupConfigs[i].Spec.Storage.S3.PrefixFrom.ConfigMapKeyRef.Name)
+				}
+			}
+
+			if backupConfigs[i].Spec.Storage.S3.RegionFrom != nil {
+				if backupConfigs[i].Spec.Storage.S3.RegionFrom.SecretKeyRef != nil {
+					secretsNames.Put(backupConfigs[i].Spec.Storage.S3.RegionFrom.SecretKeyRef.Name)
+				}
+				if backupConfigs[i].Spec.Storage.S3.RegionFrom.ConfigMapKeyRef != nil {
+					configMapsNames.Put(backupConfigs[i].Spec.Storage.S3.RegionFrom.ConfigMapKeyRef.Name)
+				}
+			}
+
+			if backupConfigs[i].Spec.Storage.S3.EndpointURLFrom != nil {
+				if backupConfigs[i].Spec.Storage.S3.EndpointURLFrom.SecretKeyRef != nil {
+					secretsNames.Put(backupConfigs[i].Spec.Storage.S3.EndpointURLFrom.SecretKeyRef.Name)
+				}
+				if backupConfigs[i].Spec.Storage.S3.EndpointURLFrom.ConfigMapKeyRef != nil {
+					configMapsNames.Put(backupConfigs[i].Spec.Storage.S3.EndpointURLFrom.ConfigMapKeyRef.Name)
+				}
+			}
+
 			if backupConfigs[i].Spec.Storage.S3.CustomCA != nil {
 				if backupConfigs[i].Spec.Storage.S3.CustomCA.Kind == "Secret" {
 					secretsNames.Put(backupConfigs[i].Spec.Storage.S3.CustomCA.Name)
