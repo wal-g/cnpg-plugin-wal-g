@@ -40,53 +40,12 @@ func BuildRoleForBackupConfigs(
 
 	for i := range backupConfigs {
 		backupConfigNames.Put(backupConfigs[i].Name)
-		if backupConfigs[i].Spec.Storage.StorageType == v1beta1.StorageTypeS3 {
-			secretsNames.Put(backupConfigs[i].Spec.Storage.S3.AccessKeyIDRef.Name)
-			secretsNames.Put(backupConfigs[i].Spec.Storage.S3.AccessKeySecretRef.Name)
-
-			// Add permissions for new ValueFromSource references
-			if backupConfigs[i].Spec.Storage.S3.PrefixFrom != nil {
-				if backupConfigs[i].Spec.Storage.S3.PrefixFrom.SecretKeyRef != nil {
-					secretsNames.Put(backupConfigs[i].Spec.Storage.S3.PrefixFrom.SecretKeyRef.Name)
-				}
-				if backupConfigs[i].Spec.Storage.S3.PrefixFrom.ConfigMapKeyRef != nil {
-					configMapsNames.Put(backupConfigs[i].Spec.Storage.S3.PrefixFrom.ConfigMapKeyRef.Name)
-				}
-			}
-
-			if backupConfigs[i].Spec.Storage.S3.RegionFrom != nil {
-				if backupConfigs[i].Spec.Storage.S3.RegionFrom.SecretKeyRef != nil {
-					secretsNames.Put(backupConfigs[i].Spec.Storage.S3.RegionFrom.SecretKeyRef.Name)
-				}
-				if backupConfigs[i].Spec.Storage.S3.RegionFrom.ConfigMapKeyRef != nil {
-					configMapsNames.Put(backupConfigs[i].Spec.Storage.S3.RegionFrom.ConfigMapKeyRef.Name)
-				}
-			}
-
-			if backupConfigs[i].Spec.Storage.S3.EndpointURLFrom != nil {
-				if backupConfigs[i].Spec.Storage.S3.EndpointURLFrom.SecretKeyRef != nil {
-					secretsNames.Put(backupConfigs[i].Spec.Storage.S3.EndpointURLFrom.SecretKeyRef.Name)
-				}
-				if backupConfigs[i].Spec.Storage.S3.EndpointURLFrom.ConfigMapKeyRef != nil {
-					configMapsNames.Put(backupConfigs[i].Spec.Storage.S3.EndpointURLFrom.ConfigMapKeyRef.Name)
-				}
-			}
-
-			if backupConfigs[i].Spec.Storage.S3.CustomCA != nil {
-				if backupConfigs[i].Spec.Storage.S3.CustomCA.Kind == "Secret" {
-					secretsNames.Put(backupConfigs[i].Spec.Storage.S3.CustomCA.Name)
-				} else {
-					configMapsNames.Put(backupConfigs[i].Spec.Storage.S3.CustomCA.Name)
-				}
-			}
+		backupConfigSecrets, backupConfigCMs := collectSecretsAndConfigMapsNamesFromBackupConfig(&backupConfigs[i])
+		for _, secretName := range backupConfigSecrets {
+			secretsNames.Put(secretName)
 		}
-
-		// Add encryption secrets to the list of secrets that need permissions
-		if backupConfigs[i].Spec.Encryption.Method != "" && backupConfigs[i].Spec.Encryption.Method != "none" {
-			encryptionSecretName := v1beta1.GetBackupConfigEncryptionSecretName(&backupConfigs[i])
-			if encryptionSecretName != "" {
-				secretsNames.Put(encryptionSecretName)
-			}
+		for _, configMapName := range backupConfigCMs {
+			configMapsNames.Put(configMapName)
 		}
 	}
 
@@ -118,6 +77,68 @@ func BuildRoleForBackupConfigs(
 			ResourceNames: configMapsNames.ToSortedList(),
 		},
 	}
+}
+
+// nolint:gocyclo
+func collectSecretsAndConfigMapsNamesFromBackupConfig(config *v1beta1.BackupConfig) ([]string, []string) {
+	usedConfigMapNames := make([]string, 0)
+	usedSecretNames := make([]string, 0)
+
+	if config.Spec.Storage.StorageType == v1beta1.StorageTypeS3 {
+		s3Config := config.Spec.Storage.S3
+
+		// Add AccessKeyID and AccessKeySecret secrets names
+		usedSecretNames = append(
+			usedSecretNames,
+			s3Config.AccessKeyIDRef.Name,
+			s3Config.AccessKeySecretRef.Name,
+		)
+
+		if s3Config.PrefixFrom != nil {
+			if s3Config.PrefixFrom.SecretKeyRef != nil {
+				usedSecretNames = append(usedSecretNames, s3Config.PrefixFrom.SecretKeyRef.Name)
+			}
+			if s3Config.PrefixFrom.ConfigMapKeyRef != nil {
+				usedConfigMapNames = append(usedConfigMapNames, s3Config.PrefixFrom.ConfigMapKeyRef.Name)
+			}
+		}
+
+		if s3Config.RegionFrom != nil {
+			if s3Config.RegionFrom.SecretKeyRef != nil {
+				usedSecretNames = append(usedSecretNames, s3Config.RegionFrom.SecretKeyRef.Name)
+			}
+			if s3Config.RegionFrom.ConfigMapKeyRef != nil {
+				usedConfigMapNames = append(usedConfigMapNames, s3Config.RegionFrom.ConfigMapKeyRef.Name)
+			}
+		}
+
+		if s3Config.EndpointURLFrom != nil {
+			if s3Config.EndpointURLFrom.SecretKeyRef != nil {
+				usedSecretNames = append(usedSecretNames, s3Config.EndpointURLFrom.SecretKeyRef.Name)
+			}
+			if s3Config.EndpointURLFrom.ConfigMapKeyRef != nil {
+				usedConfigMapNames = append(usedConfigMapNames, s3Config.EndpointURLFrom.ConfigMapKeyRef.Name)
+			}
+		}
+
+		if s3Config.CustomCA != nil {
+			if s3Config.CustomCA.Kind == "Secret" {
+				usedSecretNames = append(usedSecretNames, s3Config.CustomCA.Name)
+			} else {
+				usedConfigMapNames = append(usedConfigMapNames, s3Config.CustomCA.Name)
+			}
+		}
+	}
+
+	// Add encryption secrets to the list of secrets that need permissions
+	if config.Spec.Encryption.Method != "" && config.Spec.Encryption.Method != "none" {
+		encryptionSecretName := v1beta1.GetBackupConfigEncryptionSecretName(config)
+		if encryptionSecretName != "" {
+			usedSecretNames = append(usedSecretNames, encryptionSecretName)
+		}
+	}
+
+	return usedSecretNames, usedConfigMapNames
 }
 
 // BuildRoleBinding builds the role binding object for this cluster

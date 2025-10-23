@@ -8,15 +8,15 @@ spec:
     type: s3  # Type of storage (only S3 supported currently)
     s3:       # S3 storage configuration
       prefixFrom:
-        secretRef: # Can also be "configMapRef" if configMap is used
+        secretKeyRef: # Can also be "configMapKeyRef" if configMap is used
           name: s3-connection-settings
           key: prefix
       regionFrom:
-        secretRef: # Can also be "configMapRef" if configMap is used
-          name: s3-connection-settings
+        secretKeyRef: # Can also be "configMapKeyRef" if configMap is used
+          name: s3-connection-settings  # Secrets can be different for all these parameters
           key: region
       endpointFrom:
-        secretRef: # Can also be "configMapRef" if configMap is used
+        secretKeyRef: # Can also be "configMapKeyRef" if configMap is used
           name: s3-connection-settings
           key: endpoint
       accessKeyId: # Should reference Secret resource only!
@@ -29,15 +29,15 @@ spec:
     ignoreForManualBackups: true
     minBackupsToKeep: 5
     deleteBackupsAfter: 1d
----
-apiVersion: v1
-kind: Secret
-metadata:
-  name: s3-connection-settings
-type: Opaque
-stringData:
-  prefix: s3://<S3_BUCKET_NAME>/<S3_PREFIX_NAME>
-  region: us-east-1
-  endpoint: https://example.endpoint.com/
-  accessKey: <S3_ACCESS_KEY>
-  secret: <S3_SECRET_KEY>
+# ---
+# apiVersion: v1
+# kind: Secret
+# metadata:
+#   name: s3-connection-settings  # This secret can be fetched somewhere outside, ex. from HashiCorp Vault / OpenBao
+# type: Opaque
+# stringData:
+#   prefix: s3://<S3_BUCKET_NAME>/<S3_PREFIX_NAME>
+#   region: us-east-1
+#   endpoint: https://example.endpoint.com/
+#   accessKey: <S3_ACCESS_KEY>
+#   secret: <S3_SECRET_KEY>
