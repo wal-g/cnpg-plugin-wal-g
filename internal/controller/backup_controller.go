@@ -105,16 +105,43 @@ func (r *BackupReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 		return ctrl.Result{}, err
 	}
 
-	// Add finalizer if it doesn't exist
-	if !containsString(backup.Finalizers, v1beta1.BackupFinalizerName) {
-		logger.Info("Detected new Backup managed by plugin, setting up finalizer")
-		backup.Finalizers = append(backup.Finalizers, v1beta1.BackupFinalizerName)
-		if err := r.Update(ctx, backup); err != nil {
-			return ctrl.Result{}, err
-		}
+	// Get BackupConfig to check if deletion management is disabled
+	backupConfig, err := v1beta1.GetBackupConfigForBackup(ctx, r.Client, backup)
+	if err != nil {
+		logger.Error(err, "Failed to get BackupConfig for Backup when checking deletion management")
+		return ctrl.Result{}, err
+	}
+
+	if err := r.reconcileFinalizers(ctx, backup, backupConfig); err != nil {
+		return ctrl.Result{}, err
 	}
 
 	return ctrl.Result{}, nil
+}
+
+func (r *BackupReconciler) reconcileFinalizers(ctx context.Context, backup *cnpgv1.Backup, backupConfig *v1beta1.BackupConfig) error {
+	logger := logr.FromContextOrDiscard(ctx)
+
+	// Add finalizer if it doesn't exist and deletion management is not disabled
+	shouldAddFinalizer := !containsString(backup.Finalizers, v1beta1.BackupFinalizerName) &&
+		!backupConfig.Spec.Retention.IgnoreForBackupDeletion
+
+	if shouldAddFinalizer {
+		logger.Info("Detected new Backup managed by plugin, setting up finalizer")
+		backup.Finalizers = append(backup.Finalizers, v1beta1.BackupFinalizerName)
+		if err := r.Update(ctx, backup); err != nil {
+			return err
+		}
+	} else if backupConfig.Spec.Retention.IgnoreForBackupDeletion && containsString(backup.Finalizers, v1beta1.BackupFinalizerName) {
+		// If deletion management is disabled but finalizer exists, remove it
+		logger.Info("Deletion management disabled for BackupConfig, removing finalizer from Backup")
+		backup.Finalizers = removeString(backup.Finalizers, v1beta1.BackupFinalizerName)
+		if err := r.Update(ctx, backup); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 // reconcileOwnerReference sets the BackupConfig as the owner of the Backup resource

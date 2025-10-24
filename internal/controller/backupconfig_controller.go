@@ -107,18 +107,26 @@ func (r *BackupConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		return ctrl.Result{}, nil
 	}
 
-	// Add finalizers if they don't exist
+	// Add finalizers if they don't exist and deletion management is not disabled
 	finalizersChanged := false
 
-	if !containsString(backupConfig.Finalizers, v1beta1.BackupConfigFinalizerName) {
+	shouldAddFinalizer := !containsString(backupConfig.Finalizers, v1beta1.BackupConfigFinalizerName) &&
+		!backupConfig.Spec.Retention.IgnoreForBackupConfigDeletion
+
+	if shouldAddFinalizer {
 		backupConfig.Finalizers = append(backupConfig.Finalizers, v1beta1.BackupConfigFinalizerName)
+		finalizersChanged = true
+	} else if backupConfig.Spec.Retention.IgnoreForBackupConfigDeletion && containsString(backupConfig.Finalizers, v1beta1.BackupConfigFinalizerName) {
+		// If deletion management is disabled but finalizer exists, remove it
+		logger.Info("Deletion management disabled for BackupConfig, removing finalizer")
+		backupConfig.Finalizers = removeString(backupConfig.Finalizers, v1beta1.BackupConfigFinalizerName)
 		finalizersChanged = true
 	}
 
 	if finalizersChanged {
 		if err := r.Update(ctx, backupConfig); err != nil {
-			logger.Error(err, "while adding finalizers to BackupConfig")
-			return ctrl.Result{}, fmt.Errorf("while adding finalizers to BackupConfig: %w", err)
+			logger.Error(err, "while updating finalizers on BackupConfig")
+			return ctrl.Result{}, fmt.Errorf("while updating finalizers on BackupConfig: %w", err)
 		}
 	}
 

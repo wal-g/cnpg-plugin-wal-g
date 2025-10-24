@@ -272,6 +272,12 @@ func (b *BackupDeletionController) deleteWALGBackup(ctx context.Context, backupK
 		return removeBackupFinalizer(ctx, backup, b.Client)
 	}
 
+	// Check if deletion management is disabled for individual backups
+	if backupConfigWithSecrets.Spec.Retention.IgnoreForBackupDeletion {
+		logger.Info("Deletion management disabled for individual backups, skipping storage cleanup", "backupID", backup.Status.BackupID)
+		return removeBackupFinalizer(ctx, backup, b.Client)
+	}
+
 	// Delete the backup using WAL-G
 	logger.Info("Deleting backup from storage via WAL-G", "backupID", backup.Status.BackupID)
 	result, err := walg.DeleteBackup(ctx, backupConfigWithSecrets, pgVersion, backup.Status.BackupID)
@@ -309,25 +315,30 @@ func (b *BackupDeletionController) deleteBackupConfig(ctx context.Context, backu
 		return client.IgnoreNotFound(err)
 	}
 
-	backupConfigWithSecrets, err := backupConfig.PrefetchSecretsData(ctx, b)
-	if err != nil {
-		return fmt.Errorf(
-			"while fetching secrets data for backupConfig %v: %w",
-			client.ObjectKeyFromObject(backupConfig),
-			err,
-		)
-	}
-
-	// Performing cleanup for all known PG versions (to remove both old-version backups and current backups)
-	for pgVersion := 11; pgVersion <= 19; pgVersion++ {
-		result, err := walg.DeleteAllBackupsAndWALsInStorage(ctx, backupConfigWithSecrets, pgVersion)
+	// Check if deletion management is disabled for BackupConfig
+	if backupConfig.Spec.Retention.IgnoreForBackupConfigDeletion {
+		logger.Info("Deletion management disabled for BackupConfig, skipping storage cleanup", "backupConfig", backupConfigKey)
+	} else {
+		backupConfigWithSecrets, err := backupConfig.PrefetchSecretsData(ctx, b)
 		if err != nil {
 			return fmt.Errorf(
-				"while wal-g storage cleanup: error %w\nWAL-G stdout: %s\nWAL-G stderr: %s",
+				"while fetching secrets data for backupConfig %v: %w",
+				client.ObjectKeyFromObject(backupConfig),
 				err,
-				string(result.Stdout()),
-				string(result.Stderr()),
 			)
+		}
+
+		// Performing cleanup for all known PG versions (to remove both old-version backups and current backups)
+		for pgVersion := 11; pgVersion <= 19; pgVersion++ {
+			result, err := walg.DeleteAllBackupsAndWALsInStorage(ctx, backupConfigWithSecrets, pgVersion)
+			if err != nil {
+				return fmt.Errorf(
+					"while wal-g storage cleanup: error %w\nWAL-G stdout: %s\nWAL-G stderr: %s",
+					err,
+					string(result.Stdout()),
+					string(result.Stderr()),
+				)
+			}
 		}
 	}
 

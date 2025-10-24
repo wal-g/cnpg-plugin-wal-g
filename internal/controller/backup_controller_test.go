@@ -626,4 +626,116 @@ var _ = Describe("BackupReconciler", func() {
 			Expect(allDependents).To(ContainSubstring("second-level"))
 		})
 	})
+
+	Describe("Deletion Management", func() {
+		It("should not add finalizer when ignoreForBackupDeletion is true", func() {
+			// Create test objects
+			cluster := createTestCluster("test-cluster", "default")
+			backupConfig, s3Secret := createTestBackupConfig("test-backupconfig", "default")
+
+			// Enable ignoreForBackupDeletion
+			backupConfig.Spec.Retention.IgnoreForBackupDeletion = true
+
+			backup := createTestBackup("test-backup", "default", "test-cluster", "base_000000010000000100000001", false)
+
+			// Create fake client with objects
+			fakeClient := setupFakeBackupClient(cluster, backupConfig, s3Secret, backup)
+
+			// Create reconciler with fake client
+			reconciler = &BackupReconciler{
+				Client: fakeClient,
+				Scheme: runtime.NewScheme(),
+			}
+
+			// Call Reconcile
+			result, err := reconciler.Reconcile(
+				testCtx,
+				reconcile.Request{
+					NamespacedName: client.ObjectKeyFromObject(backup),
+				},
+			)
+			Expect(result).To(BeEquivalentTo(ctrl.Result{}))
+			Expect(err).NotTo(HaveOccurred())
+
+			// Verify backup does not have finalizer
+			updatedBackup := &cnpgv1.Backup{}
+			err = fakeClient.Get(testCtx, client.ObjectKey{Namespace: "default", Name: "test-backup"}, updatedBackup)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(updatedBackup.Finalizers).NotTo(ContainElement(v1beta1.BackupFinalizerName))
+		})
+
+		It("should remove finalizer when ignoreForBackupDeletion is enabled on existing backup", func() {
+			// Create test objects
+			cluster := createTestCluster("test-cluster", "default")
+			backupConfig, s3Secret := createTestBackupConfig("test-backupconfig", "default")
+
+			// Enable ignoreForBackupDeletion
+			backupConfig.Spec.Retention.IgnoreForBackupDeletion = true
+
+			backup := createTestBackup("test-backup", "default", "test-cluster", "base_000000010000000100000001", false)
+			// Add finalizer to simulate existing backup
+			backup.Finalizers = []string{v1beta1.BackupFinalizerName}
+
+			// Create fake client with objects
+			fakeClient := setupFakeBackupClient(cluster, backupConfig, s3Secret, backup)
+
+			// Create reconciler with fake client
+			reconciler = &BackupReconciler{
+				Client: fakeClient,
+				Scheme: runtime.NewScheme(),
+			}
+
+			// Call Reconcile
+			result, err := reconciler.Reconcile(
+				testCtx,
+				reconcile.Request{
+					NamespacedName: client.ObjectKeyFromObject(backup),
+				},
+			)
+			Expect(result).To(BeEquivalentTo(ctrl.Result{}))
+			Expect(err).NotTo(HaveOccurred())
+
+			// Verify backup finalizer was removed
+			updatedBackup := &cnpgv1.Backup{}
+			err = fakeClient.Get(testCtx, client.ObjectKey{Namespace: "default", Name: "test-backup"}, updatedBackup)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(updatedBackup.Finalizers).NotTo(ContainElement(v1beta1.BackupFinalizerName))
+		})
+
+		It("should add finalizer when ignoreForBackupDeletion is false", func() {
+			// Create test objects
+			cluster := createTestCluster("test-cluster", "default")
+			backupConfig, s3Secret := createTestBackupConfig("test-backupconfig", "default")
+
+			// Ensure ignoreForBackupDeletion is false (default)
+			backupConfig.Spec.Retention.IgnoreForBackupDeletion = false
+
+			backup := createTestBackup("test-backup", "default", "test-cluster", "base_000000010000000100000001", false)
+
+			// Create fake client with objects
+			fakeClient := setupFakeBackupClient(cluster, backupConfig, s3Secret, backup)
+
+			// Create reconciler with fake client
+			reconciler = &BackupReconciler{
+				Client: fakeClient,
+				Scheme: runtime.NewScheme(),
+			}
+
+			// Call Reconcile
+			result, err := reconciler.Reconcile(
+				testCtx,
+				reconcile.Request{
+					NamespacedName: client.ObjectKeyFromObject(backup),
+				},
+			)
+			Expect(result).To(BeEquivalentTo(ctrl.Result{}))
+			Expect(err).NotTo(HaveOccurred())
+
+			// Verify backup has finalizer
+			updatedBackup := &cnpgv1.Backup{}
+			err = fakeClient.Get(testCtx, client.ObjectKey{Namespace: "default", Name: "test-backup"}, updatedBackup)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(updatedBackup.Finalizers).To(ContainElement(v1beta1.BackupFinalizerName))
+		})
+	})
 })
