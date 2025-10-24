@@ -58,6 +58,7 @@ type Config struct {
 	WalgNetworkRateLimit              int    `json:"WALG_NETWORK_RATE_LIMIT,omitempty"`
 	WalgPgpKeyPath                    string `json:"WALG_PGP_KEY_PATH,omitempty"`
 	WalgPrefetchDir                   string `json:"WALG_PREFETCH_DIR,omitempty"`
+	WalgPreventWalOverwrite           string `json:"WALG_PREVENT_WAL_OVERWRITE,omitempty"`
 	WalgS3CACertFile                  string `json:"WALG_S3_CA_CERT_FILE,omitempty"`
 	WalgS3StorageClass                string `json:"WALG_S3_STORAGE_CLASS,omitempty"`
 	WalgTarDisableFsync               string `json:"WALG_TAR_DISABLE_FSYNC,omitempty"`
@@ -85,6 +86,7 @@ func NewConfigWithDefaults() Config {
 		WalgTarDisableFsync:               "False",
 		WalgUploadConcurrency:             16,
 		WalgUploadDiskConcurrency:         8,
+		WalgPreventWalOverwrite:           "True",
 	}
 }
 
