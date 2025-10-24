@@ -124,5 +124,175 @@ var _ = Describe("BackupConfig Controller", func() {
 			err = k8sClient.Get(ctx, typeNamespacedName, resource)
 			Expect(err).NotTo(HaveOccurred())
 		})
+
+		It("should not add finalizer when ignoreForBackupConfigDeletion is true", func() {
+			By("Creating a BackupConfig with ignoreForBackupConfigDeletion enabled")
+
+			// Create a BackupConfig with ignoreForBackupConfigDeletion enabled
+			resourceWithIgnore := &v1beta1.BackupConfig{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-ignore-deletion",
+					Namespace: "default",
+				},
+				Spec: v1beta1.BackupConfigSpec{
+					Retention: v1beta1.BackupRetentionConfig{
+						IgnoreForBackupConfigDeletion: true,
+					},
+					Storage: v1beta1.StorageConfig{
+						StorageType: v1beta1.StorageTypeS3,
+						S3: &v1beta1.S3StorageConfig{
+							Prefix: "s3://test-bucket/test-prefix",
+						},
+					},
+				},
+			}
+
+			Expect(k8sClient.Create(ctx, resourceWithIgnore)).To(Succeed())
+
+			// Create a mock BackupDeletionController
+			mockBackupDeletionController := NewBackupDeletionController(k8sClient)
+
+			controllerReconciler := &BackupConfigReconciler{
+				Client:                   k8sClient,
+				Scheme:                   k8sClient.Scheme(),
+				BackupDeletionController: mockBackupDeletionController,
+			}
+
+			// Reconcile the resource
+			_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{
+				NamespacedName: types.NamespacedName{
+					Name:      "test-ignore-deletion",
+					Namespace: "default",
+				},
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			// Verify the resource does not have the finalizer
+			updatedResource := &v1beta1.BackupConfig{}
+			err = k8sClient.Get(ctx, types.NamespacedName{
+				Name:      "test-ignore-deletion",
+				Namespace: "default",
+			}, updatedResource)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(updatedResource.Finalizers).NotTo(ContainElement(v1beta1.BackupConfigFinalizerName))
+
+			// Cleanup
+			Expect(k8sClient.Delete(ctx, resourceWithIgnore)).To(Succeed())
+		})
+
+		It("should remove finalizer when ignoreForBackupConfigDeletion is enabled on existing resource", func() {
+			By("Creating a BackupConfig with finalizer, then enabling ignoreForBackupConfigDeletion")
+
+			// Create a BackupConfig with finalizer
+			resourceWithFinalizer := &v1beta1.BackupConfig{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:       "test-remove-finalizer",
+					Namespace:  "default",
+					Finalizers: []string{v1beta1.BackupConfigFinalizerName},
+				},
+				Spec: v1beta1.BackupConfigSpec{
+					Retention: v1beta1.BackupRetentionConfig{
+						IgnoreForBackupConfigDeletion: false, // Initially false
+					},
+					Storage: v1beta1.StorageConfig{
+						StorageType: v1beta1.StorageTypeS3,
+						S3: &v1beta1.S3StorageConfig{
+							Prefix: "s3://test-bucket/test-prefix",
+						},
+					},
+				},
+			}
+
+			Expect(k8sClient.Create(ctx, resourceWithFinalizer)).To(Succeed())
+
+			// Now update to enable ignoreForBackupConfigDeletion
+			resourceWithFinalizer.Spec.Retention.IgnoreForBackupConfigDeletion = true
+			Expect(k8sClient.Update(ctx, resourceWithFinalizer)).To(Succeed())
+
+			// Create a mock BackupDeletionController
+			mockBackupDeletionController := NewBackupDeletionController(k8sClient)
+
+			controllerReconciler := &BackupConfigReconciler{
+				Client:                   k8sClient,
+				Scheme:                   k8sClient.Scheme(),
+				BackupDeletionController: mockBackupDeletionController,
+			}
+
+			// Reconcile the resource
+			_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{
+				NamespacedName: types.NamespacedName{
+					Name:      "test-remove-finalizer",
+					Namespace: "default",
+				},
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			// Verify the finalizer was removed
+			updatedResource := &v1beta1.BackupConfig{}
+			err = k8sClient.Get(ctx, types.NamespacedName{
+				Name:      "test-remove-finalizer",
+				Namespace: "default",
+			}, updatedResource)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(updatedResource.Finalizers).NotTo(ContainElement(v1beta1.BackupConfigFinalizerName))
+
+			// Cleanup
+			Expect(k8sClient.Delete(ctx, resourceWithFinalizer)).To(Succeed())
+		})
+
+		It("should add finalizer when ignoreForBackupConfigDeletion is false", func() {
+			By("Creating a BackupConfig with ignoreForBackupConfigDeletion disabled")
+
+			// Create a BackupConfig with ignoreForBackupConfigDeletion disabled (default)
+			resourceNormal := &v1beta1.BackupConfig{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-normal-deletion",
+					Namespace: "default",
+				},
+				Spec: v1beta1.BackupConfigSpec{
+					Retention: v1beta1.BackupRetentionConfig{
+						IgnoreForBackupConfigDeletion: false, // Explicitly false
+					},
+					Storage: v1beta1.StorageConfig{
+						StorageType: v1beta1.StorageTypeS3,
+						S3: &v1beta1.S3StorageConfig{
+							Prefix: "s3://test-bucket/test-prefix",
+						},
+					},
+				},
+			}
+
+			Expect(k8sClient.Create(ctx, resourceNormal)).To(Succeed())
+
+			// Create a mock BackupDeletionController
+			mockBackupDeletionController := NewBackupDeletionController(k8sClient)
+
+			controllerReconciler := &BackupConfigReconciler{
+				Client:                   k8sClient,
+				Scheme:                   k8sClient.Scheme(),
+				BackupDeletionController: mockBackupDeletionController,
+			}
+
+			// Reconcile the resource
+			_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{
+				NamespacedName: types.NamespacedName{
+					Name:      "test-normal-deletion",
+					Namespace: "default",
+				},
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			// Verify the resource has the finalizer
+			updatedResource := &v1beta1.BackupConfig{}
+			err = k8sClient.Get(ctx, types.NamespacedName{
+				Name:      "test-normal-deletion",
+				Namespace: "default",
+			}, updatedResource)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(updatedResource.Finalizers).To(ContainElement(v1beta1.BackupConfigFinalizerName))
+
+			// Cleanup
+			Expect(k8sClient.Delete(ctx, resourceNormal)).To(Succeed())
+		})
 	})
 })

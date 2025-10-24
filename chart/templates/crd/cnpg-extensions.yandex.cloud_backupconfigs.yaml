@@ -147,6 +147,20 @@ spec:
                       If not specified - backups will not be deleted automatically
                     pattern: ^[1-9][0-9]*[dwmh]$
                     type: string
+                  ignoreForBackupConfigDeletion:
+                    default: false
+                    description: |-
+                      Whether to disable S3 storage cleanup on BackupConfig deletion.
+                      Useful when managing storage retention by S3 lifecycle policies.
+                      When true, the operator will skip storage cleanup when BackupConfig is deleted.
+                    type: boolean
+                  ignoreForBackupDeletion:
+                    default: false
+                    description: |-
+                      Whether to disable S3 storage cleanup on individual Backup resource deletion.
+                      Useful when managing storage retention by S3 lifecycle policies.
+                      When true, the operator will skip storage cleanup when individual Backup resources are deleted.
+                    type: boolean
                   ignoreForManualBackups:
                     default: false
                     description: |-

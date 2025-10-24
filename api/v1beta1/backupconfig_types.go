@@ -180,6 +180,20 @@ type BackupEncryptionConfig struct {
 }
 
 type BackupRetentionConfig struct {
+	// Whether to disable S3 storage cleanup on BackupConfig deletion.
+	// Useful when managing storage retention by S3 lifecycle policies.
+	// When true, the operator will skip storage cleanup when BackupConfig is deleted.
+	// +kubebuilder:default:=false
+	// +optional
+	IgnoreForBackupConfigDeletion bool `json:"ignoreForBackupConfigDeletion,omitempty"`
+
+	// Whether to disable S3 storage cleanup on individual Backup resource deletion.
+	// Useful when managing storage retention by S3 lifecycle policies.
+	// When true, the operator will skip storage cleanup when individual Backup resources are deleted.
+	// +kubebuilder:default:=false
+	// +optional
+	IgnoreForBackupDeletion bool `json:"ignoreForBackupDeletion,omitempty"`
+
 	// Whether to ignore manually created backups in retention policy
 	//
 	// IMPORTANT: Automatically created backups should have OwnerReference with
