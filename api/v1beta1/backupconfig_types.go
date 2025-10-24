@@ -33,16 +33,45 @@ const BackupConfigSecretFinalizerName = "cnpg-plugin-wal-g.yandex.cloud/backup-c
 // It is used to ensure that ConfigMap are not deleted while they are still referenced by a BackupConfig
 const BackupConfigCMFinalizerName = "cnpg-plugin-wal-g.yandex.cloud/backup-config-configmap-protection"
 
+// ValueFromSource defines a reference to a value stored in a Secret or ConfigMap
+type ValueFromSource struct {
+	// Reference to a key in a Secret
+	// +optional
+	SecretKeyRef *corev1.SecretKeySelector `json:"secretKeyRef,omitempty"`
+
+	// Reference to a key in a ConfigMap
+	// +optional
+	ConfigMapKeyRef *corev1.ConfigMapKeySelector `json:"configMapKeyRef,omitempty"`
+}
+
 // S3StorageConfig defines S3-specific configuration for object storage
 type S3StorageConfig struct {
 	// e.g. s3://bucket/path/to/folder
+	// Mutually exclusive with PrefixFrom
 	Prefix string `json:"prefix,omitempty"`
 
+	// Reference to get prefix value from Secret or ConfigMap
+	// Mutually exclusive with Prefix
+	// +optional
+	PrefixFrom *ValueFromSource `json:"prefixFrom,omitempty"`
+
 	// S3 Region
+	// Mutually exclusive with RegionFrom
 	Region string `json:"region,omitempty"`
 
+	// Reference to get region value from Secret or ConfigMap
+	// Mutually exclusive with Region
+	// +optional
+	RegionFrom *ValueFromSource `json:"regionFrom,omitempty"`
+
 	// S3 endpoint url
+	// Mutually exclusive with EndpointURLFrom
 	EndpointURL string `json:"endpointUrl,omitempty"`
+
+	// Reference to get endpoint URL value from Secret or ConfigMap
+	// Mutually exclusive with EndpointURL
+	// +optional
+	EndpointURLFrom *ValueFromSource `json:"endpointUrlFrom,omitempty"`
 
 	// To enable path-style addressing (i.e., http://s3.amazonaws.com/BUCKET/KEY)
 	// when connecting to an S3-compatible service that lack of support for
