@@ -63,6 +63,8 @@ func (r *BackupReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 	logger := logr.FromContextOrDiscard(ctx)
 	ctx = logr.NewContext(ctx, logger)
 
+	logger.V(1).Info("Reconciling backup")
+
 	backup := &cnpgv1.Backup{}
 	if err := r.Get(ctx, req.NamespacedName, backup); err != nil {
 		// The Backup resource may have been deleted
@@ -113,6 +115,12 @@ func (r *BackupReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 	}
 
 	if err := r.reconcileFinalizers(ctx, backup, backupConfig); err != nil {
+		return ctrl.Result{}, err
+	}
+
+	// Reconcile WAL-G backup permanence - mark manual backups as permanent to prevent infinite WAL archiving
+	err = r.reconcileBackupPermanence(ctx, backup)
+	if err != nil {
 		return ctrl.Result{}, err
 	}
 
@@ -185,6 +193,59 @@ func (r *BackupReconciler) reconcileOwnerReference(ctx context.Context, backup *
 		"backupConfigName", backupConfig.Name)
 
 	return r.Update(ctx, backup)
+}
+
+// reconcileBackupPermanence checks that Backup is manual (created directly by user, not by ScheduledBackup)
+// and in that case marks it as permanent (to prevent keeping WALs indefinitely for that backup)
+func (r *BackupReconciler) reconcileBackupPermanence(ctx context.Context, backup *cnpgv1.Backup) error {
+	logger := logr.FromContextOrDiscard(ctx)
+
+	logger.V(1).Info("Reconciling backup permanence")
+
+	if backup.Status.Phase != cnpgv1.BackupPhaseCompleted {
+		return nil // skipping Backups in not completed phase
+	}
+
+	// Get the cluster
+	cluster := &cnpgv1.Cluster{}
+	if err := r.Get(ctx, client.ObjectKey{Namespace: backup.Namespace, Name: backup.Spec.Cluster.Name}, cluster); err != nil {
+		logger.Error(err, "Failed to get Cluster for Backup")
+		return client.IgnoreNotFound(err)
+	}
+
+	// Get the BackupConfig for this cluster
+	backupConfig, err := v1beta1.GetBackupConfigForCluster(ctx, r.Client, cluster)
+	if err != nil || backupConfig == nil {
+		logger.Info("No BackupConfig found for cluster", "error", err)
+		return err
+	}
+
+	pgVersion, err := strconv.Atoi(backup.Labels[v1beta1.BackupPgVersionLabelName])
+	if err != nil {
+		logger.Error(err,
+			"Cannot parse pgVersion from backup version annotation, skipping reconciling Backup permanence",
+			"pg-major-label",
+			backup.Labels[v1beta1.BackupPgVersionLabelName],
+		)
+		return nil
+	}
+
+	backupConfigWithSecrets, err := v1beta1.GetBackupConfigWithSecretsForBackup(ctx, r.Client, backup)
+	if client.IgnoreNotFound(err) != nil {
+		return fmt.Errorf("while getting backupconfig with secrets: %w", err)
+	}
+
+	// Manual backup is a backup not owned by anything except BackupConfig
+	// (for automated backups owner is either Cluster or ScheduledBackup resource)
+	// We assume that all backups passed there are owned by BackupConfig,
+	// so it is enough to check that there's only 1 OwnerReference
+	backupIsManual := len(backup.OwnerReferences) == 1
+	if backupIsManual {
+		err = walg.MarkBackupPermanent(ctx, backupConfigWithSecrets, pgVersion, backup.Status.BackupID)
+	}
+
+	// We do NOT unmark backups as inpermanent - it will be done during backup deletion operation
+	return err
 }
 
 func (r *BackupReconciler) reconcileRelatedBackupsMetadata(ctx context.Context, backup *cnpgv1.Backup) error {
