@@ -331,13 +331,15 @@ func (b *BackupDeletionController) deleteBackupConfig(ctx context.Context, backu
 		// Performing cleanup for all known PG versions (to remove both old-version backups and current backups)
 		for pgVersion := 11; pgVersion <= 19; pgVersion++ {
 			result, err := walg.DeleteAllBackupsAndWALsInStorage(ctx, backupConfigWithSecrets, pgVersion)
-			if err != nil {
+			if err != nil && result != nil {
 				return fmt.Errorf(
 					"while wal-g storage cleanup: error %w\nWAL-G stdout: %s\nWAL-G stderr: %s",
 					err,
 					string(result.Stdout()),
 					string(result.Stderr()),
 				)
+			} else if err != nil {
+				return fmt.Errorf("while wal-g storage cleanup: %w", err)
 			}
 		}
 	}

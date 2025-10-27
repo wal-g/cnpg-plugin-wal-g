@@ -261,6 +261,21 @@ func DeleteAllBackupsAndWALsInStorage(
 	backupConfig *v1beta1.BackupConfigWithSecrets,
 	pgMajorVersion int,
 ) (*cmd.RunResult, error) {
+	backupsList, err := GetBackupsList(ctx, backupConfig, pgMajorVersion)
+	if err != nil {
+		return nil, fmt.Errorf("while fetching backups list in storage: %w", err)
+	}
+
+	// Unmarking permanent backups from latest to first to perform full cleanup on storage
+	for i := len(backupsList) - 1; i >= 0; i-- {
+		if backupsList[i].IsPermanent {
+			err := UnmarkBackupPermanent(ctx, backupConfig, pgMajorVersion, backupsList[i].BackupName)
+			if err != nil {
+				return nil, err
+			}
+		}
+	}
+
 	return cmd.New("wal-g", "delete", "everything", "FORCE", "--confirm").
 		WithContext(ctx).
 		WithEnv(NewConfigFromBackupConfig(backupConfig, pgMajorVersion).ToEnvMap()).
