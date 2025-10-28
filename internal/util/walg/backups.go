@@ -165,6 +165,57 @@ func GetBackupByName(ctx context.Context, backupList []BackupMetadata, name stri
 	return &backup
 }
 
+// Marking backup as permanent. These backups cannot be deleted with `wal-g delete everything` and
+// are ignored when running WAL retention.
+//
+// Marking backups as permanent is useful for user-created backups which can be stored indefinitely
+func MarkBackupPermanent(
+	ctx context.Context,
+	backupConfig *v1beta1.BackupConfigWithSecrets,
+	pgMajorVersion int,
+	backupName string,
+) error {
+	logger := logr.FromContextOrDiscard(ctx)
+
+	result, err := cmd.New("wal-g", "backup-mark", backupName).
+		WithContext(ctx).
+		WithEnv(NewConfigFromBackupConfig(backupConfig, pgMajorVersion).ToEnvMap()).
+		Run()
+
+	if err != nil {
+		logger.Error(
+			err, fmt.Sprintf("Error while 'wal-g backup-mark %s'", backupName),
+			"stdout", result.Stdout(), "stderr", result.Stderr(),
+		)
+	}
+	return err
+}
+
+// Removing permanent mark from backup
+// This is useful when need to delete backup, which was previously marked as permanent.
+// This will NOT do anything and will NOT throw an error if backup is already NOT marked permanent.
+func UnmarkBackupPermanent(
+	ctx context.Context,
+	backupConfig *v1beta1.BackupConfigWithSecrets,
+	pgMajorVersion int,
+	backupName string,
+) error {
+	logger := logr.FromContextOrDiscard(ctx)
+
+	result, err := cmd.New("wal-g", "backup-mark", "-i", backupName).
+		WithContext(ctx).
+		WithEnv(NewConfigFromBackupConfig(backupConfig, pgMajorVersion).ToEnvMap()).
+		Run()
+
+	if err != nil {
+		logger.Error(
+			err, fmt.Sprintf("Error while 'wal-g backup-mark -i %s'", backupName),
+			"stdout", result.Stdout(), "stderr", result.Stderr(),
+		)
+	}
+	return err
+}
+
 // DeleteBackup deletes a backup using WAL-G
 func DeleteBackup(
 	ctx context.Context,
@@ -173,6 +224,9 @@ func DeleteBackup(
 	backupName string,
 ) (*cmd.RunResult, error) {
 	logger := logr.FromContextOrDiscard(ctx)
+
+	// Ignore errors on UnmarkBackupPermanent and try our best to remove backup
+	_ = UnmarkBackupPermanent(ctx, backupConfig, pgMajorVersion, backupName)
 
 	result, err := cmd.New("wal-g", "delete", "target", backupName, "--confirm").
 		WithContext(ctx).
@@ -184,6 +238,7 @@ func DeleteBackup(
 	if err != nil && strings.Contains(string(result.Stderr()), backupDoesNotExistStr) {
 		err = nil
 	}
+	// Do not abort if error not-nil and try anyway to perform `wal-g delete garbage` anyway
 
 	gcResult, gcErr := cmd.New("wal-g", "delete", "garbage", "--confirm").
 		WithContext(ctx).
@@ -206,6 +261,21 @@ func DeleteAllBackupsAndWALsInStorage(
 	backupConfig *v1beta1.BackupConfigWithSecrets,
 	pgMajorVersion int,
 ) (*cmd.RunResult, error) {
+	backupsList, err := GetBackupsList(ctx, backupConfig, pgMajorVersion)
+	if err != nil {
+		return nil, fmt.Errorf("while fetching backups list in storage: %w", err)
+	}
+
+	// Unmarking permanent backups from latest to first to perform full cleanup on storage
+	for i := len(backupsList) - 1; i >= 0; i-- {
+		if backupsList[i].IsPermanent {
+			err := UnmarkBackupPermanent(ctx, backupConfig, pgMajorVersion, backupsList[i].BackupName)
+			if err != nil {
+				return nil, err
+			}
+		}
+	}
+
 	return cmd.New("wal-g", "delete", "everything", "FORCE", "--confirm").
 		WithContext(ctx).
 		WithEnv(NewConfigFromBackupConfig(backupConfig, pgMajorVersion).ToEnvMap()).
