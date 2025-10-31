@@ -261,17 +261,18 @@ func DeleteAllBackupsAndWALsInStorage(
 	backupConfig *v1beta1.BackupConfigWithSecrets,
 	pgMajorVersion int,
 ) (*cmd.RunResult, error) {
+	logger := logr.FromContextOrDiscard(ctx)
 	backupsList, err := GetBackupsList(ctx, backupConfig, pgMajorVersion)
 	if err != nil {
-		return nil, fmt.Errorf("while fetching backups list in storage: %w", err)
-	}
-
-	// Unmarking permanent backups from latest to first to perform full cleanup on storage
-	for i := len(backupsList) - 1; i >= 0; i-- {
-		if backupsList[i].IsPermanent {
-			err := UnmarkBackupPermanent(ctx, backupConfig, pgMajorVersion, backupsList[i].BackupName)
-			if err != nil {
-				return nil, err
+		logger.Error(err, "Error occurred while deleting all backups: cannot fetch backups list")
+	} else {
+		// Unmarking permanent backups from latest to first to perform full cleanup on storage
+		for i := len(backupsList) - 1; i >= 0; i-- {
+			if backupsList[i].IsPermanent {
+				err := UnmarkBackupPermanent(ctx, backupConfig, pgMajorVersion, backupsList[i].BackupName)
+				if err != nil {
+					logger.Error(err, "Error occurred while deleting all backups: cannot unmark permanent backup")
+				}
 			}
 		}
 	}
