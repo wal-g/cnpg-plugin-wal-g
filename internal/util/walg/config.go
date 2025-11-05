@@ -20,15 +20,18 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"reflect"
 	"slices"
 	"strconv"
 	"strings"
 
+	"github.com/spf13/viper"
 	"github.com/wal-g/cnpg-plugin-wal-g/api/v1beta1"
 )
 
 type Config struct {
+	// WALG params
 	AWSAccessKeyID                    string `json:"AWS_ACCESS_KEY_ID,omitempty"`
 	AWSEndpoint                       string `json:"AWS_ENDPOINT,omitempty"`
 	AWSS3ForcePathStyle               bool   `json:"AWS_S3_FORCE_PATH_STYLE,omitempty"`
@@ -68,7 +71,7 @@ type Config struct {
 }
 
 func NewConfigWithDefaults() Config {
-	return Config{ // TODO: evaluate defaults based on runtime constraints!
+	cfg := Config{ // TODO: evaluate defaults based on runtime constraints!
 		GoMaxProcs:                        5,
 		PgHost:                            "/controller/run",
 		PgUser:                            "postgres",
@@ -88,6 +91,8 @@ func NewConfigWithDefaults() Config {
 		WalgUploadDiskConcurrency:         8,
 		WalgPreventWalOverwrite:           "True",
 	}
+	cfg.setWalgPrefetchDir()
+	return cfg
 }
 
 func NewConfigFromBackupConfig(backupConfig *v1beta1.BackupConfigWithSecrets, pgMajorVersion int) *Config {
@@ -147,6 +152,8 @@ func NewConfigFromBackupConfig(backupConfig *v1beta1.BackupConfigWithSecrets, pg
 	if backupConfig.Spec.TarSizeThreshold != nil {
 		config.WalgTarSizeThreshold = *backupConfig.Spec.TarSizeThreshold
 	}
+
+	config.setWalgPrefetchDir()
 	return &config
 }
 
@@ -223,4 +230,25 @@ func (c *Config) ToEnvMap() map[string]string {
 		result[envName] = fieldValue
 	}
 	return result
+}
+
+func (c *Config) setWalgPrefetchDir() {
+	const pgWalDirectory = "pg_wal"
+
+	pgdataPath := viper.GetString("pgdata")
+	if pgdataPath == "" {
+		c.WalgPrefetchDir = ""
+		c.WalgDownloadConcurrency = 1 // Disable prefetching data because PGDATA is unspecified
+		return
+	}
+
+	pgWalPath, err := filepath.EvalSymlinks(filepath.Join(pgdataPath, pgWalDirectory))
+	if err != nil {
+		panic(fmt.Sprintf("error resolving symlinks for path %s: %v", filepath.Join(pgdataPath, pgWalDirectory), err))
+	}
+
+	// Using upper dir from pg_wal directory after symlink expand
+	// (to handle cases when WALs are stored in separate drive)
+	pgWalPrefetchDir := filepath.Dir(pgWalPath)
+	c.WalgPrefetchDir = pgWalPrefetchDir
 }

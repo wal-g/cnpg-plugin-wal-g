@@ -5,7 +5,7 @@
 FROM docker.io/golang:1.23-bookworm AS walg-builder
 ARG TARGETOS
 ARG TARGETARCH
-ARG WALG_VERSION=v3.0.5
+ARG WALG_VERSION=v3.0.7
 ARG WALG_REPO=https://github.com/wal-g/wal-g
 
 # build arguments for wal-g
@@ -17,6 +17,9 @@ ARG USE_LZO=1
 RUN apt update && apt install -y libbrotli-dev liblzo2-dev libsodium-dev curl cmake git
 # Clone wal-g sources
 RUN git clone --depth 1 --branch ${WALG_VERSION} ${WALG_REPO} $(go env GOPATH)/src/github.com/wal-g/wal-g
+
+# Dirty hack to mitigate https://github.com/wal-g/wal-g/issues/1964 (remove this after WAL-G 3.0.8 released)
+RUN cd $(go env GOPATH)/src/github.com/wal-g/wal-g && git tag -d v3.0.6
 
 # Preparing && building necessary dependencies
 RUN cd $(go env GOPATH)/src/github.com/wal-g/wal-g && \
