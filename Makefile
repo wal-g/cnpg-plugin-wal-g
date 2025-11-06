@@ -10,6 +10,8 @@ DOCKER_IMG ?= ghcr.io/wal-g/cnpg-plugin-wal-g
 DOCKER_TAG = $(shell tag="$(GIT_TAG)"; [[ $$tag =~ ^v[0-9]+\.[0-9]+\.[0-9]+ ]] && tag="$${tag:1}"; echo "$$tag")
 HELM_TAG = $(DOCKER_TAG)-helm-chart
 
+KIND_CLUSTER_NAME ?= cnpg-wal-g
+
 ifeq ($(TAG),"v0.0.0-dev")
 	LDFLAGS = -ldflags "-s -w $(GO_VERSION_FLAGS)"
 else
@@ -194,10 +196,10 @@ deploy: manifests kustomize ## Deploy controller to the K8s cluster specified in
 
 .PHONY: deploy-kind
 deploy-kind: manifests kustomize ## Deploy controller to the K8s cluster specified in ~/.kube/config.
-	kind load docker-image ${DOCKER_IMG}:${DOCKER_TAG} -n cnpg-wal-g
-	$(KUSTOMIZE) build config/kind | IMG=${DOCKER_IMG} TAG=${DOCKER_TAG} envsubst | $(KUBECTL) apply -f -
-	$(KUBECTL) rollout restart deployment/cnpg-plugin-wal-g-controller-manager -n cnpg-system
-	$(KUBECTL) rollout status deployment/cnpg-plugin-wal-g-controller-manager -n cnpg-system --timeout=120s
+	kind load docker-image ${DOCKER_IMG}:${DOCKER_TAG} -n ${KIND_CLUSTER_NAME}
+	$(KUSTOMIZE) build config/kind | IMG=${DOCKER_IMG} TAG=${DOCKER_TAG} envsubst | $(KUBECTL) --context kind-${KIND_CLUSTER_NAME} apply -f -
+	$(KUBECTL) --context kind-${KIND_CLUSTER_NAME} rollout restart deployment/cnpg-plugin-wal-g-controller-manager -n cnpg-system
+	$(KUBECTL) --context kind-${KIND_CLUSTER_NAME} rollout status deployment/cnpg-plugin-wal-g-controller-manager -n cnpg-system --timeout=120s
 
 .PHONY: undeploy
 undeploy: kustomize ## Undeploy controller from the K8s cluster specified in ~/.kube/config. Call with ignore-not-found=true to ignore resource not found errors during deletion.
