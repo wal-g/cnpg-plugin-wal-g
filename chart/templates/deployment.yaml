@@ -5,6 +5,7 @@ metadata:
   labels:
     {{- include "cnpg-plugin-wal-g.labels" . | nindent 4 }}
 spec:
+  replicas: {{ .Values.replicaCount }}
   selector:
     matchLabels:
       {{- include "cnpg-plugin-wal-g.selectorLabels" . | nindent 6 }}
