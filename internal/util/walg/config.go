@@ -79,7 +79,7 @@ func NewConfigWithDefaults() Config {
 		WalgAliveCheckInterval:            "30s",
 		WalgCompressionMethod:             "brotli",
 		WalgDeltaMaxSteps:                 6,
-		WalgDiskRateLimit:                 7864320,
+		WalgDiskRateLimit:                 314572800,
 		WalgDownloadConcurrency:           12,
 		WalgFailoverStoragesCacheLifetime: "0m",
 		WalgFailoverStoragesCheck:         false,
