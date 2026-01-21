@@ -109,7 +109,7 @@ func (b BackupServiceImplementation) Backup(
 
 	result, err := cmd.New("wal-g", "backup-push", pgdata, "--add-user-data", string(backupParamsJSON)).
 		WithContext(logr.NewContext(ctx, logger)).
-		WithEnv(walg.NewConfigFromBackupConfig(backupConfigWithSecrets, pgMajorVersion).ToEnvMap()).
+		WithEnv(walg.NewConfigFromBackupConfig(backupConfigWithSecrets, pgMajorVersion, cluster).ToEnvMap()).
 		Run()
 
 	if err != nil {
@@ -117,7 +117,7 @@ func (b BackupServiceImplementation) Backup(
 		return nil, fmt.Errorf("failed to do wal-g backup-push: %w (stderr: %s)", err, result.Stderr())
 	}
 	logger.Info("Finished wal-g backup-push", "stdout", string(result.Stdout()), "stderr", string(result.Stderr()))
-	return b.buildBackupResult(ctx, backupHumanName, backupConfigWithSecrets, pgMajorVersion, backupParams)
+	return b.buildBackupResult(ctx, backupHumanName, backupConfigWithSecrets, pgMajorVersion, backupParams, cluster)
 }
 
 func (b BackupServiceImplementation) getBackupConfig(
@@ -143,8 +143,9 @@ func (b BackupServiceImplementation) buildBackupResult(
 	config *v1beta1.BackupConfigWithSecrets,
 	pgMajorVersion int,
 	backupParams map[string]any,
+	cluster *cnpgv1.Cluster,
 ) (*cnpgbackup.BackupResult, error) {
-	walgBackupList, err := walg.GetBackupsList(ctx, config, pgMajorVersion)
+	walgBackupList, err := walg.GetBackupsList(ctx, config, pgMajorVersion, cluster)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list wal-g backups: %w", err)
 	}

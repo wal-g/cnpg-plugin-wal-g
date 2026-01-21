@@ -241,7 +241,7 @@ func (r *BackupReconciler) reconcileBackupPermanence(ctx context.Context, backup
 	// so it is enough to check that there's only 1 OwnerReference
 	backupIsManual := len(backup.OwnerReferences) == 1
 	if backupIsManual {
-		err = walg.MarkBackupPermanent(ctx, backupConfigWithSecrets, pgVersion, backup.Status.BackupID)
+		err = walg.MarkBackupPermanent(ctx, backupConfigWithSecrets, pgVersion, backup.Status.BackupID, cluster)
 	}
 
 	// We do NOT unmark backups as inpermanent - it will be done during backup deletion operation

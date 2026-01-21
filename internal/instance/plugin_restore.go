@@ -106,7 +106,7 @@ func (r RestoreJobHooksImpl) Restore(
 		)
 	}
 
-	walgBackupList, err := walg.GetBackupsList(ctx, restoreConfigWithSecrets, pgMajorVersion)
+	walgBackupList, err := walg.GetBackupsList(ctx, restoreConfigWithSecrets, pgMajorVersion, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list wal-g backups: %w", err)
 	}
@@ -154,7 +154,7 @@ func (r RestoreJobHooksImpl) downloadBackupIntoDir(
 
 	result, err := cmd.New("wal-g", "backup-fetch", "--turbo", targetDir, walgBackupName).
 		WithContext(ctx).
-		WithEnv(walg.NewConfigFromBackupConfig(config, pgMajorVersion).ToEnvMap()).
+		WithEnv(walg.NewConfigFromBackupConfig(config, pgMajorVersion, nil).ToEnvMap()).
 		Run()
 
 	if err != nil {

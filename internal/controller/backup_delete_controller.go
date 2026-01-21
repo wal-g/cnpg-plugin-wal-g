@@ -278,9 +278,17 @@ func (b *BackupDeletionController) deleteWALGBackup(ctx context.Context, backupK
 		return removeBackupFinalizer(ctx, backup, b.Client)
 	}
 
+	// Get the cluster
+	cluster := &cnpgv1.Cluster{}
+	if err := b.Get(ctx, client.ObjectKey{Namespace: backup.Namespace, Name: backup.Spec.Cluster.Name}, cluster); err != nil {
+		logger.Error(err, "Failed to get Cluster for Backup")
+		// Proceed with nil cluster if we can't get the cluster
+		cluster = nil
+	}
+
 	// Delete the backup using WAL-G
 	logger.Info("Deleting backup from storage via WAL-G", "backupID", backup.Status.BackupID)
-	result, err := walg.DeleteBackup(ctx, backupConfigWithSecrets, pgVersion, backup.Status.BackupID)
+	result, err := walg.DeleteBackup(ctx, backupConfigWithSecrets, pgVersion, backup.Status.BackupID, cluster)
 	if err != nil {
 		return fmt.Errorf(
 			"while wal-g backup removal: error %w\nWAL-G stdout: %s\nWAL-G stderr: %s",
@@ -330,7 +338,7 @@ func (b *BackupDeletionController) deleteBackupConfig(ctx context.Context, backu
 
 		// Performing cleanup for all known PG versions (to remove both old-version backups and current backups)
 		for pgVersion := 11; pgVersion <= 19; pgVersion++ {
-			result, err := walg.DeleteAllBackupsAndWALsInStorage(ctx, backupConfigWithSecrets, pgVersion)
+			result, err := walg.DeleteAllBackupsAndWALsInStorage(ctx, backupConfigWithSecrets, pgVersion, nil)
 			if err != nil && result != nil {
 				return fmt.Errorf(
 					"while wal-g storage cleanup: error %w\nWAL-G stdout: %s\nWAL-G stderr: %s",

@@ -116,7 +116,8 @@ var _ = Describe("WAL-G Config Integration Tests", func() {
 
 			// Generate wal-g configuration
 			pgMajorVersion := 16
-			walgConfig := NewConfigFromBackupConfig(configWithSecrets, pgMajorVersion)
+			// For tests, we don't have a cluster context, so we pass nil
+			walgConfig := NewConfigFromBackupConfig(configWithSecrets, pgMajorVersion, nil)
 
 			// Verify wal-g configuration
 			Expect(walgConfig.AWSAccessKeyID).To(Equal("test-access-key-id"))
@@ -230,7 +231,8 @@ var _ = Describe("WAL-G Config Integration Tests", func() {
 
 			// Generate wal-g configuration
 			pgMajorVersion := 15
-			walgConfig := NewConfigFromBackupConfig(configWithSecrets, pgMajorVersion)
+			// For tests, we don't have a cluster context, so we pass nil
+			walgConfig := NewConfigFromBackupConfig(configWithSecrets, pgMajorVersion, nil)
 
 			// Verify wal-g configuration uses resolved values
 			Expect(walgConfig.AWSAccessKeyID).To(Equal("secret-access-key-id"))
@@ -318,7 +320,8 @@ var _ = Describe("WAL-G Config Integration Tests", func() {
 
 			// Generate wal-g configuration
 			pgMajorVersion := 14
-			walgConfig := NewConfigFromBackupConfig(configWithSecrets, pgMajorVersion)
+			// For tests, we don't have a cluster context, so we pass nil
+			walgConfig := NewConfigFromBackupConfig(configWithSecrets, pgMajorVersion, nil)
 
 			// Verify wal-g configuration uses resolved values
 			Expect(walgConfig.AWSAccessKeyID).To(Equal("configmap-access-key-id"))
@@ -387,7 +390,8 @@ var _ = Describe("WAL-G Config Integration Tests", func() {
 
 			// Generate wal-g configuration
 			pgMajorVersion := 13
-			walgConfig := NewConfigFromBackupConfig(configWithSecrets, pgMajorVersion)
+			// For tests, we don't have a cluster context, so we pass nil
+			walgConfig := NewConfigFromBackupConfig(configWithSecrets, pgMajorVersion, nil)
 
 			// Verify wal-g configuration handles empty values
 			Expect(walgConfig.AWSAccessKeyID).To(Equal("test-access-key-id"))
@@ -519,7 +523,8 @@ var _ = Describe("WAL-G Config Integration Tests", func() {
 
 			// Step 4: Generate wal-g configuration
 			pgMajorVersion := 17
-			walgConfig := NewConfigFromBackupConfig(configWithSecrets, pgMajorVersion)
+			// For tests, we don't have a cluster context, so we pass nil
+			walgConfig := NewConfigFromBackupConfig(configWithSecrets, pgMajorVersion, nil)
 
 			// Step 5: Verify the final wal-g configuration
 			Expect(walgConfig.AWSAccessKeyID).To(Equal("workflow-access-key-id"))

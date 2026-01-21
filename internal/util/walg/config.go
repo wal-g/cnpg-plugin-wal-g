@@ -26,6 +26,7 @@ import (
 	"strconv"
 	"strings"
 
+	cnpgv1 "github.com/cloudnative-pg/cloudnative-pg/api/v1"
 	"github.com/spf13/viper"
 	"github.com/wal-g/cnpg-plugin-wal-g/api/v1beta1"
 )
@@ -95,7 +96,7 @@ func NewConfigWithDefaults() Config {
 	return cfg
 }
 
-func NewConfigFromBackupConfig(backupConfig *v1beta1.BackupConfigWithSecrets, pgMajorVersion int) *Config {
+func NewConfigFromBackupConfig(backupConfig *v1beta1.BackupConfigWithSecrets, pgMajorVersion int, cluster *cnpgv1.Cluster) *Config {
 	config := NewConfigWithDefaults()
 
 	if backupConfig.Spec.Storage.StorageType == v1beta1.StorageTypeS3 {
@@ -104,7 +105,13 @@ func NewConfigFromBackupConfig(backupConfig *v1beta1.BackupConfigWithSecrets, pg
 		config.AWSEndpoint = backupConfig.Spec.Storage.S3.ResolvedEndpointURL
 		config.AWSRegion = backupConfig.Spec.Storage.S3.ResolvedRegion
 		config.AWSS3ForcePathStyle = backupConfig.Spec.Storage.S3.ForcePathStyle
-		config.WaleS3Prefix = fmt.Sprintf("%s/%d", backupConfig.Spec.Storage.S3.ResolvedPrefix, pgMajorVersion)
+
+		// Add cluster UID to the prefix for backup operations when cluster is provided
+		if cluster != nil {
+			config.WaleS3Prefix = fmt.Sprintf("%s/%s/%s/%s/%d", backupConfig.Spec.Storage.S3.ResolvedPrefix, cluster.Namespace, cluster.Name, cluster.UID, pgMajorVersion)
+		} else {
+			config.WaleS3Prefix = fmt.Sprintf("%s/%d", backupConfig.Spec.Storage.S3.ResolvedPrefix, pgMajorVersion)
+		}
 		config.WalgS3StorageClass = backupConfig.Spec.Storage.S3.StorageClass
 
 		// Handle custom CA certificate if provided

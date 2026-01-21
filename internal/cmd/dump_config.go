@@ -123,7 +123,8 @@ func runDumpConfig(ctx context.Context, client client.Client) error {
 	}
 
 	// Create a Config object
-	config := walg.NewConfigFromBackupConfig(backupConfigWithSecrets, viper.GetInt("pg_major"))
+	// For dump-config command, we don't have a cluster context, so we pass nil
+	config := walg.NewConfigFromBackupConfig(backupConfigWithSecrets, viper.GetInt("pg_major"), nil)
 
 	// Write the Config to a file
 	err = config.ToFile(outputPath)

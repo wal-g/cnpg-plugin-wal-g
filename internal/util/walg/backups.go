@@ -25,6 +25,7 @@ import (
 	"strings"
 	"time"
 
+	cnpgv1 "github.com/cloudnative-pg/cloudnative-pg/api/v1"
 	"github.com/go-logr/logr"
 	"github.com/samber/lo"
 	v1beta1 "github.com/wal-g/cnpg-plugin-wal-g/api/v1beta1"
@@ -94,11 +95,12 @@ func GetBackupsList(
 	ctx context.Context,
 	backupConfig *v1beta1.BackupConfigWithSecrets,
 	pgMajorVersion int,
+	cluster *cnpgv1.Cluster,
 ) ([]BackupMetadata, error) {
 	logger := logr.FromContextOrDiscard(ctx)
 	result, err := cmd.New("wal-g", "backup-list", "--detail", "--json").
 		WithContext(ctx).
-		WithEnv(NewConfigFromBackupConfig(backupConfig, pgMajorVersion).ToEnvMap()).
+		WithEnv(NewConfigFromBackupConfig(backupConfig, pgMajorVersion, cluster).ToEnvMap()).
 		Run()
 	if err != nil {
 		logger.Error(
@@ -174,12 +176,13 @@ func MarkBackupPermanent(
 	backupConfig *v1beta1.BackupConfigWithSecrets,
 	pgMajorVersion int,
 	backupName string,
+	cluster *cnpgv1.Cluster,
 ) error {
 	logger := logr.FromContextOrDiscard(ctx)
 
 	result, err := cmd.New("wal-g", "backup-mark", backupName).
 		WithContext(ctx).
-		WithEnv(NewConfigFromBackupConfig(backupConfig, pgMajorVersion).ToEnvMap()).
+		WithEnv(NewConfigFromBackupConfig(backupConfig, pgMajorVersion, cluster).ToEnvMap()).
 		Run()
 
 	if err != nil {
@@ -199,12 +202,13 @@ func UnmarkBackupPermanent(
 	backupConfig *v1beta1.BackupConfigWithSecrets,
 	pgMajorVersion int,
 	backupName string,
+	cluster *cnpgv1.Cluster,
 ) error {
 	logger := logr.FromContextOrDiscard(ctx)
 
 	result, err := cmd.New("wal-g", "backup-mark", "-i", backupName).
 		WithContext(ctx).
-		WithEnv(NewConfigFromBackupConfig(backupConfig, pgMajorVersion).ToEnvMap()).
+		WithEnv(NewConfigFromBackupConfig(backupConfig, pgMajorVersion, cluster).ToEnvMap()).
 		Run()
 
 	if err != nil {
@@ -222,15 +226,16 @@ func DeleteBackup(
 	backupConfig *v1beta1.BackupConfigWithSecrets,
 	pgMajorVersion int,
 	backupName string,
+	cluster *cnpgv1.Cluster,
 ) (*cmd.RunResult, error) {
 	logger := logr.FromContextOrDiscard(ctx)
 
 	// Ignore errors on UnmarkBackupPermanent and try our best to remove backup
-	_ = UnmarkBackupPermanent(ctx, backupConfig, pgMajorVersion, backupName)
+	_ = UnmarkBackupPermanent(ctx, backupConfig, pgMajorVersion, backupName, cluster)
 
 	result, err := cmd.New("wal-g", "delete", "target", backupName, "--confirm").
 		WithContext(ctx).
-		WithEnv(NewConfigFromBackupConfig(backupConfig, pgMajorVersion).ToEnvMap()).
+		WithEnv(NewConfigFromBackupConfig(backupConfig, pgMajorVersion, cluster).ToEnvMap()).
 		Run()
 
 	backupDoesNotExistStr := fmt.Sprintf("Backup '%s' does not exist.", backupName)
@@ -242,7 +247,7 @@ func DeleteBackup(
 
 	gcResult, gcErr := cmd.New("wal-g", "delete", "garbage", "--confirm").
 		WithContext(ctx).
-		WithEnv(NewConfigFromBackupConfig(backupConfig, pgMajorVersion).ToEnvMap()).
+		WithEnv(NewConfigFromBackupConfig(backupConfig, pgMajorVersion, cluster).ToEnvMap()).
 		Run()
 	if gcErr != nil {
 		// Actually errors on garbage collect do not block us from deleting backup
@@ -260,16 +265,17 @@ func DeleteAllBackupsAndWALsInStorage(
 	ctx context.Context,
 	backupConfig *v1beta1.BackupConfigWithSecrets,
 	pgMajorVersion int,
+	cluster *cnpgv1.Cluster,
 ) (*cmd.RunResult, error) {
 	logger := logr.FromContextOrDiscard(ctx)
-	backupsList, err := GetBackupsList(ctx, backupConfig, pgMajorVersion)
+	backupsList, err := GetBackupsList(ctx, backupConfig, pgMajorVersion, cluster)
 	if err != nil {
 		logger.Error(err, "Error occurred while deleting all backups: cannot fetch backups list")
 	} else {
 		// Unmarking permanent backups from latest to first to perform full cleanup on storage
 		for i := len(backupsList) - 1; i >= 0; i-- {
 			if backupsList[i].IsPermanent {
-				err := UnmarkBackupPermanent(ctx, backupConfig, pgMajorVersion, backupsList[i].BackupName)
+				err := UnmarkBackupPermanent(ctx, backupConfig, pgMajorVersion, backupsList[i].BackupName, cluster)
 				if err != nil {
 					logger.Error(err, "Error occurred while deleting all backups: cannot unmark permanent backup")
 				}
@@ -279,7 +285,7 @@ func DeleteAllBackupsAndWALsInStorage(
 
 	return cmd.New("wal-g", "delete", "everything", "FORCE", "--confirm").
 		WithContext(ctx).
-		WithEnv(NewConfigFromBackupConfig(backupConfig, pgMajorVersion).ToEnvMap()).
+		WithEnv(NewConfigFromBackupConfig(backupConfig, pgMajorVersion, cluster).ToEnvMap()).
 		Run()
 }
 

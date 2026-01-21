@@ -92,7 +92,7 @@ func (w WALServiceImplementation) Archive(
 
 	result, err := cmd.New("wal-g", "wal-push", request.SourceFileName).
 		WithContext(childrenCtx).
-		WithEnv(walg.NewConfigFromBackupConfig(backupConfig, pgMajorVersion).ToEnvMap()).
+		WithEnv(walg.NewConfigFromBackupConfig(backupConfig, pgMajorVersion, cluster).ToEnvMap()).
 		Run()
 
 	logger = logger.WithValues("stdout", string(result.Stdout()), "stderr", string(result.Stderr()))
@@ -133,7 +133,7 @@ func (w WALServiceImplementation) Restore(
 
 	result, err := cmd.New("wal-g", "wal-fetch", request.SourceWalName, request.DestinationFileName).
 		WithContext(childrenCtx).
-		WithEnv(walg.NewConfigFromBackupConfig(backupConfig, pgMajorVersion).ToEnvMap()).
+		WithEnv(walg.NewConfigFromBackupConfig(backupConfig, pgMajorVersion, nil).ToEnvMap()).
 		Run()
 
 	logger = logger.WithValues("stdout", string(result.Stdout()), "stderr", string(result.Stderr()))
