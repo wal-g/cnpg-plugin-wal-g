@@ -6,7 +6,7 @@ metadata:
     {{- include "cnpg-plugin-wal-g.labels" . | nindent 4 }}
     cnpg.io/pluginName: cnpg-extensions.yandex.cloud
   annotations:
-    cnpg.io/pluginPort: "9090"
+    cnpg.io/pluginPort: {{ .Values.service.port | quote }}
     {{- if .Values.cnpg.tls.certManager.createServerCert }}
     cnpg.io/pluginServerSecret: {{ include "cnpg-plugin-wal-g.fullname" . }}-server-tls
     {{- else }}
@@ -20,9 +20,9 @@ metadata:
 spec:
   type: ClusterIP
   ports:
-  - port: 9090
+  - port: {{ .Values.service.port }}
     protocol: TCP
-    targetPort: 9090
+    targetPort: {{ .Values.service.port }}
   selector:
     {{- include "cnpg-plugin-wal-g.selectorLabels" . | nindent 4 }}
   sessionAffinity: None

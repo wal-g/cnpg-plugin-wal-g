@@ -37,7 +37,7 @@ spec:
           - operator
           - --leader-elect
           - --health-probe-bind-address=:8081
-          - --cnpg-i-bind-address=:9090
+          - --cnpg-i-bind-address=:{{ .Values.service.port }}
           - --cnpg-i-cert-path=/tls/cnpgi-server
           - --cnpg-i-client-cert-path=/tls/cnpgi-client
           - --cnpg-i-pg-sidecar-image=$(SIDECAR_IMAGE)
