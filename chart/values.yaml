@@ -41,7 +41,7 @@ podSecurityContext:
   seccompProfile:
     type: RuntimeDefault
 
-securityContext: 
+securityContext:
   allowPrivilegeEscalation: false
   capabilities:
     drop:
@@ -61,6 +61,9 @@ resources: {}
   # requests:
   #   cpu: 100m
   #   memory: 128Mi
+
+service:
+  port: 9090
 
 # This is to setup the liveness and readiness probes more information can be found here: https://kubernetes.io/docs/tasks/configure-pod-container/configure-liveness-readiness-startup-probes/
 livenessProbe:
