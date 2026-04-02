@@ -225,7 +225,7 @@ type BackupRetentionConfig struct {
 
 // BackupConfigStatus defines the observed state of BackupConfig.
 type BackupConfigStatus struct {
-	// Important: Run "make" to regenerate code after modifying this file
+	// todo:
 }
 
 // +kubebuilder:object:root=true

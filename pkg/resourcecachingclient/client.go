@@ -159,7 +159,7 @@ func (c *Client) restClientForMapping(mapping *meta.RESTMapping) (rest.Interface
 		return nil, fmt.Errorf("while creating HTTPClientFor typed watch: %w", err)
 	}
 
-	restClient, err := apiutil.RESTClientForGVK(mapping.GroupVersionKind, false, c.config, serializer.NewCodecFactory(c.scheme), httpClient)
+	restClient, err := apiutil.RESTClientForGVK(mapping.GroupVersionKind, false, false, c.config, serializer.NewCodecFactory(c.scheme), httpClient)
 
 	if err != nil {
 		return nil, fmt.Errorf("while creating RESTClientForGVK %s: %w", mapping.GroupVersionKind.String(), err)

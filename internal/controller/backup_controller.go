@@ -333,11 +333,11 @@ func (r *BackupReconciler) reconcileBackupMetadata(
 			"while reconciling PG version annotation for backup",
 		)
 	} else if backup.Labels[v1beta1.BackupPgVersionLabelName] == "" && cluster != nil {
-		pgVersion, err := cluster.GetPostgresqlVersion()
+		pgMajorVersion, err := cluster.GetPostgresqlMajorVersion()
 		if err != nil {
 			logger.Error(err, "while getting PG version for cluster %v", client.ObjectKeyFromObject(cluster))
 		}
-		backup.Labels[v1beta1.BackupPgVersionLabelName] = strconv.FormatInt(int64(pgVersion.Major()), 10)
+		backup.Labels[v1beta1.BackupPgVersionLabelName] = strconv.FormatInt(int64(pgMajorVersion), 10)
 	}
 
 	backups, err := r.listBackupsOwnedByBackupConfig(ctx, backupConfig)

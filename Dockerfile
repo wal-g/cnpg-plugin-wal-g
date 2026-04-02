@@ -2,10 +2,10 @@
 
 # WAL-G Build section
 # Need to build from sources, because binary distributions do not include necessary base OS libs
-FROM docker.io/golang:1.23-bookworm AS walg-builder
+FROM docker.io/golang:1.26-trixie AS walg-builder
 ARG TARGETOS
 ARG TARGETARCH
-ARG WALG_VERSION=v3.0.7
+ARG WALG_VERSION=v3.0.8
 ARG WALG_REPO=https://github.com/wal-g/wal-g
 
 # build arguments for wal-g
@@ -18,9 +18,6 @@ RUN apt update && apt install -y libbrotli-dev liblzo2-dev libsodium-dev curl cm
 # Clone wal-g sources
 RUN git clone --depth 1 --branch ${WALG_VERSION} ${WALG_REPO} $(go env GOPATH)/src/github.com/wal-g/wal-g
 
-# Dirty hack to mitigate https://github.com/wal-g/wal-g/issues/1964 (remove this after WAL-G 3.0.8 released)
-RUN cd $(go env GOPATH)/src/github.com/wal-g/wal-g && git tag -d v3.0.6
-
 # Preparing && building necessary dependencies
 RUN cd $(go env GOPATH)/src/github.com/wal-g/wal-g && \
     export GOOS=${TARGETOS} && \
@@ -31,11 +28,12 @@ RUN cd $(go env GOPATH)/src/github.com/wal-g/wal-g && \
 RUN cd $(go env GOPATH)/src/github.com/wal-g/wal-g && \
     export GOOS=${TARGETOS} && \
     export GOARCH=${TARGETARCH} && \
+    export GOEXPERIMENT=jsonv2 && \
     make pg_build && make pg_install && /wal-g --version
 
 # Controller Build section
 #
-FROM docker.io/golang:1.23-bookworm AS controller-builder
+FROM docker.io/golang:1.26-trixie AS controller-builder
 ARG TARGETOS
 ARG TARGETARCH
 ARG GIT_TAG=v0.0.0-dev
@@ -49,8 +47,8 @@ RUN make build && ./output/cnpg-plugin-wal-g version
 
 # Runtime image section
 #
-# Primary runtime image (using bookworm-slim due to wal-g dynamic linked C dependencies)
-FROM docker.io/debian:bookworm-slim AS runtime
+# Primary runtime image (using trixie-slim due to wal-g dynamic linked C dependencies)
+FROM docker.io/debian:trixie-slim AS runtime
 LABEL org.opencontainers.image.source=https://github.com/wal-g/cnpg-plugin-wal-g
 LABEL org.opencontainers.image.description="CloudNativePG WAL-G Backup Plugin"
 LABEL org.opencontainers.image.licenses="Apache-2.0"

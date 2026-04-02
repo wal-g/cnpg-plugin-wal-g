@@ -223,7 +223,7 @@ func reconcilePodSpecWithPluginSidecar(
 	jobRole string,
 	additionalEnvs []corev1.EnvVar,
 ) error {
-	pgVersion, err := cluster.GetPostgresqlVersion()
+	pgMajorVersion, err := cluster.GetPostgresqlMajorVersion()
 	if err != nil {
 		return fmt.Errorf("while getting Postgresql version for cluster: %w", err)
 	}
@@ -242,7 +242,7 @@ func reconcilePodSpecWithPluginSidecar(
 		},
 		{
 			Name:  "PG_MAJOR",
-			Value: strconv.FormatInt(int64(pgVersion.Major()), 10),
+			Value: strconv.FormatInt(int64(pgMajorVersion), 10),
 		},
 	}
 
