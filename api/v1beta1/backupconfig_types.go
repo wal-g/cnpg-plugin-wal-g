@@ -223,13 +223,78 @@ type BackupRetentionConfig struct {
 	DeleteBackupsAfter string `json:"deleteBackupsAfter,omitempty"`
 }
 
+// BackupConfigPhase represents the overall phase of a BackupConfig
+type BackupConfigPhase string
+
+const (
+	// BackupConfigPhaseHealthy indicates that the backup configuration is healthy
+	// and all conditions are met
+	BackupConfigPhaseHealthy BackupConfigPhase = "Healthy"
+
+	// BackupConfigPhaseDegraded indicates that the backup configuration is partially
+	// operational but some conditions are not met
+	BackupConfigPhaseDegraded BackupConfigPhase = "Degraded"
+
+	// BackupConfigPhaseFailed indicates that the backup configuration has critical
+	// issues preventing normal operation
+	BackupConfigPhaseFailed BackupConfigPhase = "Failed"
+
+	// BackupConfigPhaseUnknown indicates that the backup configuration status
+	// cannot be determined
+	BackupConfigPhaseUnknown BackupConfigPhase = "Unknown"
+)
+
+// Condition types for BackupConfig
+const (
+	// ConditionTypeWALIntegrityCheck indicates whether WAL data integrity check has passed
+	ConditionTypeWALIntegrityCheck = "WALIntegrityCheckPassed"
+
+	// ConditionTypeCredentialsValid indicates whether the configured credentials are valid
+	ConditionTypeCredentialsValid = "CredentialsValid"
+
+	// ConditionTypeStorageReadable indicates whether the configured storage is accessible for reading
+	ConditionTypeStorageReadable = "StorageReadable"
+
+	// ConditionTypeStorageWritable indicates whether the configured storage is accessible for writing
+	ConditionTypeStorageWritable = "StorageWritable"
+)
+
 // BackupConfigStatus defines the observed state of BackupConfig.
 type BackupConfigStatus struct {
-	// todo:
+	// Overall status of the BackupConfig
+	// +kubebuilder:validation:Enum=Healthy;Degraded;Failed;Unknown
+	// +optional
+	Phase BackupConfigPhase `json:"phase,omitempty"`
+
+	// First recoverability point, the earliest point in time to which
+	// the database can be restored using available backups and WAL files
+	// +optional
+	FirstRecoverabilityPoint *metav1.Time `json:"firstRecoverabilityPoint,omitempty"`
+
+	// Timestamp of the last successful backup
+	// +optional
+	LastSuccessfulBackup *metav1.Time `json:"lastSuccessfulBackup,omitempty"`
+
+	// Timestamp of the last failed backup
+	// +optional
+	LastFailedBackup *metav1.Time `json:"lastFailedBackup,omitempty"`
+
+	// Total storage space consumed by backups and WAL files in bytes
+	// +optional
+	ConsumedStorageBytes *int64 `json:"consumedStorageBytes,omitempty"`
+
+	// Conditions represent the latest available observations of the BackupConfig state
+	// +listType=map
+	// +listMapKey=type
+	// +optional
+	Conditions []metav1.Condition `json:"conditions,omitempty"`
 }
 
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
+// +kubebuilder:printcolumn:name="Phase",type="string",JSONPath=".status.phase",description="Overall status of the BackupConfig"
+// +kubebuilder:printcolumn:name="Last Successful Backup",type="date",JSONPath=".status.lastSuccessfulBackup",description="Timestamp of the last successful backup"
+// +kubebuilder:printcolumn:name="First Recoverability Point",type="date",JSONPath=".status.firstRecoverabilityPoint",description="Earliest point in time to which the database can be restored"
 
 // BackupConfig is the Schema for the backupconfigs API.
 type BackupConfig struct {
