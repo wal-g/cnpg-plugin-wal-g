@@ -363,19 +363,23 @@ func (c *BackupConfigStatusController) reconcileBackupTimestamps(
 }
 
 // reconcileConsumedStorage calculates total consumed storage space by fetching backup metadata
-// from wal-g backup-list and summing CompressedSize across all known PG major versions
+// from wal-g backup-list (for backup CompressedSize) and wal-g st ls (for WAL file sizes)
+// across all known PG major versions
 func (c *BackupConfigStatusController) reconcileConsumedStorage(
 	ctx context.Context,
 	backupConfig *v1beta1.BackupConfig,
 	backupConfigWithSecrets *v1beta1.BackupConfigWithSecrets,
 	logger logr.Logger,
 ) {
-	var totalCompressedBytes int64
+	var backupBytes int64
+	var walBytes int64
 
-	// Iterate over all known PG major versions to collect backup sizes
+	// Iterate over all known PG major versions to collect backup and WAL sizes
 	// (same approach as in deleteBackupConfig)
 	for pgVersion := 11; pgVersion <= 19; pgVersion++ {
 		walgClient := walg.NewClientFromBackupConfig(backupConfigWithSecrets, pgVersion)
+
+		// Sum backup compressed sizes from wal-g backup-list
 		backupsList, err := walgClient.GetBackupsList(ctx)
 		if err != nil {
 			// Not all PG versions will have backups, so we just log and continue
@@ -385,12 +389,58 @@ func (c *BackupConfigStatusController) reconcileConsumedStorage(
 		}
 
 		for i := range backupsList {
-			totalCompressedBytes += int64(backupsList[i].CompressedSize)
+			backupBytes += int64(backupsList[i].CompressedSize)
+		}
+
+		// Sum WAL file sizes from wal-g st ls wal_005/
+		// wal_005/ is the wal-g internal directory for WAL segments
+		walSize, err := walgClient.StorageLsTotalSize(ctx, "wal_005/")
+		if err != nil {
+			logger.V(1).Info("Failed to get WAL directory size for PG version, skipping",
+				"pgVersion", pgVersion, "error", err)
+		} else {
+			walBytes += walSize
 		}
 	}
 
-	if totalCompressedBytes > 0 {
-		backupConfig.Status.ConsumedStorageBytes = &totalCompressedBytes
+	totalBytes := backupBytes + walBytes
+	if totalBytes > 0 {
+		storageInfo := &v1beta1.ConsumedStorageInfo{
+			TotalBytes: &totalBytes,
+			Total:      formatBytesHumanReadable(totalBytes),
+		}
+		if backupBytes > 0 {
+			storageInfo.BackupsBytes = &backupBytes
+			storageInfo.Backups = formatBytesHumanReadable(backupBytes)
+		}
+		if walBytes > 0 {
+			storageInfo.WALBytes = &walBytes
+			storageInfo.WAL = formatBytesHumanReadable(walBytes)
+		}
+		backupConfig.Status.ConsumedStorage = storageInfo
+	}
+}
+
+// formatBytesHumanReadable converts bytes to a human-readable string using binary (IEC) units
+func formatBytesHumanReadable(bytes int64) string {
+	const (
+		kib = 1024
+		mib = 1024 * kib
+		gib = 1024 * mib
+		tib = 1024 * gib
+	)
+
+	switch {
+	case bytes >= tib:
+		return fmt.Sprintf("%.2f TiB", float64(bytes)/float64(tib))
+	case bytes >= gib:
+		return fmt.Sprintf("%.2f GiB", float64(bytes)/float64(gib))
+	case bytes >= mib:
+		return fmt.Sprintf("%.2f MiB", float64(bytes)/float64(mib))
+	case bytes >= kib:
+		return fmt.Sprintf("%.2f KiB", float64(bytes)/float64(kib))
+	default:
+		return fmt.Sprintf("%d B", bytes)
 	}
 }
 

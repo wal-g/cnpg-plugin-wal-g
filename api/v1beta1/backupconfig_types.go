@@ -259,6 +259,33 @@ const (
 	ConditionTypeStorageWritable = "StorageWritable"
 )
 
+// ConsumedStorageInfo contains storage consumption details broken down by category
+type ConsumedStorageInfo struct {
+	// Total storage space consumed by backups and WAL files in bytes
+	// +optional
+	TotalBytes *int64 `json:"totalBytes,omitempty"`
+
+	// Human-readable representation of total consumed storage space (e.g. "1.50 GiB", "256.00 MiB")
+	// +optional
+	Total string `json:"total,omitempty"`
+
+	// Storage space consumed by base backups in bytes
+	// +optional
+	BackupsBytes *int64 `json:"backupsBytes,omitempty"`
+
+	// Human-readable representation of base backups consumed storage space (e.g. "1.50 GiB", "256.00 MiB")
+	// +optional
+	Backups string `json:"backups,omitempty"`
+
+	// Storage space consumed by WAL files in bytes
+	// +optional
+	WALBytes *int64 `json:"walBytes,omitempty"`
+
+	// Human-readable representation of WAL consumed storage space (e.g. "1.50 GiB", "256.00 MiB")
+	// +optional
+	WAL string `json:"wal,omitempty"`
+}
+
 // BackupConfigStatus defines the observed state of BackupConfig.
 type BackupConfigStatus struct {
 	// Overall status of the BackupConfig
@@ -279,9 +306,9 @@ type BackupConfigStatus struct {
 	// +optional
 	LastFailedBackup *metav1.Time `json:"lastFailedBackup,omitempty"`
 
-	// Total storage space consumed by backups and WAL files in bytes
+	// Consumed storage space breakdown by category (total, WAL)
 	// +optional
-	ConsumedStorageBytes *int64 `json:"consumedStorageBytes,omitempty"`
+	ConsumedStorage *ConsumedStorageInfo `json:"consumedStorage,omitempty"`
 
 	// Conditions represent the latest available observations of the BackupConfig state
 	// +listType=map
@@ -293,6 +320,9 @@ type BackupConfigStatus struct {
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
 // +kubebuilder:printcolumn:name="Phase",type="string",JSONPath=".status.phase",description="Overall status of the BackupConfig"
+// +kubebuilder:printcolumn:name="Readable",type="string",JSONPath=`.status.conditions[?(@.type=="StorageReadable")].status`,description="Whether storage is accessible for reading"
+// +kubebuilder:printcolumn:name="Writable",type="string",JSONPath=`.status.conditions[?(@.type=="StorageWritable")].status`,description="Whether storage is accessible for writing"
+// +kubebuilder:printcolumn:name="Storage",type="string",JSONPath=".status.consumedStorage.total",description="Total consumed storage space"
 // +kubebuilder:printcolumn:name="Last Successful Backup",type="date",JSONPath=".status.lastSuccessfulBackup",description="Timestamp of the last successful backup"
 // +kubebuilder:printcolumn:name="First Recoverability Point",type="date",JSONPath=".status.firstRecoverabilityPoint",description="Earliest point in time to which the database can be restored"
 

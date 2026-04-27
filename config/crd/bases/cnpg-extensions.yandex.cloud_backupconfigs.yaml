@@ -19,6 +19,18 @@ spec:
       jsonPath: .status.phase
       name: Phase
       type: string
+    - description: Whether storage is accessible for reading
+      jsonPath: .status.conditions[?(@.type=="StorageReadable")].status
+      name: Readable
+      type: string
+    - description: Whether storage is accessible for writing
+      jsonPath: .status.conditions[?(@.type=="StorageWritable")].status
+      name: Writable
+      type: string
+    - description: Total consumed storage space
+      jsonPath: .status.consumedStorage.total
+      name: Storage
+      type: string
     - description: Timestamp of the last successful backup
       jsonPath: .status.lastSuccessfulBackup
       name: Last Successful Backup
@@ -559,11 +571,36 @@ spec:
                 x-kubernetes-list-map-keys:
                 - type
                 x-kubernetes-list-type: map
-              consumedStorageBytes:
-                description: Total storage space consumed by backups and WAL files
-                  in bytes
-                format: int64
-                type: integer
+              consumedStorage:
+                description: Consumed storage space breakdown by category (total,
+                  WAL)
+                properties:
+                  backups:
+                    description: Human-readable representation of base backups consumed
+                      storage space (e.g. "1.50 GiB", "256.00 MiB")
+                    type: string
+                  backupsBytes:
+                    description: Storage space consumed by base backups in bytes
+                    format: int64
+                    type: integer
+                  total:
+                    description: Human-readable representation of total consumed storage
+                      space (e.g. "1.50 GiB", "256.00 MiB")
+                    type: string
+                  totalBytes:
+                    description: Total storage space consumed by backups and WAL files
+                      in bytes
+                    format: int64
+                    type: integer
+                  wal:
+                    description: Human-readable representation of WAL consumed storage
+                      space (e.g. "1.50 GiB", "256.00 MiB")
+                    type: string
+                  walBytes:
+                    description: Storage space consumed by WAL files in bytes
+                    format: int64
+                    type: integer
+                type: object
               firstRecoverabilityPoint:
                 description: |-
                   First recoverability point, the earliest point in time to which
