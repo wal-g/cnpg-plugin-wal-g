@@ -251,6 +251,16 @@ func Start(ctx context.Context) error {
 		return err
 	}
 
+	// Create and add the BackupConfigStatusController
+	backupConfigStatusController := controller.NewBackupConfigStatusController(
+		mgr.GetClient(),
+		5*time.Minute, // Run status reconciliation each 5 minutes
+	)
+	if err := mgr.Add(backupConfigStatusController); err != nil {
+		setupLog.Error(err, "unable to add controller", "controller", "BackupConfigStatusController")
+		return err
+	}
+
 	// Register the BackupReconciler
 	if err = (&controller.BackupReconciler{
 		Client:             mgr.GetClient(),
