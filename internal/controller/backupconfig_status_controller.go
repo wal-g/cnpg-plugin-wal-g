@@ -1,5 +1,5 @@
 /*
-Copyright 2026 YANDEX LLC.
+Copyright 2025 YANDEX LLC.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"sync"
 	"time"
 
 	cnpgv1 "github.com/cloudnative-pg/cloudnative-pg/api/v1"
@@ -27,27 +28,45 @@ import (
 	"github.com/samber/lo"
 	v1beta1 "github.com/wal-g/cnpg-plugin-wal-g/api/v1beta1"
 	"github.com/wal-g/cnpg-plugin-wal-g/pkg/walg"
-	"golang.org/x/sync/semaphore"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 const (
-	// Maximum number of concurrent status reconciliation operations
-	// to prevent overloading S3 storage with too many simultaneous requests
+	// Maximum number of concurrent status reconciliation workers.
+	// Controls the static goroutine pool size to prevent overloading S3 storage.
 	maxStatusReconcileConcurrency = 3
 
 	// Timeout for a single BackupConfig status reconciliation
-	statusReconcileTimeout = 5 * time.Minute
+	statusReconcileTimeout = 10 * time.Minute
+
+	// Size of the shared reconciliation request queue
+	statusReconcileQueueSize = 128
 )
 
 // BackupConfigStatusController periodically reconciles BackupConfigStatus fields
-// for all BackupConfig resources. It uses a semaphore to limit concurrency
-// and prevent overloading S3 storage with too many simultaneous requests.
+// for all BackupConfig resources. It uses a static goroutine pool with a single
+// shared queue to limit concurrency and prevent overloading S3 storage.
+//
+// Per-BackupConfig deduplication ensures that the same resource is not reconciled
+// concurrently by multiple workers. Manual status updates can be enqueued
+// via EnqueueStatusUpdate.
 type BackupConfigStatusController struct {
 	client        client.Client
 	checkInterval time.Duration
-	semaphore     *semaphore.Weighted
+
+	// queue is the single shared channel for all reconciliation requests
+	queue chan types.NamespacedName
+
+	// inFlight tracks BackupConfigs currently being reconciled to prevent
+	// parallel reconciliation of the same resource
+	inFlight   map[string]struct{}
+	inFlightMu sync.Mutex
+
+	// ctx is the root context for the controller, set during Start
+	ctx    context.Context
+	logger logr.Logger
 }
 
 // NewBackupConfigStatusController creates a new BackupConfigStatusController
@@ -55,37 +74,66 @@ func NewBackupConfigStatusController(client client.Client, checkInterval time.Du
 	return &BackupConfigStatusController{
 		client:        client,
 		checkInterval: checkInterval,
-		semaphore:     semaphore.NewWeighted(maxStatusReconcileConcurrency),
+		queue:         make(chan types.NamespacedName, statusReconcileQueueSize),
+		inFlight:      make(map[string]struct{}),
 	}
 }
 
-// Start begins the status controller's periodic reconciliation loop
+// Start begins the status controller's periodic reconciliation loop and worker pool
 func (c *BackupConfigStatusController) Start(ctx context.Context) error {
-	logger := logr.FromContextOrDiscard(ctx).WithName("BackupConfigStatusController")
-	logger.Info("Starting BackupConfig status controller", "checkInterval", c.checkInterval)
+	c.ctx = ctx
+	c.logger = logr.FromContextOrDiscard(ctx).WithName("BackupConfigStatusController")
+	c.logger.Info("Starting BackupConfig status controller",
+		"checkInterval", c.checkInterval,
+		"workers", maxStatusReconcileConcurrency,
+	)
 
+	// Start the static worker pool
+	var wg sync.WaitGroup
+	for i := 0; i < maxStatusReconcileConcurrency; i++ {
+		wg.Add(1)
+		go func(workerID int) {
+			defer wg.Done()
+			c.worker(ctx, workerID)
+		}(i)
+	}
+
+	// Periodic enqueue loop
 	ticker := time.NewTicker(c.checkInterval)
 	defer ticker.Stop()
 
 	for {
 		select {
 		case <-ctx.Done():
-			logger.Info("Stopping BackupConfig status controller")
+			c.logger.Info("Stopping BackupConfig status controller, waiting for workers to finish")
+			wg.Wait()
+			c.logger.Info("All workers stopped")
 			return nil
 		case <-ticker.C:
-			logger.Info("Running BackupConfig status reconciliation")
-			c.reconcileAllStatuses(ctx)
+			c.logger.Info("Running periodic BackupConfig status reconciliation")
+			c.enqueueAllStatuses(ctx)
 		}
 	}
 }
 
-// reconcileAllStatuses lists all BackupConfig resources and reconciles their status
-func (c *BackupConfigStatusController) reconcileAllStatuses(ctx context.Context) {
-	logger := logr.FromContextOrDiscard(ctx).WithName("BackupConfigStatusController")
+// EnqueueStatusUpdate enqueues a status reconciliation for a specific BackupConfig.
+// This can be called externally (e.g. after backup creation or BackupConfig changes)
+// to trigger an immediate status update. Non-blocking: if the queue is full,
+// the request is dropped (the periodic reconciliation will pick it up later).
+func (c *BackupConfigStatusController) EnqueueStatusUpdate(key types.NamespacedName) {
+	select {
+	case c.queue <- key:
+		c.logger.V(1).Info("Enqueued status update", "backupConfig", key)
+	default:
+		c.logger.V(1).Info("Status reconciliation queue is full, dropping request", "backupConfig", key)
+	}
+}
 
+// enqueueAllStatuses lists all BackupConfig resources and enqueues status reconciliation for each
+func (c *BackupConfigStatusController) enqueueAllStatuses(ctx context.Context) {
 	backupConfigList := &v1beta1.BackupConfigList{}
 	if err := c.client.List(ctx, backupConfigList); err != nil {
-		logger.Error(err, "Failed to list BackupConfig resources")
+		c.logger.Error(err, "Failed to list BackupConfig resources")
 		return
 	}
 
@@ -97,30 +145,84 @@ func (c *BackupConfigStatusController) reconcileAllStatuses(ctx context.Context)
 			continue
 		}
 
-		bcLogger := logger.WithValues(
-			"backupConfig", backupConfig.Name,
-			"namespace", backupConfig.Namespace,
-		)
-
-		// Acquire semaphore to limit concurrency
-		if err := c.semaphore.Acquire(ctx, 1); err != nil {
-			bcLogger.Error(err, "Failed to acquire semaphore, skipping status reconciliation")
-			return // Context cancelled
-		}
-
-		// Run reconciliation synchronously (within the semaphore) to keep it simple
-		// and avoid race conditions on status updates
-		func() {
-			defer c.semaphore.Release(1)
-
-			reconcileCtx, cancel := context.WithTimeout(ctx, statusReconcileTimeout)
-			defer cancel()
-
-			if err := c.reconcileStatus(reconcileCtx, backupConfig, bcLogger); err != nil {
-				bcLogger.Error(err, "Failed to reconcile BackupConfig status")
-			}
-		}()
+		c.EnqueueStatusUpdate(types.NamespacedName{
+			Namespace: backupConfig.Namespace,
+			Name:      backupConfig.Name,
+		})
 	}
+}
+
+// worker is a single worker goroutine that processes reconciliation requests from the shared queue
+func (c *BackupConfigStatusController) worker(ctx context.Context, workerID int) {
+	logger := c.logger.WithValues("worker", workerID)
+	logger.V(1).Info("Worker started")
+
+	for {
+		select {
+		case <-ctx.Done():
+			logger.V(1).Info("Worker stopping")
+			return
+		case key := <-c.queue:
+			queueKey := key.String()
+
+			// Check if this BackupConfig is already being reconciled
+			if !c.tryAcquire(queueKey) {
+				logger.V(1).Info("BackupConfig already being reconciled, skipping", "backupConfig", queueKey)
+				continue
+			}
+
+			func() {
+				defer c.release(queueKey)
+
+				reconcileCtx, cancel := context.WithTimeout(ctx, statusReconcileTimeout)
+				defer cancel()
+
+				bcLogger := logger.WithValues("backupConfig", key.Name, "namespace", key.Namespace)
+				if err := c.reconcileStatusByKey(reconcileCtx, key, bcLogger); err != nil {
+					bcLogger.Error(err, "Failed to reconcile BackupConfig status")
+				}
+			}()
+		}
+	}
+}
+
+// tryAcquire attempts to mark a BackupConfig as in-flight.
+// Returns true if the BackupConfig was not already in-flight and is now marked.
+func (c *BackupConfigStatusController) tryAcquire(queueKey string) bool {
+	c.inFlightMu.Lock()
+	defer c.inFlightMu.Unlock()
+
+	if _, exists := c.inFlight[queueKey]; exists {
+		return false
+	}
+	c.inFlight[queueKey] = struct{}{}
+	return true
+}
+
+// release removes a BackupConfig from the in-flight set
+func (c *BackupConfigStatusController) release(queueKey string) {
+	c.inFlightMu.Lock()
+	defer c.inFlightMu.Unlock()
+	delete(c.inFlight, queueKey)
+}
+
+// reconcileStatusByKey reconciles the status of a BackupConfig identified by NamespacedName
+func (c *BackupConfigStatusController) reconcileStatusByKey(
+	ctx context.Context,
+	key types.NamespacedName,
+	logger logr.Logger,
+) error {
+	backupConfig := &v1beta1.BackupConfig{}
+	if err := c.client.Get(ctx, key, backupConfig); err != nil {
+		return client.IgnoreNotFound(err)
+	}
+
+	// Skip if being deleted
+	if !backupConfig.DeletionTimestamp.IsZero() {
+		return nil
+	}
+
+	return c.reconcileStatus(ctx, backupConfig, logger)
 }
 
 // reconcileStatus reconciles the status of a single BackupConfig
