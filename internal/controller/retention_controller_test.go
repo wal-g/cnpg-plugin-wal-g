@@ -20,7 +20,6 @@ import (
 	"time"
 
 	cnpgv1 "github.com/cloudnative-pg/cloudnative-pg/api/v1"
-	"github.com/go-logr/logr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	v1beta1 "github.com/wal-g/cnpg-plugin-wal-g/api/v1beta1"
@@ -413,14 +412,6 @@ var _ = Describe("RetentionController", func() {
 	})
 
 	Describe("runRetentionForBackupConfig", func() {
-		var (
-			logger logr.Logger
-		)
-
-		BeforeEach(func() {
-			logger = logr.Discard()
-		})
-
 		type testCase struct {
 			description     string
 			backupConfig    *v1beta1.BackupConfig
@@ -448,7 +439,7 @@ var _ = Describe("RetentionController", func() {
 				}
 
 				// Run retention
-				err := controller.runRetentionForBackupConfig(ctx, tc.backupConfig, logger)
+				err := controller.runRetentionForBackupConfig(ctx, tc.backupConfig)
 				Expect(err).NotTo(HaveOccurred())
 
 				// Check that expected backups were deleted
@@ -599,16 +590,13 @@ var _ = Describe("RetentionController", func() {
 				checkInterval: 1 * time.Hour,
 			}
 
-			// Run retention for each BackupConfig
-			logger := logr.Discard()
-
-			err := controller.runRetentionForBackupConfig(ctx, backupConfig1, logger)
+			err := controller.runRetentionForBackupConfig(ctx, backupConfig1)
 			Expect(err).NotTo(HaveOccurred())
 
-			err = controller.runRetentionForBackupConfig(ctx, backupConfig2, logger)
+			err = controller.runRetentionForBackupConfig(ctx, backupConfig2)
 			Expect(err).NotTo(HaveOccurred())
 
-			err = controller.runRetentionForBackupConfig(ctx, backupConfig3, logger)
+			err = controller.runRetentionForBackupConfig(ctx, backupConfig3)
 			Expect(err).NotTo(HaveOccurred())
 
 			// Check backups for config1 - backup1-3 should be deleted (older than 1d)
@@ -692,13 +680,10 @@ var _ = Describe("RetentionController", func() {
 				checkInterval: 1 * time.Hour,
 			}
 
-			// Run retention for each BackupConfig
-			logger := logr.Discard()
-
-			err := controller.runRetentionForBackupConfig(ctx, backupConfig1, logger)
+			err := controller.runRetentionForBackupConfig(ctx, backupConfig1)
 			Expect(err).NotTo(HaveOccurred())
 
-			err = controller.runRetentionForBackupConfig(ctx, backupConfig2, logger)
+			err = controller.runRetentionForBackupConfig(ctx, backupConfig2)
 			Expect(err).NotTo(HaveOccurred())
 
 			// Check backups for config1 - backup-old should be deleted (older than 1d)
