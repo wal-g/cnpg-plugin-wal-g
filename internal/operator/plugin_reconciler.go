@@ -31,6 +31,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/equality"
 	apierrs "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/wal-g/cnpg-plugin-wal-g/api/v1beta1"
@@ -67,7 +68,6 @@ func (r ReconcilerImplementation) Pre(
 	request *reconciler.ReconcilerHooksRequest,
 ) (*reconciler.ReconcilerHooksResult, error) {
 	logger := logr.FromContextOrDiscard(ctx).WithName("plugin_reconciler").WithValues("method", "Pre")
-	logger.Info("Pre hook reconciliation start")
 
 	// Checking that reconciling is performed with Cluster resource
 	reconciledKind, err := object.GetKind(request.GetResourceDefinition())
@@ -81,7 +81,7 @@ func (r ReconcilerImplementation) Pre(
 	}
 
 	cluster, err := common.CnpgClusterFromJSON(request.ClusterDefinition)
-	if err != nil {
+	if err != nil || cluster == nil {
 		logger.Error(err, "Error while unmarshalling Cluster object. Should requeue")
 		return &reconciler.ReconcilerHooksResult{
 			Behavior: reconciler.ReconcilerHooksResult_BEHAVIOR_REQUEUE,
@@ -137,7 +137,6 @@ func (r ReconcilerImplementation) Pre(
 		}, err
 	}
 
-	logger.Info("Pre hook reconciliation completed")
 	return &reconciler.ReconcilerHooksResult{
 		Behavior: reconciler.ReconcilerHooksResult_BEHAVIOR_CONTINUE,
 	}, nil
@@ -181,10 +180,6 @@ func (r ReconcilerImplementation) ensureRole(
 		controller.BuildRoleForBackupConfigs(&newRole, cluster, backupConfigs)
 		logger.Info("Creating role", "role", newRole.TypeMeta)
 
-		if err := setOwnerReference(cluster, &newRole); err != nil {
-			return err
-		}
-
 		return r.Client.Create(ctx, &newRole)
 	}
 
@@ -225,9 +220,6 @@ func (r ReconcilerImplementation) createRoleBinding(
 	cluster *cnpgv1.Cluster,
 ) error {
 	roleBinding := controller.BuildRoleBindingForBackupConfig(cluster)
-	if err := setOwnerReference(cluster, roleBinding); err != nil {
-		return err
-	}
 	return r.Client.Create(ctx, roleBinding)
 }
 
@@ -292,10 +284,15 @@ func (r ReconcilerImplementation) ensureEncryptionSecret(
 		}
 	}
 
-	// Set owner reference to the backup config
-	if err := setOwnerReference(backupConfig, newSecret); err != nil {
-		return fmt.Errorf("failed to set owner reference: %w", err)
-	}
+	newSecret.SetOwnerReferences([]metav1.OwnerReference{
+		{
+			APIVersion:         v1beta1.GroupVersion.String(),
+			Kind:               v1beta1.BackupConfigKind,
+			Name:               backupConfig.Name,
+			UID:                backupConfig.UID,
+			BlockOwnerDeletion: ptr.To(true),
+		},
+	})
 
 	if err := r.Client.Create(ctx, newSecret); err != nil {
 		return fmt.Errorf("failed to create encryption key secret: %w", err)

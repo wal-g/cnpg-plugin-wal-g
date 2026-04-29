@@ -213,7 +213,9 @@ var _ = Describe("BackupReconciler", func() {
 
 			updatedBackup := &cnpgv1.Backup{}
 			err = fakeClient.Get(testCtx, client.ObjectKey{Namespace: "default", Name: "test-backup"}, updatedBackup)
+			updatedBackup.TypeMeta = backup.TypeMeta // Workaround for https://github.com/kubernetes-sigs/controller-runtime/issues/3302
 			Expect(err).NotTo(HaveOccurred())
+
 			Expect(equality.Semantic.DeepEqual(backup, updatedBackup)).To(BeTrue())
 		})
 	})

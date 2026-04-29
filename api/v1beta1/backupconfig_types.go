@@ -223,13 +223,108 @@ type BackupRetentionConfig struct {
 	DeleteBackupsAfter string `json:"deleteBackupsAfter,omitempty"`
 }
 
+// BackupConfigPhase represents the overall phase of a BackupConfig
+type BackupConfigPhase string
+
+const (
+	// BackupConfigPhaseHealthy indicates that the backup configuration is healthy
+	// and all conditions are met
+	BackupConfigPhaseHealthy BackupConfigPhase = "Healthy"
+
+	// BackupConfigPhaseDegraded indicates that the backup configuration is partially
+	// operational but some conditions are not met
+	BackupConfigPhaseDegraded BackupConfigPhase = "Degraded"
+
+	// BackupConfigPhaseFailed indicates that the backup configuration has critical
+	// issues preventing normal operation
+	BackupConfigPhaseFailed BackupConfigPhase = "Failed"
+
+	// BackupConfigPhaseUnknown indicates that the backup configuration status
+	// cannot be determined
+	BackupConfigPhaseUnknown BackupConfigPhase = "Unknown"
+)
+
+// Condition types for BackupConfig
+const (
+	// ConditionTypeWALIntegrityCheck indicates whether WAL data integrity check has passed
+	ConditionTypeWALIntegrityCheck = "WALIntegrityCheckPassed"
+
+	// ConditionTypeCredentialsValid indicates whether the configured credentials are valid
+	ConditionTypeCredentialsValid = "CredentialsValid"
+
+	// ConditionTypeStorageReadable indicates whether the configured storage is accessible for reading
+	ConditionTypeStorageReadable = "StorageReadable"
+
+	// ConditionTypeStorageWritable indicates whether the configured storage is accessible for writing
+	ConditionTypeStorageWritable = "StorageWritable"
+)
+
+// ConsumedStorageInfo contains storage consumption details broken down by category
+type ConsumedStorageInfo struct {
+	// Total storage space consumed by backups and WAL files in bytes
+	// +optional
+	TotalBytes *int64 `json:"totalBytes,omitempty"`
+
+	// Human-readable representation of total consumed storage space (e.g. "1.50 GiB", "256.00 MiB")
+	// +optional
+	Total string `json:"total,omitempty"`
+
+	// Storage space consumed by base backups in bytes
+	// +optional
+	BackupsBytes *int64 `json:"backupsBytes,omitempty"`
+
+	// Human-readable representation of base backups consumed storage space (e.g. "1.50 GiB", "256.00 MiB")
+	// +optional
+	Backups string `json:"backups,omitempty"`
+
+	// Storage space consumed by WAL files in bytes
+	// +optional
+	WALBytes *int64 `json:"walBytes,omitempty"`
+
+	// Human-readable representation of WAL consumed storage space (e.g. "1.50 GiB", "256.00 MiB")
+	// +optional
+	WAL string `json:"wal,omitempty"`
+}
+
 // BackupConfigStatus defines the observed state of BackupConfig.
 type BackupConfigStatus struct {
-	// Important: Run "make" to regenerate code after modifying this file
+	// Overall status of the BackupConfig
+	// +kubebuilder:validation:Enum=Healthy;Degraded;Failed;Unknown
+	// +optional
+	Phase BackupConfigPhase `json:"phase,omitempty"`
+
+	// First recoverability point, the earliest point in time to which
+	// the database can be restored using available backups and WAL files
+	// +optional
+	FirstRecoverabilityPoint *metav1.Time `json:"firstRecoverabilityPoint,omitempty"`
+
+	// Timestamp of the last successful backup
+	// +optional
+	LastSuccessfulBackup *metav1.Time `json:"lastSuccessfulBackup,omitempty"`
+
+	// Timestamp of the last failed backup
+	// +optional
+	LastFailedBackup *metav1.Time `json:"lastFailedBackup,omitempty"`
+
+	// Consumed storage space breakdown by category (total, WAL)
+	// +optional
+	ConsumedStorage *ConsumedStorageInfo `json:"consumedStorage,omitempty"`
+
+	// Conditions represent the latest available observations of the BackupConfig state
+	// +listType=map
+	// +listMapKey=type
+	// +optional
+	Conditions []metav1.Condition `json:"conditions,omitempty"`
 }
 
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
+// +kubebuilder:printcolumn:name="Phase",type="string",JSONPath=".status.phase",description="Overall status of the BackupConfig"
+// +kubebuilder:printcolumn:name="Readable",type="string",JSONPath=`.status.conditions[?(@.type=="StorageReadable")].status`,description="Whether storage is accessible for reading"
+// +kubebuilder:printcolumn:name="Writable",type="string",JSONPath=`.status.conditions[?(@.type=="StorageWritable")].status`,description="Whether storage is accessible for writing"
+// +kubebuilder:printcolumn:name="Storage",type="string",JSONPath=".status.consumedStorage.total",description="Total consumed storage space"
+// +kubebuilder:printcolumn:name="Last Successful Backup",type="date",JSONPath=".status.lastSuccessfulBackup",description="Timestamp of the last successful backup"
+// +kubebuilder:printcolumn:name="First Recoverability Point",type="date",JSONPath=".status.firstRecoverabilityPoint",description="Earliest point in time to which the database can be restored"
 
 // BackupConfig is the Schema for the backupconfigs API.
 type BackupConfig struct {

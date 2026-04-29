@@ -79,7 +79,7 @@ func (r *RetentionController) runBackupsRetentionCheck(ctx context.Context) {
 		}
 
 		// Process the BackupConfig
-		if err := r.runRetentionForBackupConfig(ctx, backupConfig, backupConfigLogger); err != nil {
+		if err := r.runRetentionForBackupConfig(logr.NewContext(ctx, backupConfigLogger), backupConfig); err != nil {
 			backupConfigLogger.Error(err, "Failed to process BackupConfig")
 		}
 	}
@@ -89,8 +89,9 @@ func (r *RetentionController) runBackupsRetentionCheck(ctx context.Context) {
 func (r *RetentionController) runRetentionForBackupConfig(
 	ctx context.Context,
 	backupConfig *v1beta1.BackupConfig,
-	logger logr.Logger,
 ) error {
+	logger := logr.FromContextOrDiscard(ctx)
+
 	// List all Backup resources in the same namespace
 	backupList := &cnpgv1.BackupList{}
 	opts := &client.ListOptions{
@@ -110,7 +111,7 @@ func (r *RetentionController) runRetentionForBackupConfig(
 		}
 
 		if lo.ContainsBy(backup.OwnerReferences, func(ref metav1.OwnerReference) bool {
-			return ref.Kind == backupConfig.Kind && ref.Name == backupConfig.Name
+			return ref.Kind == v1beta1.BackupConfigKind && ref.Name == backupConfig.Name
 		}) {
 			relevantBackups = append(relevantBackups, *backup)
 		}

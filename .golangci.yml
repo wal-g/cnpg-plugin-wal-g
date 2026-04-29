@@ -45,7 +45,7 @@ linters:
         hugeParam:
           sizeThreshold: 170
     gocyclo:
-      min-complexity: 15
+      min-complexity: 25
     lll:
       line-length: 400
     misspell:

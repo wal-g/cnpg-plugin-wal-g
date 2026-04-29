@@ -22,12 +22,10 @@ import (
 
 	"github.com/wal-g/cnpg-plugin-wal-g/api/v1beta1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/util/validation/field"
 	ctrl "sigs.k8s.io/controller-runtime"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
-	"sigs.k8s.io/controller-runtime/pkg/webhook"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 )
 
@@ -37,7 +35,7 @@ var backupconfiglog = logf.Log.WithName("backupconfig-resource")
 
 // SetupBackupConfigWebhookWithManager registers the webhook for BackupConfig in the manager.
 func SetupBackupConfigWebhookWithManager(mgr ctrl.Manager) error {
-	return ctrl.NewWebhookManagedBy(mgr).For(&v1beta1.BackupConfig{}).
+	return ctrl.NewWebhookManagedBy(mgr, &v1beta1.BackupConfig{}).
 		WithValidator(&BackupConfigCustomValidator{}).
 		WithDefaulter(&BackupConfigCustomDefaulter{}).
 		Complete()
@@ -49,17 +47,10 @@ func SetupBackupConfigWebhookWithManager(mgr ctrl.Manager) error {
 // Kind BackupConfig when those are created or updated.
 type BackupConfigCustomDefaulter struct{}
 
-var _ webhook.CustomDefaulter = &BackupConfigCustomDefaulter{}
-
 // Default implements webhook.CustomDefaulter so a webhook will be registered for the Kind BackupConfig.
-func (d *BackupConfigCustomDefaulter) Default(_ context.Context, obj runtime.Object) error {
-	backupconfig, ok := obj.(*v1beta1.BackupConfig)
-
-	if !ok {
-		return fmt.Errorf("expected an BackupConfig object but got %T", obj)
-	}
-	backupconfiglog.Info("Defaulting for BackupConfig", "name", backupconfig.GetName())
-	backupconfig.Default()
+func (d *BackupConfigCustomDefaulter) Default(_ context.Context, obj *v1beta1.BackupConfig) error {
+	backupconfiglog.Info("Defaulting for BackupConfig", "name", obj.GetName())
+	obj.Default()
 	return nil
 }
 
@@ -70,37 +61,21 @@ func (d *BackupConfigCustomDefaulter) Default(_ context.Context, obj runtime.Obj
 type BackupConfigCustomValidator struct {
 }
 
-var _ webhook.CustomValidator = &BackupConfigCustomValidator{}
-
 // ValidateCreate implements webhook.CustomValidator so a webhook will be registered for the type BackupConfig.
-func (v *BackupConfigCustomValidator) ValidateCreate(_ context.Context, obj runtime.Object) (admission.Warnings, error) {
-	backupconfig, ok := obj.(*v1beta1.BackupConfig)
-	if !ok {
-		return nil, fmt.Errorf("expected a BackupConfig object but got %T", obj)
-	}
-	backupconfiglog.Info("Validation for BackupConfig upon creation", "name", backupconfig.GetName())
-
-	return v.validateBackupConfig(backupconfig)
+func (v *BackupConfigCustomValidator) ValidateCreate(_ context.Context, obj *v1beta1.BackupConfig) (admission.Warnings, error) {
+	return v.validateBackupConfig(obj)
 }
 
 // ValidateUpdate implements webhook.CustomValidator so a webhook will be registered for the type BackupConfig.
-func (v *BackupConfigCustomValidator) ValidateUpdate(_ context.Context, oldObj, newObj runtime.Object) (admission.Warnings, error) {
-	backupconfig, ok := newObj.(*v1beta1.BackupConfig)
-	if !ok {
-		return nil, fmt.Errorf("expected a BackupConfig object for the newObj but got %T", newObj)
-	}
-	backupconfiglog.Info("Validation for BackupConfig upon update", "name", backupconfig.GetName())
+func (v *BackupConfigCustomValidator) ValidateUpdate(_ context.Context, oldObj, newObj *v1beta1.BackupConfig) (admission.Warnings, error) {
+	backupconfiglog.Info("Validation for BackupConfig upon update", "name", newObj.GetName())
 
-	return v.validateBackupConfig(backupconfig)
+	return v.validateBackupConfig(newObj)
 }
 
 // ValidateDelete implements webhook.CustomValidator so a webhook will be registered for the type BackupConfig.
-func (v *BackupConfigCustomValidator) ValidateDelete(ctx context.Context, obj runtime.Object) (admission.Warnings, error) {
-	backupconfig, ok := obj.(*v1beta1.BackupConfig)
-	if !ok {
-		return nil, fmt.Errorf("expected a BackupConfig object but got %T", obj)
-	}
-	backupconfiglog.Info("Validation for BackupConfig upon deletion", "name", backupconfig.GetName())
+func (v *BackupConfigCustomValidator) ValidateDelete(ctx context.Context, obj *v1beta1.BackupConfig) (admission.Warnings, error) {
+	backupconfiglog.Info("Validation for BackupConfig upon deletion", "name", obj.GetName())
 
 	// TODO(user): fill in your validation logic upon object deletion.
 

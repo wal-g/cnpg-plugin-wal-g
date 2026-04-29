@@ -24,6 +24,7 @@ import (
 	"github.com/wal-g/cnpg-plugin-wal-g/api/v1beta1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/utils/ptr"
 )
 
 // BuildRole builds the Role object for this cluster
@@ -48,6 +49,16 @@ func BuildRoleForBackupConfigs(
 			configMapsNames.Put(configMapName)
 		}
 	}
+
+	role.SetOwnerReferences([]metav1.OwnerReference{
+		{
+			APIVersion:         cnpgv1.SchemeGroupVersion.String(),
+			Kind:               cnpgv1.ClusterKind,
+			Name:               cluster.Name,
+			UID:                cluster.UID,
+			BlockOwnerDeletion: ptr.To(true),
+		},
+	})
 
 	role.Rules = []rbacv1.PolicyRule{
 		// It is safe to grant list permission restricted by resourceNames
@@ -149,6 +160,15 @@ func BuildRoleBindingForBackupConfig(
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: cluster.Namespace,
 			Name:      GetRoleNameForBackupConfig(cluster.Name),
+			OwnerReferences: []metav1.OwnerReference{
+				{
+					APIVersion:         cnpgv1.SchemeGroupVersion.String(),
+					Kind:               cnpgv1.ClusterKind,
+					Name:               cluster.Name,
+					UID:                cluster.UID,
+					BlockOwnerDeletion: ptr.To(true),
+				},
+			},
 		},
 		Subjects: []rbacv1.Subject{
 			{
