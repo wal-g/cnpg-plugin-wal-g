@@ -67,7 +67,6 @@ func (r ReconcilerImplementation) Pre(
 	request *reconciler.ReconcilerHooksRequest,
 ) (*reconciler.ReconcilerHooksResult, error) {
 	logger := logr.FromContextOrDiscard(ctx).WithName("plugin_reconciler").WithValues("method", "Pre")
-	logger.Info("Pre hook reconciliation start")
 
 	// Checking that reconciling is performed with Cluster resource
 	reconciledKind, err := object.GetKind(request.GetResourceDefinition())
@@ -137,7 +136,6 @@ func (r ReconcilerImplementation) Pre(
 		}, err
 	}
 
-	logger.Info("Pre hook reconciliation completed")
 	return &reconciler.ReconcilerHooksResult{
 		Behavior: reconciler.ReconcilerHooksResult_BEHAVIOR_CONTINUE,
 	}, nil
