@@ -21,6 +21,7 @@ import (
 
 	"github.com/cloudnative-pg/cnpg-i-machinery/pkg/pluginhelper/http"
 	"github.com/cloudnative-pg/cnpg-i/pkg/backup"
+	"github.com/cloudnative-pg/cnpg-i/pkg/metrics"
 	restore "github.com/cloudnative-pg/cnpg-i/pkg/restore/job"
 	"github.com/cloudnative-pg/cnpg-i/pkg/wal"
 	"google.golang.org/grpc"
@@ -46,6 +47,9 @@ func (c *CNPGI) Start(ctx context.Context) error {
 			Client: c.Client,
 		})
 		restore.RegisterRestoreJobHooksServer(server, RestoreJobHooksImpl{
+			Client: c.Client,
+		})
+		metrics.RegisterMetricsServer(server, MetricsServerImplementation{
 			Client: c.Client,
 		})
 		return nil
