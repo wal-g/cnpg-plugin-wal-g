@@ -19,16 +19,23 @@ package instance
 import (
 	"context"
 	"fmt"
+	"sync"
 
 	"github.com/cloudnative-pg/cnpg-i/pkg/wal"
 	"github.com/go-logr/logr"
 	"github.com/spf13/viper"
+	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	cnpgv1 "github.com/cloudnative-pg/cloudnative-pg/api/v1"
 	v1beta1 "github.com/wal-g/cnpg-plugin-wal-g/api/v1beta1"
 	"github.com/wal-g/cnpg-plugin-wal-g/internal/common"
 	"github.com/wal-g/cnpg-plugin-wal-g/pkg/walg"
+)
+
+var (
+	lastArchivedWALTime   *v1.Time // IMPORTANT: Do not access directly, use only thread-safe methods SetLastArchivedWALTime/GetLastArchivedWALTime
+	lastArchivedWALTimeMu sync.Mutex
 )
 
 // WALServiceImplementation is the implementation of the WAL Service
@@ -100,6 +107,9 @@ func (w WALServiceImplementation) Archive(
 			request.SourceFileName, err, string(result.Stdout()), string(result.Stderr()),
 		)
 	}
+
+	now := v1.Now()
+	SetLastArchivedWALTime(&now)
 
 	logger.Info(fmt.Sprintf("Successful run wal-g wal-push %s", request.SourceFileName))
 	return &wal.WALArchiveResult{}, nil
@@ -181,4 +191,24 @@ func (w WALServiceImplementation) SetFirstRequired(
 	_ *wal.SetFirstRequiredRequest,
 ) (*wal.SetFirstRequiredResult, error) {
 	panic("implement me")
+}
+
+// GetLastArchivedWALTime returns time of last successfully uploaded WAL thread-safely
+func GetLastArchivedWALTime() *v1.Time {
+	lastArchivedWALTimeMu.Lock()
+	defer lastArchivedWALTimeMu.Unlock()
+
+	if lastArchivedWALTime == nil {
+		return nil
+	}
+
+	return lastArchivedWALTime.DeepCopy()
+}
+
+// SetLastArchivedWALTime sets the time of last successfully uploaded WAL thread-safely
+func SetLastArchivedWALTime(time *v1.Time) {
+	lastArchivedWALTimeMu.Lock()
+	defer lastArchivedWALTimeMu.Unlock()
+
+	lastArchivedWALTime = time
 }

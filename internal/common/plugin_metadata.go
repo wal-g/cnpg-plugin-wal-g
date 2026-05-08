@@ -23,13 +23,14 @@ import (
 
 // PluginName is the name of the plugin from the instance manager
 // Point-of-view
-const PluginName = "cnpg-extensions.yandex.cloud"
+const PluginNameDeprecated = "cnpg-extensions.yandex.cloud" // DEPRECATED: Kept for backward compatibility with existing public API
+const PluginName = "cnpg-plugin-wal-g"
 
 // PluginMetadata is the metadata of this plugin.
 var PluginMetadata = identity.GetPluginMetadataResponse{
-	Name:          PluginName,
+	Name:          PluginNameDeprecated, // Keeping for backward compatibility with user manifests
 	Version:       version.GetVersion(),
-	DisplayName:   "CNPGYandexExtensions",
+	DisplayName:   "CNPG Plugin WAL-G",
 	ProjectUrl:    "https://github.com/wal-g/cnpg-plugin-wal-g",
 	RepositoryUrl: "https://github.com/wal-g/cnpg-plugin-wal-g",
 	License:       "APACHE 2.0",

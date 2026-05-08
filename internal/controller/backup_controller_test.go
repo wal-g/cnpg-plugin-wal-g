@@ -122,7 +122,7 @@ func createTestCluster(name, namespace string) *cnpgv1.Cluster {
 			ImageName: "ghcr.io/cloudnative-pg/postgresql:14.0",
 			Plugins: []cnpgv1.PluginConfiguration{
 				{
-					Name: common.PluginName,
+					Name: common.PluginNameDeprecated,
 					Parameters: map[string]string{
 						"backupConfig": "test-backupconfig",
 					},
@@ -151,7 +151,7 @@ func createTestBackup(name, namespace, clusterName string, backupID string, with
 			},
 			Method: "plugin",
 			PluginConfiguration: &cnpgv1.BackupPluginConfiguration{
-				Name: common.PluginName,
+				Name: common.PluginNameDeprecated,
 			},
 		},
 		Status: cnpgv1.BackupStatus{

@@ -61,10 +61,10 @@ func (r *ConfigMapReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		// If the ConfigMap is still referenced, we can't remove the finalizer
 		if isReferenced {
 			logger.Info(
-				"ConfigMap is still referenced by a BackupConfig, cannot remove finalizer, retrying in 1 minute", "configmap", configmap.Name,
+				"ConfigMap is still referenced by a BackupConfig, cannot remove finalizer, retrying in 30 seconds", "configmap", configmap.Name,
 			)
 			// Need requeue, because BackupConfig deletion will not trigger related ConfigMap reconcilers by default
-			return ctrl.Result{RequeueAfter: 1 * time.Minute}, nil
+			return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
 		}
 
 		// Remove finalizer and update ConfigMap, if it is needed

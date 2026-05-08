@@ -62,10 +62,10 @@ func (r *SecretReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 		// If the Secret is still referenced, we can't remove the finalizer
 		if isReferenced {
 			logger.Info(
-				"Secret is still referenced by a BackupConfig, cannot remove finalizer, retrying in 1 minute", "secret", secret.Name,
+				"Secret is still referenced by a BackupConfig, cannot remove finalizer, retrying in 30 seconds", "secret", secret.Name,
 			)
 			// Need requeue, because BackupConfig deletion will not trigger related Secret reconcilers by default
-			return ctrl.Result{RequeueAfter: 1 * time.Minute}, nil
+			return ctrl.Result{RequeueAfter: 30 * time.Second}, nil
 		}
 
 		// Remove finalizer and update Secret, if it is needed

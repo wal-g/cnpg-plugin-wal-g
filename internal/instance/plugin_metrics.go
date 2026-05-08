@@ -21,6 +21,8 @@ import (
 	"fmt"
 	"strings"
 
+	"k8s.io/apimachinery/pkg/api/meta"
+	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/cloudnative-pg/cnpg-i/pkg/metrics"
@@ -49,8 +51,8 @@ var (
 	lastArchivedWALTimestampMetricName     = buildFqName("last_archived_wal_timestamp")
 	totalWALS3UsageBytesMetricName         = buildFqName("total_wal_s3_usage_bytes")
 	totalBackupsS3UsageBytesMetricName     = buildFqName("total_backups_s3_usage_bytes")
-	S3ReadAvailabilityMetricName           = buildFqName("s3_read_availability")
-	S3WriteAvailabilityMetricName          = buildFqName("s3_write_availability")
+	s3ReadAvailabilityMetricName           = buildFqName("s3_read_availability")
+	s3WriteAvailabilityMetricName          = buildFqName("s3_write_availability")
 )
 
 func (m MetricsServerImplementation) GetCapabilities(
@@ -93,17 +95,27 @@ func (m MetricsServerImplementation) Define(
 			},
 			{
 				FqName:    lastArchivedWALTimestampMetricName,
-				Help:      "The last failed backup as a unix timestamp",
+				Help:      "The last successfully archived WAL as a unix timestamp",
 				ValueType: &metrics.MetricType{Type: metrics.MetricType_TYPE_GAUGE},
 			},
 			{
 				FqName:    totalWALS3UsageBytesMetricName,
-				Help:      "The last failed backup as a unix timestamp",
+				Help:      "Total space consumed in S3 by WAL archives in bytes",
 				ValueType: &metrics.MetricType{Type: metrics.MetricType_TYPE_GAUGE},
 			},
 			{
 				FqName:    totalBackupsS3UsageBytesMetricName,
-				Help:      "The last failed backup as a unix timestamp",
+				Help:      "Total space consumed in S3 by basebackups in bytes",
+				ValueType: &metrics.MetricType{Type: metrics.MetricType_TYPE_GAUGE},
+			},
+			{
+				FqName:    s3ReadAvailabilityMetricName,
+				Help:      "Remote object storage read availability (0 meaning false, 1 - true)",
+				ValueType: &metrics.MetricType{Type: metrics.MetricType_TYPE_GAUGE},
+			},
+			{
+				FqName:    s3WriteAvailabilityMetricName,
+				Help:      "Remote object storage write availability (0 meaning false, 1 - true)",
 				ValueType: &metrics.MetricType{Type: metrics.MetricType_TYPE_GAUGE},
 			},
 		},
@@ -124,25 +136,46 @@ func (m MetricsServerImplementation) Collect(
 		return nil, fmt.Errorf("failed to fetch BackupConfig object: %w", err)
 	}
 
-	var firstRecoverabilityPointTS float64 = 0
+	var firstRecoverabilityPointTS float64
 	if backupConfig.Status.FirstRecoverabilityPoint != nil {
-		firstRecoverabilityPointTS = float64(backupConfig.Status.FirstRecoverabilityPoint.Time.Unix())
+		firstRecoverabilityPointTS = float64(backupConfig.Status.FirstRecoverabilityPoint.Unix())
 	}
-	var lastSuccessfulBackupTS float64 = 0
+	var lastSuccessfulBackupTS float64
 	if backupConfig.Status.LastSuccessfulBackup != nil {
-		lastSuccessfulBackupTS = float64(backupConfig.Status.FirstRecoverabilityPoint.Time.Unix())
+		lastSuccessfulBackupTS = float64(backupConfig.Status.FirstRecoverabilityPoint.Unix())
 	}
-	var lastFailedBackupTS float64 = 0
+	var lastFailedBackupTS float64
 	if backupConfig.Status.LastFailedBackup != nil {
-		lastFailedBackupTS = float64(backupConfig.Status.LastFailedBackup.Time.Unix())
+		lastFailedBackupTS = float64(backupConfig.Status.LastFailedBackup.Unix())
 	}
-	var totalWALS3UsageBytes float64 = 0
+
+	var lastArchivedWALTimeTS float64
+	walTime := GetLastArchivedWALTime()
+	if walTime != nil {
+		lastArchivedWALTimeTS = float64(walTime.Unix())
+	}
+
+	var totalWALS3UsageBytes float64
 	if backupConfig.Status.ConsumedStorage.WALBytes != nil {
 		totalWALS3UsageBytes = float64(*backupConfig.Status.ConsumedStorage.WALBytes)
 	}
-	var totalBackupS3UsageBytes float64 = 0
+	var totalBackupS3UsageBytes float64
 	if backupConfig.Status.ConsumedStorage.BackupsBytes != nil {
 		totalBackupS3UsageBytes = float64(*backupConfig.Status.ConsumedStorage.BackupsBytes)
+	}
+
+	var s3ReadAvailability float64
+	if cond := meta.FindStatusCondition(backupConfig.Status.Conditions, v1beta1.ConditionTypeStorageReadable); cond != nil {
+		if cond.Status == v1.ConditionTrue {
+			s3ReadAvailability = 1
+		}
+	}
+
+	var s3WriteAvailability float64
+	if cond := meta.FindStatusCondition(backupConfig.Status.Conditions, v1beta1.ConditionTypeStorageWritable); cond != nil {
+		if cond.Status == v1.ConditionTrue {
+			s3WriteAvailability = 1
+		}
 	}
 
 	return &metrics.CollectMetricsResult{
@@ -161,7 +194,7 @@ func (m MetricsServerImplementation) Collect(
 			},
 			{
 				FqName: lastArchivedWALTimestampMetricName,
-				Value:  0, // TODO: fixme
+				Value:  lastArchivedWALTimeTS,
 			},
 			{
 				FqName: totalWALS3UsageBytesMetricName,
@@ -170,6 +203,14 @@ func (m MetricsServerImplementation) Collect(
 			{
 				FqName: totalBackupsS3UsageBytesMetricName,
 				Value:  totalBackupS3UsageBytes,
+			},
+			{
+				FqName: s3ReadAvailabilityMetricName,
+				Value:  s3ReadAvailability,
+			},
+			{
+				FqName: s3WriteAvailabilityMetricName,
+				Value:  s3WriteAvailability,
 			},
 		},
 	}, nil
