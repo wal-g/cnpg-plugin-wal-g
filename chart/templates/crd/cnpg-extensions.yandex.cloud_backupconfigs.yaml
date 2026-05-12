@@ -504,6 +504,80 @@ spec:
                 description: Network upload rate limit during backup uploading in
                   bytes per second. Default value is evaluated at runtime
                 type: integer
+              walg:
+                description: WAL-G runtime configuration overrides
+                properties:
+                  aliveCheckInterval:
+                    description: WAL-G alive check interval value, e.g. "30s". Default
+                      value is evaluated at runtime.
+                    type: string
+                  compressionMethod:
+                    description: |-
+                      Compression method used by WAL-G, e.g. "lz4", "brotli" or "zstd".
+                      Default value is evaluated at runtime.
+                    type: string
+                  deltaMaxSteps:
+                    description: Determines how many delta backups can be between
+                      full backups. Default value is evaluated at runtime.
+                    type: integer
+                  diskRateLimitBytesPerSecond:
+                    description: Disk read rate limit during backup creation in bytes
+                      per second. Default value is evaluated at runtime.
+                    type: integer
+                  downloadConcurrency:
+                    description: How many goroutines to use during backup && wal downloading.
+                      Default value is evaluated at runtime.
+                    type: integer
+                  downloadFileRetries:
+                    description: How many times failed file will be retried during
+                      backup / wal download. Default value is evaluated at runtime.
+                    type: integer
+                  failoverStoragesCacheLifetime:
+                    description: WAL-G failover storages cache lifetime value, e.g.
+                      "0m". Default value is evaluated at runtime.
+                    type: string
+                  failoverStoragesCheck:
+                    description: Whether WAL-G should check failover storages. Default
+                      value is evaluated at runtime.
+                    type: boolean
+                  failoverStoragesCheckSize:
+                    description: WAL-G failover storages check size value, e.g. "1KB".
+                      Default value is evaluated at runtime.
+                    type: string
+                  goMaxProcs:
+                    description: GOMAXPROCS value used by WAL-G. Default value is
+                      evaluated at runtime.
+                    type: integer
+                  networkRateLimitBytesPerSecond:
+                    description: Network upload rate limit during backup uploading
+                      in bytes per second. Default value is evaluated at runtime.
+                    type: integer
+                  preventWalOverwrite:
+                    description: Whether WAL-G should prevent WAL overwrite. Default
+                      value is evaluated at runtime.
+                    type: boolean
+                  tarDisableFsync:
+                    description: Disable calling fsync after writing files when extracting
+                      tar files. Default value is evaluated at runtime.
+                    type: boolean
+                  tarSizeThreshold:
+                    description: Threshold in bytes is size of one backup bundle.
+                      Default value is evaluated at runtime.
+                    format: int64
+                    type: integer
+                  totalBgUploadedLimit:
+                    description: Limit of files uploaded in background by WAL-G. Default
+                      value is evaluated at runtime.
+                    type: integer
+                  uploadConcurrency:
+                    description: How many concurrency streams to use during backup
+                      uploading. Default value is evaluated at runtime.
+                    type: integer
+                  uploadDiskConcurrency:
+                    description: How many concurrency streams are reading disk during
+                      backup uploading. Default value is evaluated at runtime.
+                    type: integer
+                type: object
             required:
             - storage
             type: object
