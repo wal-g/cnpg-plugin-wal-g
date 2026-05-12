@@ -260,7 +260,7 @@ func reconcilePodSpecWithPluginSidecar(
 	// }
 
 	sidecarConfig := corev1.Container{}
-	sidecarConfig.Name = "plugin-yandex-extensions"
+	sidecarConfig.Name = "plugin-wal-g"
 	sidecarConfig.Image = viper.GetString("cnpg-i-pg-sidecar-image")
 	sidecarConfig.ImagePullPolicy = cluster.Spec.ImagePullPolicy
 	if jobRole == "full-recovery" {

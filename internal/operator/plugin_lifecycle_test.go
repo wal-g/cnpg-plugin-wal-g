@@ -55,7 +55,7 @@ func applyJSONPatch(obj interface{}, patch []byte) error {
 		// Add a sidecar container to the pod
 		pod.Spec.InitContainers = []corev1.Container{
 			{
-				Name:  "plugin-yandex-extensions",
+				Name:  "plugin-wal-g",
 				Image: "test-sidecar-image:latest",
 				Args:  []string{"instance", "--mode", "normal"},
 			},
@@ -86,7 +86,7 @@ func applyJSONPatch(obj interface{}, patch []byte) error {
 		// Add a sidecar container to the job
 		pod.Spec.Template.Spec.InitContainers = []corev1.Container{
 			{
-				Name:  "plugin-yandex-extensions",
+				Name:  "plugin-wal-g",
 				Image: "test-sidecar-image:latest",
 				Args:  []string{"instance", "--mode", "recovery"},
 			},
@@ -145,7 +145,7 @@ var _ = Describe("LifecycleImplementation", func() {
 				Instances: 3,
 				Plugins: []cnpgv1.PluginConfiguration{
 					{
-						Name: common.PluginName,
+						Name: common.PluginNameDeprecated,
 						Parameters: map[string]string{
 							"backupConfig": "test-backup-config",
 						},
@@ -363,7 +363,7 @@ var _ = Describe("LifecycleImplementation", func() {
 			// Check that the sidecar container was added
 			Expect(patchedPod.Spec.InitContainers).To(HaveLen(1))
 			sidecar := patchedPod.Spec.InitContainers[0]
-			Expect(sidecar.Name).To(Equal("plugin-yandex-extensions"))
+			Expect(sidecar.Name).To(Equal("plugin-wal-g"))
 			Expect(sidecar.Image).To(Equal(sidecarImageString))
 			Expect(sidecar.Args).To(Equal([]string{"instance", "--mode", "normal"}))
 
@@ -460,7 +460,7 @@ var _ = Describe("LifecycleImplementation", func() {
 				{
 					Name: "test-recovery-source",
 					PluginConfiguration: &cnpgv1.PluginConfiguration{
-						Name: common.PluginName,
+						Name: common.PluginNameDeprecated,
 						Parameters: map[string]string{
 							"backupConfig": "test-backup-config",
 						},
@@ -494,7 +494,7 @@ var _ = Describe("LifecycleImplementation", func() {
 			// Check that the sidecar container was added
 			Expect(patchedJob.Spec.Template.Spec.InitContainers).To(HaveLen(1))
 			sidecar := patchedJob.Spec.Template.Spec.InitContainers[0]
-			Expect(sidecar.Name).To(Equal("plugin-yandex-extensions"))
+			Expect(sidecar.Name).To(Equal("plugin-wal-g"))
 			Expect(sidecar.Image).To(Equal(sidecarImageString))
 			Expect(sidecar.Args).To(Equal([]string{"instance", "--mode", "recovery"}))
 
@@ -548,7 +548,7 @@ var _ = Describe("LifecycleImplementation", func() {
 			// Check that the sidecar container was added
 			Expect(podSpec.InitContainers).To(HaveLen(1))
 			sidecar := podSpec.InitContainers[0]
-			Expect(sidecar.Name).To(Equal("plugin-yandex-extensions"))
+			Expect(sidecar.Name).To(Equal("plugin-wal-g"))
 			Expect(sidecar.Image).To(Equal(sidecarImageString))
 			Expect(sidecar.Args).To(Equal([]string{"instance", "--mode", "normal"}))
 
@@ -682,7 +682,7 @@ var _ = Describe("LifecycleImplementation", func() {
 			}
 
 			sidecar := &corev1.Container{
-				Name:  "plugin-yandex-extensions",
+				Name:  "plugin-wal-g",
 				Image: sidecarImageString,
 			}
 
@@ -692,7 +692,7 @@ var _ = Describe("LifecycleImplementation", func() {
 
 			// Check that the sidecar container was added
 			Expect(podSpec.InitContainers).To(HaveLen(1))
-			Expect(podSpec.InitContainers[0].Name).To(Equal("plugin-yandex-extensions"))
+			Expect(podSpec.InitContainers[0].Name).To(Equal("plugin-wal-g"))
 
 			// Check that the volume mounts were copied from the main container
 			Expect(podSpec.InitContainers[0].VolumeMounts).To(ContainElement(corev1.VolumeMount{
@@ -721,7 +721,7 @@ var _ = Describe("LifecycleImplementation", func() {
 			}
 
 			sidecar := &corev1.Container{
-				Name:  "plugin-yandex-extensions",
+				Name:  "plugin-wal-g",
 				Image: sidecarImageString,
 			}
 
@@ -740,13 +740,13 @@ var _ = Describe("LifecycleImplementation", func() {
 				},
 				InitContainers: []corev1.Container{
 					{
-						Name: "plugin-yandex-extensions",
+						Name: "plugin-wal-g",
 					},
 				},
 			}
 
 			sidecar := &corev1.Container{
-				Name:  "plugin-yandex-extensions",
+				Name:  "plugin-wal-g",
 				Image: sidecarImageString,
 			}
 
@@ -864,7 +864,7 @@ var _ = Describe("LifecycleImplementation", func() {
 				Spec: cnpgv1.ClusterSpec{
 					Plugins: []cnpgv1.PluginConfiguration{
 						{
-							Name: common.PluginName,
+							Name: common.PluginNameDeprecated,
 							Parameters: map[string]string{
 								"sidecarRestartPolicy": "Always",
 							},
@@ -882,7 +882,7 @@ var _ = Describe("LifecycleImplementation", func() {
 				Spec: cnpgv1.ClusterSpec{
 					Plugins: []cnpgv1.PluginConfiguration{
 						{
-							Name: common.PluginName,
+							Name: common.PluginNameDeprecated,
 							Parameters: map[string]string{
 								"sidecarRestartPolicy": "unset",
 							},
@@ -919,7 +919,7 @@ var _ = Describe("LifecycleImplementation", func() {
 			}
 
 			sidecar = &corev1.Container{
-				Name:  "plugin-yandex-extensions",
+				Name:  "plugin-wal-g",
 				Image: "test-image:latest",
 			}
 

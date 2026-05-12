@@ -48,7 +48,7 @@ func GetPluginConfigFromCluster(cluster *cnpgv1.Cluster) *cnpgv1.PluginConfigura
 	}
 
 	pluginConfig, ok := lo.Find(cluster.Spec.Plugins, func(c cnpgv1.PluginConfiguration) bool {
-		return c.Name == PluginName
+		return c.Name == PluginNameDeprecated
 	})
 
 	if !ok {

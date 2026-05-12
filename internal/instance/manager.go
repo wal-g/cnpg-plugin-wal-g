@@ -38,6 +38,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
+	"sigs.k8s.io/controller-runtime/pkg/metrics/server"
 )
 
 var (
@@ -94,6 +95,9 @@ func Start(ctx context.Context) error {
 					&cnpgv1.Backup{},
 				},
 			},
+		},
+		Metrics: server.Options{
+			BindAddress: "0", // Disabling metrics server by default
 		},
 	}
 
