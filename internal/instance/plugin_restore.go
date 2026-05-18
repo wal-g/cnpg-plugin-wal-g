@@ -19,6 +19,8 @@ package instance
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 
 	"github.com/cloudnative-pg/cloudnative-pg/pkg/postgres"
 	restore "github.com/cloudnative-pg/cnpg-i/pkg/restore/job"
@@ -128,6 +130,29 @@ func (r RestoreJobHooksImpl) Restore(
 	if err != nil {
 		logger.Error(err, "Failed restore backup into data directory", "backupName", backupName, "pgdata", pgdata)
 		return nil, err
+	}
+
+	if separateWal, err := os.Stat("/var/lib/postgresql/wal"); err == nil && separateWal.IsDir() {
+		// Manually creating symlink to pg_wal directory in separate wal PVC, if not exists
+		if _, err := os.Stat(filepath.Join(pgdata, "pg_wal")); os.IsNotExist(err) {
+			if err = os.MkdirAll("/var/lib/postgresql/wal/pg_wal", 0700); err != nil {
+				logger.Error(err, "Failed to create pg_wal directory on separate wal storage", "backupName", backupName, "pgdata", pgdata)
+				return nil, err
+			}
+
+			if err = os.Symlink("/var/lib/postgresql/wal/pg_wal", filepath.Join(pgdata, "pg_wal")); err != nil {
+				logger.Error(err, "Failed to create symlink for pg_wal to separate wal storage", "backupName", backupName, "pgdata", pgdata)
+				return nil, err
+			}
+		}
+	} else {
+		// Manually creating pg_wal directory in pgdata if not exists (pg_wal dir may not be present in backup)
+		if _, err := os.Stat(filepath.Join(pgdata, "pg_wal")); os.IsNotExist(err) {
+			if err = os.MkdirAll(filepath.Join(pgdata, "pg_wal"), 0700); err != nil {
+				logger.Error(err, "Failed to create pg_wal directory", "backupName", backupName, "pgdata", pgdata)
+				return nil, err
+			}
+		}
 	}
 
 	logger.Info("Successful restore backup into data directory", "backupName", backupName, "pgdata", pgdata)
