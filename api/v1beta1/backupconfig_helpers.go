@@ -142,7 +142,7 @@ func getBackupConfigFromPluginConfig(
 	pluginConfig *cnpgv1.PluginConfiguration,
 	namespace string,
 ) (*BackupConfig, error) {
-	if pluginConfig == nil || pluginConfig.Parameters == nil {
+	if pluginConfig == nil || pluginConfig.Parameters == nil || pluginConfig.Name != common.PluginNameDeprecated {
 		return nil, nil
 	}
 
