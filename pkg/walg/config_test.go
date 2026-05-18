@@ -406,6 +406,167 @@ var _ = Describe("WAL-G Config Integration Tests", func() {
 			Expect(envMap["WALE_S3_PREFIX"]).To(Equal("/13"))
 		})
 
+		It("should trim trailing slashes in ResolvedPrefix to avoid doubled slashes in WaleS3Prefix", func() {
+			// Regression test: previously the prefix was built without trimming
+			// trailing slashes, which produced an invalid path like
+			// "s3://bucket/prefix//16" when ResolvedPrefix ended with "/".
+			backupConfig := &v1beta1.BackupConfig{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-backup-config",
+					Namespace: namespace,
+				},
+				Spec: v1beta1.BackupConfigSpec{
+					Storage: v1beta1.StorageConfig{
+						StorageType: v1beta1.StorageTypeS3,
+						S3: &v1beta1.S3StorageConfig{
+							Prefix: "s3://test-bucket/trailing-slash-prefix/",
+							AccessKeyIDRef: &corev1.SecretKeySelector{
+								LocalObjectReference: corev1.LocalObjectReference{Name: "s3-credentials"},
+								Key:                  "access-key",
+							},
+							AccessKeySecretRef: &corev1.SecretKeySelector{
+								LocalObjectReference: corev1.LocalObjectReference{Name: "s3-credentials"},
+								Key:                  "secret-key",
+							},
+						},
+					},
+				},
+			}
+
+			s3CredentialsSecret := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "s3-credentials",
+					Namespace: namespace,
+				},
+				Data: map[string][]byte{
+					"access-key": []byte("test-access-key-id"),
+					"secret-key": []byte("test-secret-access-key"),
+				},
+			}
+
+			fakeClient = fake.NewClientBuilder().
+				WithScheme(scheme).
+				WithObjects(s3CredentialsSecret).
+				Build()
+
+			configWithSecrets, err := backupConfig.PrefetchSecretsData(ctx, fakeClient)
+			Expect(err).NotTo(HaveOccurred())
+
+			// Ensure the resolved prefix indeed contains the trailing slash
+			// so we exercise the trimming logic.
+			Expect(configWithSecrets.Spec.Storage.S3.ResolvedPrefix).To(Equal("s3://test-bucket/trailing-slash-prefix/"))
+
+			pgMajorVersion := 16
+			walgConfig := NewConfigFromBackupConfig(configWithSecrets, pgMajorVersion)
+
+			// The trailing slash must be trimmed so we do NOT get a doubled slash.
+			Expect(walgConfig.WaleS3Prefix).To(Equal("s3://test-bucket/trailing-slash-prefix/16"))
+			Expect(walgConfig.WaleS3Prefix).NotTo(ContainSubstring("//16"))
+
+			envMap := walgConfig.ToEnvMap()
+			Expect(envMap["WALE_S3_PREFIX"]).To(Equal("s3://test-bucket/trailing-slash-prefix/16"))
+		})
+
+		It("should trim multiple trailing slashes in ResolvedPrefix", func() {
+			// Edge case: more than one trailing slash should also be trimmed.
+			backupConfig := &v1beta1.BackupConfig{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-backup-config",
+					Namespace: namespace,
+				},
+				Spec: v1beta1.BackupConfigSpec{
+					Storage: v1beta1.StorageConfig{
+						StorageType: v1beta1.StorageTypeS3,
+						S3: &v1beta1.S3StorageConfig{
+							Prefix: "s3://test-bucket/many-slashes///",
+							AccessKeyIDRef: &corev1.SecretKeySelector{
+								LocalObjectReference: corev1.LocalObjectReference{Name: "s3-credentials"},
+								Key:                  "access-key",
+							},
+							AccessKeySecretRef: &corev1.SecretKeySelector{
+								LocalObjectReference: corev1.LocalObjectReference{Name: "s3-credentials"},
+								Key:                  "secret-key",
+							},
+						},
+					},
+				},
+			}
+
+			s3CredentialsSecret := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "s3-credentials",
+					Namespace: namespace,
+				},
+				Data: map[string][]byte{
+					"access-key": []byte("test-access-key-id"),
+					"secret-key": []byte("test-secret-access-key"),
+				},
+			}
+
+			fakeClient = fake.NewClientBuilder().
+				WithScheme(scheme).
+				WithObjects(s3CredentialsSecret).
+				Build()
+
+			configWithSecrets, err := backupConfig.PrefetchSecretsData(ctx, fakeClient)
+			Expect(err).NotTo(HaveOccurred())
+
+			pgMajorVersion := 15
+			walgConfig := NewConfigFromBackupConfig(configWithSecrets, pgMajorVersion)
+
+			Expect(walgConfig.WaleS3Prefix).To(Equal("s3://test-bucket/many-slashes/15"))
+		})
+
+		It("should not alter ResolvedPrefix without trailing slash", func() {
+			// Sanity check: prefixes without a trailing slash must remain unchanged.
+			backupConfig := &v1beta1.BackupConfig{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-backup-config",
+					Namespace: namespace,
+				},
+				Spec: v1beta1.BackupConfigSpec{
+					Storage: v1beta1.StorageConfig{
+						StorageType: v1beta1.StorageTypeS3,
+						S3: &v1beta1.S3StorageConfig{
+							Prefix: "s3://test-bucket/no-trailing-slash",
+							AccessKeyIDRef: &corev1.SecretKeySelector{
+								LocalObjectReference: corev1.LocalObjectReference{Name: "s3-credentials"},
+								Key:                  "access-key",
+							},
+							AccessKeySecretRef: &corev1.SecretKeySelector{
+								LocalObjectReference: corev1.LocalObjectReference{Name: "s3-credentials"},
+								Key:                  "secret-key",
+							},
+						},
+					},
+				},
+			}
+
+			s3CredentialsSecret := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "s3-credentials",
+					Namespace: namespace,
+				},
+				Data: map[string][]byte{
+					"access-key": []byte("test-access-key-id"),
+					"secret-key": []byte("test-secret-access-key"),
+				},
+			}
+
+			fakeClient = fake.NewClientBuilder().
+				WithScheme(scheme).
+				WithObjects(s3CredentialsSecret).
+				Build()
+
+			configWithSecrets, err := backupConfig.PrefetchSecretsData(ctx, fakeClient)
+			Expect(err).NotTo(HaveOccurred())
+
+			pgMajorVersion := 16
+			walgConfig := NewConfigFromBackupConfig(configWithSecrets, pgMajorVersion)
+
+			Expect(walgConfig.WaleS3Prefix).To(Equal("s3://test-bucket/no-trailing-slash/16"))
+		})
+
 		It("should demonstrate the complete workflow with mutual exclusivity validation", func() {
 			// This test demonstrates the complete workflow:
 			// 1. Create BackupConfig with references

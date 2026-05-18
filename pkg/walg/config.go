@@ -127,7 +127,7 @@ func NewConfigFromBackupConfig(backupConfig *v1beta1.BackupConfigWithSecrets, pg
 		config.AWSEndpoint = backupConfig.Spec.Storage.S3.ResolvedEndpointURL
 		config.AWSRegion = backupConfig.Spec.Storage.S3.ResolvedRegion
 		config.AWSS3ForcePathStyle = backupConfig.Spec.Storage.S3.ForcePathStyle
-		config.WaleS3Prefix = fmt.Sprintf("%s/%d", backupConfig.Spec.Storage.S3.ResolvedPrefix, pgMajorVersion)
+		config.WaleS3Prefix = fmt.Sprintf("%s/%d", strings.TrimRight(backupConfig.Spec.Storage.S3.ResolvedPrefix, "/"), pgMajorVersion)
 		config.WalgS3StorageClass = backupConfig.Spec.Storage.S3.StorageClass
 
 		// Handle custom CA certificate if provided
