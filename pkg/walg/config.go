@@ -177,7 +177,66 @@ func NewConfigFromBackupConfig(backupConfig *v1beta1.BackupConfigWithSecrets, pg
 	}
 
 	config.setWalgPrefetchDir()
+	applyWalgConfigOverrides(&config, backupConfig.Spec.Walg)
 	return &config
+}
+
+func applyWalgConfigOverrides(config *Config, walgConfig *v1beta1.WalgConfig) {
+	if walgConfig == nil {
+		return
+	}
+
+	if walgConfig.GoMaxProcs != nil {
+		config.GoMaxProcs = *walgConfig.GoMaxProcs
+	}
+	if walgConfig.TotalBgUploadedLimit != nil {
+		config.TotalBgUploadedLimit = *walgConfig.TotalBgUploadedLimit
+	}
+	if walgConfig.AliveCheckInterval != "" {
+		config.WalgAliveCheckInterval = walgConfig.AliveCheckInterval
+	}
+	if walgConfig.CompressionMethod != "" {
+		config.WalgCompressionMethod = walgConfig.CompressionMethod
+	}
+	if walgConfig.DeltaMaxSteps != nil {
+		config.WalgDeltaMaxSteps = *walgConfig.DeltaMaxSteps
+	}
+	if walgConfig.DiskRateLimitBytesPerSecond != nil {
+		config.WalgDiskRateLimit = *walgConfig.DiskRateLimitBytesPerSecond
+	}
+	if walgConfig.DownloadConcurrency != nil {
+		config.WalgDownloadConcurrency = *walgConfig.DownloadConcurrency
+	}
+	if walgConfig.DownloadFileRetries != nil {
+		config.WalgDownloadFileRetries = *walgConfig.DownloadFileRetries
+	}
+	if walgConfig.FailoverStoragesCacheLifetime != "" {
+		config.WalgFailoverStoragesCacheLifetime = walgConfig.FailoverStoragesCacheLifetime
+	}
+	if walgConfig.FailoverStoragesCheck != nil {
+		config.WalgFailoverStoragesCheck = *walgConfig.FailoverStoragesCheck
+	}
+	if walgConfig.FailoverStoragesCheckSize != "" {
+		config.WalgFailoverStoragesCheckSize = walgConfig.FailoverStoragesCheckSize
+	}
+	if walgConfig.NetworkRateLimitBytesPerSecond != nil {
+		config.WalgNetworkRateLimit = *walgConfig.NetworkRateLimitBytesPerSecond
+	}
+	if walgConfig.TarDisableFsync != nil {
+		config.WalgTarDisableFsync = strconv.FormatBool(*walgConfig.TarDisableFsync)
+	}
+	if walgConfig.TarSizeThreshold != nil {
+		config.WalgTarSizeThreshold = *walgConfig.TarSizeThreshold
+	}
+	if walgConfig.UploadConcurrency != nil {
+		config.WalgUploadConcurrency = *walgConfig.UploadConcurrency
+	}
+	if walgConfig.UploadDiskConcurrency != nil {
+		config.WalgUploadDiskConcurrency = *walgConfig.UploadDiskConcurrency
+	}
+	if walgConfig.PreventWalOverwrite != nil {
+		config.WalgPreventWalOverwrite = strconv.FormatBool(*walgConfig.PreventWalOverwrite)
+	}
 }
 
 // Hash returns a stable SHA-256 hex digest of the Config's JSON representation.

@@ -118,8 +118,84 @@ type StorageConfig struct {
 	S3          *S3StorageConfig `json:"s3,omitempty"` // S3-specific parameters
 }
 
+// WalgConfig defines WAL-G runtime configuration overrides.
+type WalgConfig struct {
+	// GOMAXPROCS value used by WAL-G. Default value is evaluated at runtime.
+	// +optional
+	GoMaxProcs *int `json:"goMaxProcs,omitempty"`
+
+	// Limit of files uploaded in background by WAL-G. Default value is evaluated at runtime.
+	// +optional
+	TotalBgUploadedLimit *int `json:"totalBgUploadedLimit,omitempty"`
+
+	// WAL-G alive check interval value, e.g. "30s". Default value is evaluated at runtime.
+	// +optional
+	AliveCheckInterval string `json:"aliveCheckInterval,omitempty"`
+
+	// Compression method used by WAL-G, e.g. "lz4", "brotli" or "zstd".
+	// Default value is evaluated at runtime.
+	// +optional
+	CompressionMethod string `json:"compressionMethod,omitempty"`
+
+	// Determines how many delta backups can be between full backups. Default value is evaluated at runtime.
+	// +optional
+	DeltaMaxSteps *int `json:"deltaMaxSteps,omitempty"`
+
+	// Disk read rate limit during backup creation in bytes per second. Default value is evaluated at runtime.
+	// +optional
+	DiskRateLimitBytesPerSecond *int `json:"diskRateLimitBytesPerSecond,omitempty"`
+
+	// How many goroutines to use during backup && wal downloading. Default value is evaluated at runtime.
+	// +optional
+	DownloadConcurrency *int `json:"downloadConcurrency,omitempty"`
+
+	// How many times failed file will be retried during backup / wal download. Default value is evaluated at runtime.
+	// +optional
+	DownloadFileRetries *int `json:"downloadFileRetries,omitempty"`
+
+	// WAL-G failover storages cache lifetime value, e.g. "0m". Default value is evaluated at runtime.
+	// +optional
+	FailoverStoragesCacheLifetime string `json:"failoverStoragesCacheLifetime,omitempty"`
+
+	// Whether WAL-G should check failover storages. Default value is evaluated at runtime.
+	// +optional
+	FailoverStoragesCheck *bool `json:"failoverStoragesCheck,omitempty"`
+
+	// WAL-G failover storages check size value, e.g. "1KB". Default value is evaluated at runtime.
+	// +optional
+	FailoverStoragesCheckSize string `json:"failoverStoragesCheckSize,omitempty"`
+
+	// Network upload rate limit during backup uploading in bytes per second. Default value is evaluated at runtime.
+	// +optional
+	NetworkRateLimitBytesPerSecond *int `json:"networkRateLimitBytesPerSecond,omitempty"`
+
+	// Disable calling fsync after writing files when extracting tar files. Default value is evaluated at runtime.
+	// +optional
+	TarDisableFsync *bool `json:"tarDisableFsync,omitempty"`
+
+	// Threshold in bytes is size of one backup bundle. Default value is evaluated at runtime.
+	// +optional
+	TarSizeThreshold *int64 `json:"tarSizeThreshold,omitempty"`
+
+	// How many concurrency streams to use during backup uploading. Default value is evaluated at runtime.
+	// +optional
+	UploadConcurrency *int `json:"uploadConcurrency,omitempty"`
+
+	// How many concurrency streams are reading disk during backup uploading. Default value is evaluated at runtime.
+	// +optional
+	UploadDiskConcurrency *int `json:"uploadDiskConcurrency,omitempty"`
+
+	// Whether WAL-G should prevent WAL overwrite. Default value is evaluated at runtime.
+	// +optional
+	PreventWalOverwrite *bool `json:"preventWalOverwrite,omitempty"`
+}
+
 // BackupConfigSpec defines the desired state of BackupConfig.
 type BackupConfigSpec struct {
+	// WAL-G runtime configuration overrides
+	// +optional
+	Walg *WalgConfig `json:"walg,omitempty"`
+
 	// How many goroutines to use during backup && wal downloading. Default value is evaluated at runtime
 	DownloadConcurrency *int `json:"downloadConcurrency,omitempty"`
 
