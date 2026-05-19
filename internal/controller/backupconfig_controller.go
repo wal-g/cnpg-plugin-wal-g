@@ -64,7 +64,6 @@ func (r *BackupConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
-	// TODO(endevir): Check && report connection status into Status subresource
 	// TODO(endevir): Watch for secrets name change and reconcile cluster role
 
 	if !backupConfig.DeletionTimestamp.IsZero() {

@@ -39,10 +39,10 @@ const (
 	maxStatusReconcileConcurrency = 3
 
 	// Timeout for a single BackupConfig status reconciliation
-	statusReconcileTimeout = 10 * time.Minute
+	statusReconcileTimeout = 3 * time.Minute
 
 	// Size of the shared reconciliation request queue
-	statusReconcileQueueSize = 128
+	statusReconcileQueueSize = 256
 )
 
 // BackupConfigStatusController periodically reconciles BackupConfigStatus fields
@@ -134,6 +134,11 @@ func (c *BackupConfigStatusController) enqueueAllStatuses(ctx context.Context) {
 	backupConfigList := &v1beta1.BackupConfigList{}
 	if err := c.client.List(ctx, backupConfigList); err != nil {
 		c.logger.Error(err, "Failed to list BackupConfig resources")
+		return
+	}
+
+	if len(c.queue) > 0 {
+		c.logger.Error(fmt.Errorf("there are still some backupconfigs pending in queue"), "Cannot enqueue backupconfigs for status update")
 		return
 	}
 
