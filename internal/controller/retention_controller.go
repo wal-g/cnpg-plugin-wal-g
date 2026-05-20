@@ -13,6 +13,7 @@ import (
 	"github.com/samber/lo"
 	v1beta1 "github.com/wal-g/cnpg-plugin-wal-g/api/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -33,8 +34,9 @@ func NewRetentionController(client client.Client, checkInterval time.Duration) *
 
 // Start begins the retention controller's periodic check
 func (r *RetentionController) Start(ctx context.Context) error {
-	logger := logr.FromContextOrDiscard(ctx).WithName("RetentionController")
+	logger := ctrl.Log.WithName("RetentionController")
 	logger.Info("Starting retention controller", "checkInterval", r.checkInterval)
+	ctx = logr.NewContext(ctx, logger)
 
 	ticker := time.NewTicker(r.checkInterval)
 	defer ticker.Stop()

@@ -28,6 +28,7 @@ import (
 	// to ensure that exec-entrypoint and run can make use of them.
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 
+	"github.com/go-logr/logr"
 	"github.com/spf13/viper"
 	"go.uber.org/zap/zapcore"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -105,6 +106,7 @@ func Start(ctx context.Context) error {
 	opts.BindFlags(flag.CommandLine)
 
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
+	ctx = logr.NewContext(ctx, ctrl.Log)
 
 	// if the enable-http2 flag is false (the default), http/2 should be disabled
 	// due to its vulnerabilities. More specifically, disabling http/2 will
@@ -122,7 +124,7 @@ func Start(ctx context.Context) error {
 	}
 
 	// Create watchers for metrics and webhooks certificates
-	var metricsCertWatcher, webhookCertWatcher *certwatcher.CertWatcher
+	var webhookCertWatcher *certwatcher.CertWatcher
 
 	webhookCertPath := viper.GetString("webhook-cert-path")
 	webhookCertName := viper.GetString("webhook-cert-name")
@@ -206,7 +208,7 @@ func Start(ctx context.Context) error {
 	// Create and add the BackupConfigStatusController
 	backupConfigStatusController := controller.NewBackupConfigStatusController(
 		mgr.GetClient(),
-		5*time.Minute, // Run status reconciliation each 5 minutes
+		2*time.Minute, // Run status reconciliation each 2 minutes
 	)
 	if err := mgr.Add(backupConfigStatusController); err != nil {
 		setupLog.Error(err, "unable to add controller", "controller", "BackupConfigStatusController")
@@ -254,14 +256,6 @@ func Start(ctx context.Context) error {
 	if err = webhookv1.SetupBackupConfigWebhookWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create webhook", "webhook", "PostgresqlCluster")
 		os.Exit(1)
-	}
-
-	if metricsCertWatcher != nil {
-		setupLog.Info("Adding metrics certificate watcher to manager")
-		if err := mgr.Add(metricsCertWatcher); err != nil {
-			setupLog.Error(err, "unable to add metrics certificate watcher to manager")
-			return err
-		}
 	}
 
 	if webhookCertWatcher != nil {

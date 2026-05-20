@@ -140,7 +140,7 @@ func (c *Client) GetBackupsList(ctx context.Context) ([]BackupMetadata, error) {
 		)
 		return nil, fmt.Errorf("failed to do wal-g backup-list: %w", err)
 	}
-	logger.Info("Finished wal-g backup-list", "stdout", string(result.Stdout()), "stderr", string(result.Stderr()))
+	logger.V(1).Info("Finished wal-g backup-list", "stdout", string(result.Stdout()), "stderr", string(result.Stderr()))
 
 	backupsMetadata := make([]BackupMetadata, 0)
 	if err = json.Unmarshal(result.Stdout(), &backupsMetadata); err != nil {

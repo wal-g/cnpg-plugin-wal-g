@@ -15,6 +15,7 @@ import (
 	"golang.org/x/sync/semaphore"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -68,8 +69,9 @@ func NewBackupDeletionController(client client.Client) *BackupDeletionController
 
 // Start begins the backup deletion controller's periodic check
 func (b *BackupDeletionController) Start(ctx context.Context) error {
-	logger := logr.FromContextOrDiscard(ctx).WithName("BackupDeletionController")
+	logger := ctrl.Log.WithName("BackupDeletionController")
 	logger.Info("Starting backup deletion controller")
+	ctx = logr.NewContext(ctx, logger)
 
 	// Wait for context cancellation
 	for range ctx.Done() {
@@ -92,6 +94,12 @@ func (b *BackupDeletionController) Start(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+// NeedLeaderElection returns true if the Runnable needs to be run in the leader election mode.
+// e.g. controllers need to be run in leader election mode, while webhook server doesn't.
+func (b *BackupDeletionController) NeedLeaderElection() bool {
+	return true
 }
 
 // EnqueueBackupDeletion adds a Backup to the deletion queue for its BackupConfig

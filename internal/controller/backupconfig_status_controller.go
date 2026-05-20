@@ -30,6 +30,7 @@ import (
 	"github.com/wal-g/cnpg-plugin-wal-g/pkg/walg"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -39,7 +40,7 @@ const (
 	maxStatusReconcileConcurrency = 3
 
 	// Timeout for a single BackupConfig status reconciliation
-	statusReconcileTimeout = 3 * time.Minute
+	statusReconcileTimeout = 10 * time.Minute
 
 	// Size of the shared reconciliation request queue
 	statusReconcileQueueSize = 256
@@ -81,12 +82,13 @@ func NewBackupConfigStatusController(client client.Client, checkInterval time.Du
 
 // Start begins the status controller's periodic reconciliation loop and worker pool
 func (c *BackupConfigStatusController) Start(ctx context.Context) error {
-	c.ctx = ctx
-	c.logger = logr.FromContextOrDiscard(ctx).WithName("BackupConfigStatusController")
+	c.logger = ctrl.Log.WithName("BackupConfigStatusController")
 	c.logger.Info("Starting BackupConfig status controller",
 		"checkInterval", c.checkInterval,
 		"workers", maxStatusReconcileConcurrency,
 	)
+	ctx = logr.NewContext(ctx, c.logger)
+	c.ctx = ctx
 
 	// Start the static worker pool
 	var wg sync.WaitGroup
@@ -114,6 +116,12 @@ func (c *BackupConfigStatusController) Start(ctx context.Context) error {
 			c.enqueueAllStatuses(ctx)
 		}
 	}
+}
+
+// NeedLeaderElection returns true if the Runnable needs to be run in the leader election mode.
+// e.g. controllers need to be run in leader election mode, while webhook server doesn't.
+func (c *BackupConfigStatusController) NeedLeaderElection() bool {
+	return true
 }
 
 // EnqueueStatusUpdate enqueues a status reconciliation for a specific BackupConfig.
@@ -144,12 +152,6 @@ func (c *BackupConfigStatusController) enqueueAllStatuses(ctx context.Context) {
 
 	for i := range backupConfigList.Items {
 		backupConfig := &backupConfigList.Items[i]
-
-		// Skip BackupConfigs that are being deleted
-		if !backupConfig.DeletionTimestamp.IsZero() {
-			continue
-		}
-
 		c.EnqueueStatusUpdate(types.NamespacedName{
 			Namespace: backupConfig.Namespace,
 			Name:      backupConfig.Name,
@@ -222,28 +224,7 @@ func (c *BackupConfigStatusController) reconcileStatusByKey(
 		return client.IgnoreNotFound(err)
 	}
 
-	// Skip if being deleted
-	if !backupConfig.DeletionTimestamp.IsZero() {
-		return nil
-	}
-
-	return c.reconcileStatus(ctx, backupConfig, logger)
-}
-
-// reconcileStatus reconciles the status of a single BackupConfig
-func (c *BackupConfigStatusController) reconcileStatus(
-	ctx context.Context,
-	backupConfig *v1beta1.BackupConfig,
-	logger logr.Logger,
-) error {
 	logger.Info("Reconciling BackupConfig status")
-
-	// Re-fetch the BackupConfig to get the latest version
-	latestBackupConfig := &v1beta1.BackupConfig{}
-	if err := c.client.Get(ctx, client.ObjectKeyFromObject(backupConfig), latestBackupConfig); err != nil {
-		return fmt.Errorf("failed to get latest BackupConfig: %w", err)
-	}
-	backupConfig = latestBackupConfig
 
 	// Prefetch secrets for wal-g client
 	backupConfigWithSecrets, err := backupConfig.PrefetchSecretsData(ctx, c.client)
