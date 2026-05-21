@@ -21,7 +21,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"path/filepath"
 	"reflect"
 	"slices"
 	"strconv"
@@ -264,8 +263,6 @@ func (c *Config) ToEnvMap() map[string]string {
 }
 
 func (c *Config) setWalgPrefetchDir() {
-	const pgWalDirectory = "pg_wal"
-
 	pgdataPath := viper.GetString("pgdata")
 	if pgdataPath == "" {
 		c.WalgPrefetchDir = ""
@@ -273,13 +270,9 @@ func (c *Config) setWalgPrefetchDir() {
 		return
 	}
 
-	pgWalPath, err := filepath.EvalSymlinks(filepath.Join(pgdataPath, pgWalDirectory))
-	if err != nil {
-		panic(fmt.Sprintf("error resolving symlinks for path %s: %v", filepath.Join(pgdataPath, pgWalDirectory), err))
+	if separateWal, err := os.Stat("/var/lib/postgresql/wal"); err == nil && separateWal.IsDir() {
+		c.WalgPrefetchDir = "/var/lib/postgresql/wal" // handle cases when WAL archives stored in separate PVC
+	} else {
+		c.WalgPrefetchDir = pgdataPath
 	}
-
-	// Using upper dir from pg_wal directory after symlink expand
-	// (to handle cases when WALs are stored in separate drive)
-	pgWalPrefetchDir := filepath.Dir(pgWalPath)
-	c.WalgPrefetchDir = pgWalPrefetchDir
 }
