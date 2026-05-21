@@ -244,16 +244,18 @@ func (c *BackupConfigStatusController) reconcileStatusByKey(
 		"CredentialsResolved", "All referenced secrets and configmaps resolved successfully")
 
 	// Check storage readability
-	c.checkStorageReadable(ctx, backupConfig, walgClient, logger)
+	readable := c.checkStorageReadable(ctx, backupConfig, walgClient, logger)
 
 	// Check storage writability
 	c.checkStorageWritable(ctx, backupConfig, walgClient, logger)
 
-	// Check WAL integrity and reconcile WAL-related status fields via wal-g wal-show
-	c.reconcileWALStatus(ctx, backupConfig, backupConfigWithSecrets, logger)
+	if readable {
+		// Check WAL integrity and reconcile WAL-related status fields via wal-g wal-show
+		c.reconcileWALStatus(ctx, backupConfig, backupConfigWithSecrets, logger)
 
-	// Reconcile backup-related status fields from wal-g backup-list and CNPG Backup resources
-	c.reconcileBackupFields(ctx, backupConfig, backupConfigWithSecrets, logger)
+		// Reconcile backup-related status fields from wal-g backup-list and CNPG Backup resources
+		c.reconcileBackupFields(ctx, backupConfig, backupConfigWithSecrets, logger)
+	}
 
 	// Determine overall phase from conditions
 	backupConfig.Status.Phase = determinePhase(backupConfig)
@@ -267,40 +269,42 @@ func (c *BackupConfigStatusController) reconcileStatusByKey(
 	return nil
 }
 
-// checkStorageReadable checks if the storage is accessible for reading
+// checkStorageReadable checks if the storage is accessible for reading, returns check result as bool
 func (c *BackupConfigStatusController) checkStorageReadable(
 	ctx context.Context,
 	backupConfig *v1beta1.BackupConfig,
 	walgClient *walg.Client,
 	logger logr.Logger,
-) {
+) bool {
 	_, err := walgClient.StorageCheckReadable(ctx)
 	if err != nil {
 		logger.Error(err, "Storage read check failed")
 		setCondition(backupConfig, v1beta1.ConditionTypeStorageReadable, metav1.ConditionFalse,
-			"StorageReadCheckFailed", fmt.Sprintf("Storage read check failed: %v", err))
+			"StorageReadCheckFailed", err.Error())
 	} else {
 		setCondition(backupConfig, v1beta1.ConditionTypeStorageReadable, metav1.ConditionTrue,
 			"StorageReadCheckPassed", "Storage is accessible for reading")
 	}
+	return err == nil
 }
 
-// checkStorageWritable checks if the storage is accessible for writing
+// checkStorageWritable checks if the storage is accessible for writing, returns check result as bool
 func (c *BackupConfigStatusController) checkStorageWritable(
 	ctx context.Context,
 	backupConfig *v1beta1.BackupConfig,
 	walgClient *walg.Client,
 	logger logr.Logger,
-) {
+) bool {
 	_, err := walgClient.StorageCheckWritable(ctx)
 	if err != nil {
 		logger.Error(err, "Storage write check failed")
 		setCondition(backupConfig, v1beta1.ConditionTypeStorageWritable, metav1.ConditionFalse,
-			"StorageWriteCheckFailed", fmt.Sprintf("Storage write check failed: %v", err))
+			"StorageWriteCheckFailed", err.Error())
 	} else {
 		setCondition(backupConfig, v1beta1.ConditionTypeStorageWritable, metav1.ConditionTrue,
 			"StorageWriteCheckPassed", "Storage is accessible for writing")
 	}
+	return err == nil
 }
 
 // reconcileWALStatus checks WAL integrity and evaluates recoverability points

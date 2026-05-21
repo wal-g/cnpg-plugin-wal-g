@@ -30,7 +30,7 @@ const (
 
 	// Timeout for resource cleanup, if exceeded - deletion process will be aborted and retried
 	// Needed to prevent stuck on deletion when incorrect BackupConfig / etc.
-	DeletionRequestTimeout time.Duration = 10 * time.Minute
+	DeletionRequestTimeout time.Duration = 5 * time.Minute
 )
 
 // DeletionRequest represents a request to delete a resource
