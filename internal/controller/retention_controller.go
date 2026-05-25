@@ -146,7 +146,6 @@ func (r *RetentionController) getBackupsToDelete(
 	backupConfig *v1beta1.BackupConfig,
 	backupList []cnpgv1.Backup,
 ) ([]cnpgv1.Backup, error) {
-	logger := logr.FromContextOrDiscard(ctx)
 	retention := backupConfig.Spec.Retention
 
 	// If no retention policy is configured, return empty list
@@ -185,17 +184,6 @@ func (r *RetentionController) getBackupsToDelete(
 		minBackupsToKeep = retention.MinBackupsToKeep
 	}
 
-	// If we have fewer successful backups than minBackupsToKeep, keep all
-	successfulBackups := lo.Filter(backupList, func(b cnpgv1.Backup, _ int) bool {
-		return b.Status.Phase == cnpgv1.BackupPhaseCompleted && b.DeletionTimestamp == nil
-	})
-	if len(successfulBackups) <= minBackupsToKeep {
-		logger.Info("Number of successful backups is less than or equal to MinBackupsToKeep, keeping all",
-			"backupCount", len(backupList),
-			"minBackupsToKeep", minBackupsToKeep)
-		return []cnpgv1.Backup{}, nil
-	}
-
 	backupsToDelete := make([]cnpgv1.Backup, 0)
 	// Process backups from oldest to newest (they're already sorted)
 	for i := range backupList {
@@ -214,9 +202,26 @@ func shouldDeleteBackup(ctx context.Context, backupList []cnpgv1.Backup, backupI
 
 	logger := logr.FromContextOrDiscard(ctx)
 
+	if backup.DeletionTimestamp != nil {
+		// Backup is already being deleted, skipping its retention check
+		return false
+	}
+
+	if backup.Status.Phase == cnpgv1.BackupPhasePending ||
+		backup.Status.Phase == cnpgv1.BackupPhaseStarted ||
+		backup.Status.Phase == cnpgv1.BackupPhaseRunning ||
+		backup.Status.Phase == cnpgv1.BackupPhaseFinalizing {
+		logger.Info("Backup is in unfinished state, skipping its retention check", "backupName", backup.Name)
+		return false
+	}
+
 	// Skip if this is one of the newest backups we want to keep
-	remainingBackups := len(backupList) - backupIndex
-	if remainingBackups <= minBackupsToKeep {
+	backupIsHealthy := backup.Status.Phase == cnpgv1.BackupPhaseCompleted && backup.DeletionTimestamp == nil
+	remainingSuccessfulBackups := lo.CountBy(backupList[backupIndex+1:], func(b cnpgv1.Backup) bool {
+		return b.Status.Phase == cnpgv1.BackupPhaseCompleted && b.DeletionTimestamp == nil
+	})
+
+	if backupIsHealthy && remainingSuccessfulBackups < minBackupsToKeep {
 		logger.Info("Keeping backup as part of MinBackupsToKeep", "backupName", backup.Name)
 		return false
 	}

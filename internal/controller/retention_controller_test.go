@@ -326,8 +326,8 @@ var _ = Describe("RetentionController", func() {
 						StartTime:        time.Now().Add(-48 * time.Hour),
 					}),
 				},
-				expectedCount: 0,
-				expectedNames: []string{},
+				expectedCount: 1,
+				expectedNames: []string{"backup3-error"}, // Awaiting that errored old backups will be deleted anyway despite MinBackupsToKeep setting
 			}),
 			Entry("more backups than minBackupsToKeep with time threshold", testCase{
 				description: "more backups than minBackupsToKeep with time threshold",
