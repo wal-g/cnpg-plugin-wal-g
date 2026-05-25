@@ -9,10 +9,13 @@ import (
 
 	cnpgv1 "github.com/cloudnative-pg/cloudnative-pg/api/v1"
 	"github.com/go-logr/logr"
+	"github.com/samber/lo"
 	"github.com/wal-g/cnpg-plugin-wal-g/api/v1beta1"
 	"github.com/wal-g/cnpg-plugin-wal-g/pkg/walg"
 	"golang.org/x/sync/semaphore"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -27,7 +30,7 @@ const (
 
 	// Timeout for resource cleanup, if exceeded - deletion process will be aborted and retried
 	// Needed to prevent stuck on deletion when incorrect BackupConfig / etc.
-	DeletionRequestTimeout time.Duration = 10 * time.Minute
+	DeletionRequestTimeout time.Duration = 5 * time.Minute
 )
 
 // DeletionRequest represents a request to delete a resource
@@ -66,8 +69,9 @@ func NewBackupDeletionController(client client.Client) *BackupDeletionController
 
 // Start begins the backup deletion controller's periodic check
 func (b *BackupDeletionController) Start(ctx context.Context) error {
-	logger := logr.FromContextOrDiscard(ctx).WithName("BackupDeletionController")
+	logger := ctrl.Log.WithName("BackupDeletionController")
 	logger.Info("Starting backup deletion controller")
+	ctx = logr.NewContext(ctx, logger)
 
 	// Wait for context cancellation
 	for range ctx.Done() {
@@ -90,6 +94,12 @@ func (b *BackupDeletionController) Start(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+// NeedLeaderElection returns true if the Runnable needs to be run in the leader election mode.
+// e.g. controllers need to be run in leader election mode, while webhook server doesn't.
+func (b *BackupDeletionController) NeedLeaderElection() bool {
+	return true
 }
 
 // EnqueueBackupDeletion adds a Backup to the deletion queue for its BackupConfig
@@ -263,13 +273,23 @@ func (b *BackupDeletionController) deleteWALGBackup(ctx context.Context, backupK
 		)
 	}
 
-	backupConfigWithSecrets, err := v1beta1.GetBackupConfigWithSecretsForBackup(ctx, b.Client, backup)
+	backupConfig, err := v1beta1.GetBackupConfigForBackup(ctx, b, backup)
 	if client.IgnoreNotFound(err) != nil {
-		return fmt.Errorf("while getting backupconfig with secrets for backup %v: %w", backupKey, err)
+		return fmt.Errorf("while getting backupconfig for backup %v: %w", backupKey, err)
 	}
-	if err != nil {
-		// If BackupConfig not found, then it's already deleted, just remove finalizer and do nothing else
+
+	writableCondition, writableCondFound := lo.Find(backupConfig.Status.Conditions, func(c metav1.Condition) bool {
+		return c.Type == v1beta1.ConditionTypeStorageWritable
+	})
+
+	if writableCondFound && writableCondition.Status == metav1.ConditionFalse {
+		logger.Info("Skipping Backup data cleanup because storage is inaccessible", "backupConfig", backupKey)
 		return removeBackupFinalizer(ctx, backup, b.Client)
+	}
+
+	backupConfigWithSecrets, err := backupConfig.PrefetchSecretsData(ctx, b)
+	if err != nil {
+		return fmt.Errorf("while prefetching backup secrets data for backup %v: %w", b, err)
 	}
 
 	// Check if deletion management is disabled for individual backups
@@ -315,9 +335,15 @@ func (b *BackupDeletionController) deleteBackupConfig(ctx context.Context, backu
 		return client.IgnoreNotFound(err)
 	}
 
+	writableCondition, writableCondFound := lo.Find(backupConfig.Status.Conditions, func(c metav1.Condition) bool {
+		return c.Type == v1beta1.ConditionTypeStorageWritable
+	})
+
 	// Check if deletion management is disabled for BackupConfig
 	if backupConfig.Spec.Retention.IgnoreForBackupConfigDeletion {
 		logger.Info("Deletion management disabled for BackupConfig, skipping storage cleanup", "backupConfig", backupConfigKey)
+	} else if writableCondFound && writableCondition.Status == metav1.ConditionFalse {
+		logger.Info("Skipping BackupConfig storage cleanup because storage is inaccessible", "backupConfig", backupConfigKey)
 	} else {
 		backupConfigWithSecrets, err := backupConfig.PrefetchSecretsData(ctx, b)
 		if err != nil {

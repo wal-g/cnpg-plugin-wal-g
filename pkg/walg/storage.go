@@ -24,6 +24,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/go-logr/logr"
 	"github.com/wal-g/cnpg-plugin-wal-g/internal/util/cmd"
@@ -58,8 +59,10 @@ func (w *WALTimelineInfo) IsOK() bool {
 func (c *Client) StorageCheckReadable(ctx context.Context) (*cmd.RunResult, error) {
 	logger := logr.FromContextOrDiscard(ctx)
 
+	commandCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
 	result, err := cmd.New("wal-g", "st", "check", "read").
-		WithContext(ctx).
+		WithContext(commandCtx).
 		WithEnv(c.config.ToEnvMap()).
 		Run()
 
@@ -78,8 +81,10 @@ func (c *Client) StorageCheckReadable(ctx context.Context) (*cmd.RunResult, erro
 func (c *Client) StorageCheckWritable(ctx context.Context) (*cmd.RunResult, error) {
 	logger := logr.FromContextOrDiscard(ctx)
 
+	commandCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
 	result, err := cmd.New("wal-g", "st", "check", "write").
-		WithContext(ctx).
+		WithContext(commandCtx).
 		WithEnv(c.config.ToEnvMap()).
 		Run()
 
@@ -99,8 +104,10 @@ func (c *Client) StorageCheckWritable(ctx context.Context) (*cmd.RunResult, erro
 func (c *Client) WALShow(ctx context.Context) ([]WALTimelineInfo, error) {
 	logger := logr.FromContextOrDiscard(ctx)
 
+	commandCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
+	defer cancel()
 	result, err := cmd.New("wal-g", "wal-show", "--detailed-json").
-		WithContext(ctx).
+		WithContext(commandCtx).
 		WithEnv(c.config.ToEnvMap()).
 		Run()
 
@@ -131,8 +138,10 @@ func (c *Client) WALShow(ctx context.Context) ([]WALTimelineInfo, error) {
 func (c *Client) StorageLsTotalSize(ctx context.Context, path string) (int64, error) {
 	logger := logr.FromContextOrDiscard(ctx)
 
+	commandCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
+	defer cancel()
 	result, err := cmd.New("wal-g", "st", "ls", path).
-		WithContext(ctx).
+		WithContext(commandCtx).
 		WithEnv(c.config.ToEnvMap()).
 		Run()
 

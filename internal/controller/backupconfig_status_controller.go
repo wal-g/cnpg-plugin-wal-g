@@ -30,6 +30,7 @@ import (
 	"github.com/wal-g/cnpg-plugin-wal-g/pkg/walg"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -42,7 +43,7 @@ const (
 	statusReconcileTimeout = 10 * time.Minute
 
 	// Size of the shared reconciliation request queue
-	statusReconcileQueueSize = 128
+	statusReconcileQueueSize = 256
 )
 
 // BackupConfigStatusController periodically reconciles BackupConfigStatus fields
@@ -81,12 +82,13 @@ func NewBackupConfigStatusController(client client.Client, checkInterval time.Du
 
 // Start begins the status controller's periodic reconciliation loop and worker pool
 func (c *BackupConfigStatusController) Start(ctx context.Context) error {
-	c.ctx = ctx
-	c.logger = logr.FromContextOrDiscard(ctx).WithName("BackupConfigStatusController")
+	c.logger = ctrl.Log.WithName("BackupConfigStatusController")
 	c.logger.Info("Starting BackupConfig status controller",
 		"checkInterval", c.checkInterval,
 		"workers", maxStatusReconcileConcurrency,
 	)
+	ctx = logr.NewContext(ctx, c.logger)
+	c.ctx = ctx
 
 	// Start the static worker pool
 	var wg sync.WaitGroup
@@ -116,6 +118,12 @@ func (c *BackupConfigStatusController) Start(ctx context.Context) error {
 	}
 }
 
+// NeedLeaderElection returns true if the Runnable needs to be run in the leader election mode.
+// e.g. controllers need to be run in leader election mode, while webhook server doesn't.
+func (c *BackupConfigStatusController) NeedLeaderElection() bool {
+	return true
+}
+
 // EnqueueStatusUpdate enqueues a status reconciliation for a specific BackupConfig.
 // This can be called externally (e.g. after backup creation or BackupConfig changes)
 // to trigger an immediate status update. Non-blocking: if the queue is full,
@@ -137,14 +145,13 @@ func (c *BackupConfigStatusController) enqueueAllStatuses(ctx context.Context) {
 		return
 	}
 
+	if len(c.queue) > 0 {
+		c.logger.Error(fmt.Errorf("there are still some backupconfigs pending in queue"), "Cannot enqueue backupconfigs for status update")
+		return
+	}
+
 	for i := range backupConfigList.Items {
 		backupConfig := &backupConfigList.Items[i]
-
-		// Skip BackupConfigs that are being deleted
-		if !backupConfig.DeletionTimestamp.IsZero() {
-			continue
-		}
-
 		c.EnqueueStatusUpdate(types.NamespacedName{
 			Namespace: backupConfig.Namespace,
 			Name:      backupConfig.Name,
@@ -217,28 +224,7 @@ func (c *BackupConfigStatusController) reconcileStatusByKey(
 		return client.IgnoreNotFound(err)
 	}
 
-	// Skip if being deleted
-	if !backupConfig.DeletionTimestamp.IsZero() {
-		return nil
-	}
-
-	return c.reconcileStatus(ctx, backupConfig, logger)
-}
-
-// reconcileStatus reconciles the status of a single BackupConfig
-func (c *BackupConfigStatusController) reconcileStatus(
-	ctx context.Context,
-	backupConfig *v1beta1.BackupConfig,
-	logger logr.Logger,
-) error {
 	logger.Info("Reconciling BackupConfig status")
-
-	// Re-fetch the BackupConfig to get the latest version
-	latestBackupConfig := &v1beta1.BackupConfig{}
-	if err := c.client.Get(ctx, client.ObjectKeyFromObject(backupConfig), latestBackupConfig); err != nil {
-		return fmt.Errorf("failed to get latest BackupConfig: %w", err)
-	}
-	backupConfig = latestBackupConfig
 
 	// Prefetch secrets for wal-g client
 	backupConfigWithSecrets, err := backupConfig.PrefetchSecretsData(ctx, c.client)
@@ -258,16 +244,18 @@ func (c *BackupConfigStatusController) reconcileStatus(
 		"CredentialsResolved", "All referenced secrets and configmaps resolved successfully")
 
 	// Check storage readability
-	c.checkStorageReadable(ctx, backupConfig, walgClient, logger)
+	readable := c.checkStorageReadable(ctx, backupConfig, walgClient, logger)
 
 	// Check storage writability
 	c.checkStorageWritable(ctx, backupConfig, walgClient, logger)
 
-	// Check WAL integrity and reconcile WAL-related status fields via wal-g wal-show
-	c.reconcileWALStatus(ctx, backupConfig, backupConfigWithSecrets, logger)
+	if readable {
+		// Check WAL integrity and reconcile WAL-related status fields via wal-g wal-show
+		c.reconcileWALStatus(ctx, backupConfig, backupConfigWithSecrets, logger)
 
-	// Reconcile backup-related status fields from wal-g backup-list and CNPG Backup resources
-	c.reconcileBackupFields(ctx, backupConfig, backupConfigWithSecrets, logger)
+		// Reconcile backup-related status fields from wal-g backup-list and CNPG Backup resources
+		c.reconcileBackupFields(ctx, backupConfig, backupConfigWithSecrets, logger)
+	}
 
 	// Determine overall phase from conditions
 	backupConfig.Status.Phase = determinePhase(backupConfig)
@@ -281,40 +269,42 @@ func (c *BackupConfigStatusController) reconcileStatus(
 	return nil
 }
 
-// checkStorageReadable checks if the storage is accessible for reading
+// checkStorageReadable checks if the storage is accessible for reading, returns check result as bool
 func (c *BackupConfigStatusController) checkStorageReadable(
 	ctx context.Context,
 	backupConfig *v1beta1.BackupConfig,
 	walgClient *walg.Client,
 	logger logr.Logger,
-) {
+) bool {
 	_, err := walgClient.StorageCheckReadable(ctx)
 	if err != nil {
 		logger.Error(err, "Storage read check failed")
 		setCondition(backupConfig, v1beta1.ConditionTypeStorageReadable, metav1.ConditionFalse,
-			"StorageReadCheckFailed", fmt.Sprintf("Storage read check failed: %v", err))
+			"StorageReadCheckFailed", err.Error())
 	} else {
 		setCondition(backupConfig, v1beta1.ConditionTypeStorageReadable, metav1.ConditionTrue,
 			"StorageReadCheckPassed", "Storage is accessible for reading")
 	}
+	return err == nil
 }
 
-// checkStorageWritable checks if the storage is accessible for writing
+// checkStorageWritable checks if the storage is accessible for writing, returns check result as bool
 func (c *BackupConfigStatusController) checkStorageWritable(
 	ctx context.Context,
 	backupConfig *v1beta1.BackupConfig,
 	walgClient *walg.Client,
 	logger logr.Logger,
-) {
+) bool {
 	_, err := walgClient.StorageCheckWritable(ctx)
 	if err != nil {
 		logger.Error(err, "Storage write check failed")
 		setCondition(backupConfig, v1beta1.ConditionTypeStorageWritable, metav1.ConditionFalse,
-			"StorageWriteCheckFailed", fmt.Sprintf("Storage write check failed: %v", err))
+			"StorageWriteCheckFailed", err.Error())
 	} else {
 		setCondition(backupConfig, v1beta1.ConditionTypeStorageWritable, metav1.ConditionTrue,
 			"StorageWriteCheckPassed", "Storage is accessible for writing")
 	}
+	return err == nil
 }
 
 // reconcileWALStatus checks WAL integrity and evaluates recoverability points
