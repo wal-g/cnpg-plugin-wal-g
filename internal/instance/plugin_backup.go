@@ -18,6 +18,7 @@ package instance
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"time"
@@ -27,6 +28,7 @@ import (
 	pgTime "github.com/cloudnative-pg/machinery/pkg/postgres/time"
 	"github.com/cloudnative-pg/machinery/pkg/types"
 	"github.com/go-logr/logr"
+	"github.com/samber/lo"
 	"github.com/spf13/viper"
 	"github.com/wal-g/cnpg-plugin-wal-g/api/v1beta1"
 	"github.com/wal-g/cnpg-plugin-wal-g/internal/common"
@@ -107,6 +109,51 @@ func (b BackupServiceImplementation) Backup(
 	logger.WithValues("pgdata", pgdata, "user-data", string(backupParamsJSON))
 
 	walgClient := walg.NewClientFromBackupConfig(backupConfigWithSecrets, pgMajorVersion)
+
+	backupsListCtx, cancelBackupsListCtx := context.WithTimeout(ctx, 1*time.Minute)
+	defer cancelBackupsListCtx()
+	backupsList, err := walgClient.GetBackupsList(backupsListCtx)
+	if err != nil {
+		logger.Error(err, "Failed to create backup: failed to list existing backups")
+		return nil, fmt.Errorf("failed to create backup: failed to list existing backups: %w", err)
+	}
+
+	// Get current LSN and currentSystemID from local PostgreSQL instance
+	currentLSN, currentSystemID, err := b.getCurrentLSNAndSystemID(ctx)
+	if err != nil {
+		logger.Error(err, "Failed to get current LSN and system ID from PostgreSQL")
+		return nil, fmt.Errorf("failed to get current LSN and system ID: %w", err)
+	}
+	logger.Info("Retrieved current LSN and system ID", "lsn", currentLSN, "systemID", currentSystemID)
+
+	hasBackupWithCurrentLSN := false
+	hasBackupWithLaterLSN := false
+	hasBackupWithAnotherSystemID := false
+
+	lo.ForEach(backupsList, func(b walg.BackupMetadata, _ int) {
+		if b.SystemIdentifier != currentSystemID {
+			hasBackupWithAnotherSystemID = true
+		}
+		if b.FinishLSN == currentLSN {
+			hasBackupWithCurrentLSN = true
+		}
+		if b.FinishLSN > currentLSN {
+			hasBackupWithLaterLSN = true
+		}
+	})
+
+	if hasBackupWithAnotherSystemID {
+		return nil, fmt.Errorf("backups with another system ID detected, this usually means that BackupConfig is being used by another database, which is forbidden")
+	}
+
+	if hasBackupWithCurrentLSN {
+		return nil, fmt.Errorf("no changes in database detected since previous backup, cannot create new backup")
+	}
+
+	if hasBackupWithLaterLSN {
+		return nil, fmt.Errorf("there are backups with later LSN, this usually means that we are creating backup with a very outdated replica")
+	}
+
 	result, err := walgClient.BackupPush(logr.NewContext(ctx, logger), pgdata, string(backupParamsJSON))
 
 	if err != nil {
@@ -173,4 +220,45 @@ func (b BackupServiceImplementation) buildBackupResult(
 		InstanceId: currentBackupMetadata.Hostname,
 		Online:     true,
 	}, nil
+}
+
+// getCurrentLSNAndSystemID connects to the local PostgreSQL instance and retrieves
+// the current LSN and system identifier
+func (b BackupServiceImplementation) getCurrentLSNAndSystemID(ctx context.Context) (uint64, int, error) {
+	// Connect to PostgreSQL via Unix socket as postgres user
+	connStr := "host=/controller/run user=postgres dbname=postgres sslmode=disable"
+
+	db, err := sql.Open("postgres", connStr)
+	if err != nil {
+		return 0, 0, fmt.Errorf("failed to open database connection: %w", err)
+	}
+	defer db.Close()
+
+	// Set connection timeout
+	db.SetConnMaxLifetime(10 * time.Second)
+	db.SetMaxOpenConns(1)
+	db.SetMaxIdleConns(1)
+
+	// Test the connection
+	if err := db.PingContext(ctx); err != nil {
+		return 0, 0, fmt.Errorf("failed to ping database: %w", err)
+	}
+
+	// Query for current LSN and system identifier
+	var lsnStr string
+	var systemID int64
+
+	query := `SELECT pg_current_wal_lsn()::text, system_identifier FROM pg_control_system()`
+	err = db.QueryRowContext(ctx, query).Scan(&lsnStr, &systemID)
+	if err != nil {
+		return 0, 0, fmt.Errorf("failed to query LSN and system ID: %w", err)
+	}
+
+	// Convert LSN string to uint64
+	lsn, err := types.LSN(lsnStr).Parse()
+	if err != nil {
+		return 0, 0, fmt.Errorf("failed to parse LSN %q: %w", lsnStr, err)
+	}
+
+	return lsn, int(systemID), nil
 }
