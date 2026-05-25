@@ -245,10 +245,18 @@ func (b BackupServiceImplementation) getCurrentLSNAndSystemID(ctx context.Contex
 	}
 
 	// Query for current LSN and system identifier
+	// Use pg_last_wal_replay_lsn() for replicas (during recovery) and pg_current_wal_lsn() for primary
 	var lsnStr string
 	var systemID int64
 
-	query := `SELECT pg_current_wal_lsn()::text, system_identifier FROM pg_control_system()`
+	query := `SELECT
+		CASE
+			WHEN pg_is_in_recovery() THEN pg_last_wal_replay_lsn()::text
+			ELSE pg_current_wal_lsn()::text
+		END AS current_lsn,
+		system_identifier
+	FROM pg_control_system()`
+
 	err = db.QueryRowContext(ctx, query).Scan(&lsnStr, &systemID)
 	if err != nil {
 		return 0, 0, fmt.Errorf("failed to query LSN and system ID: %w", err)
