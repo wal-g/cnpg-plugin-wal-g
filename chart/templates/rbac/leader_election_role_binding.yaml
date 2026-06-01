@@ -2,6 +2,7 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
   name: {{ include "cnpg-plugin-wal-g.fullname" . }}-leader-election-rb
+  namespace: {{ .Release.Namespace }}
   labels:
     {{- include "cnpg-plugin-wal-g.labels" . | nindent 4 }}
 roleRef:

@@ -1,8 +1,9 @@
-{{- if .Values.cnpg.tls.certManager.createClientCert }} 
+{{- if .Values.cnpg.tls.certManager.createClientCert }}
 apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
   name: {{ include "cnpg-plugin-wal-g.fullname" . }}-client
+  namespace: {{ .Release.Namespace }}
   labels:
     {{- include "cnpg-plugin-wal-g.labels" . | nindent 4 }}
 spec:
@@ -23,11 +24,12 @@ spec:
     group: cert-manager.io
 ---
 {{- end }}
-{{- if .Values.cnpg.tls.certManager.createServerCert }} 
+{{- if .Values.cnpg.tls.certManager.createServerCert }}
 apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
   name: {{ include "cnpg-plugin-wal-g.fullname" . }}-server
+  namespace: {{ .Release.Namespace }}
   labels:
     {{- include "cnpg-plugin-wal-g.labels" . | nindent 4 }}
 spec:

@@ -2,6 +2,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: {{ include "cnpg-plugin-wal-g.fullname" . }}
+  namespace: {{ .Release.Namespace }}
   labels:
     {{- include "cnpg-plugin-wal-g.labels" . | nindent 4 }}
     cnpg.io/pluginName: cnpg-extensions.yandex.cloud
