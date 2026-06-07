@@ -34,6 +34,7 @@ metadata:
   labels:
     {{- include "cnpg-plugin-wal-g.labels" . | nindent 4 }}
   name: {{ include "cnpg-plugin-wal-g.fullname" . }}-webhook-service
+  namespace: {{ .Release.Namespace }}
 spec:
   type: ClusterIP
   ports:
