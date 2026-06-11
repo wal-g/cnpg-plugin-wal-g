@@ -222,19 +222,36 @@ func (c *Client) updateCache(ctx context.Context, key string, watcher watch.Inte
 	logger := log.FromContext(ctx).WithName("narrowcache").V(1) // Debug logs only for this method
 	for watchEvent := range watcher.ResultChan() {
 		logger.WithValues("key", key, "event type", watchEvent.Type, "event data", watchEvent.Object).Info("Event received")
+		var prior client.Object
 		switch watchEvent.Type {
-		case watch.Added, watch.Modified:
-			err := c.setToCache(key, watchEvent.Object)
-			if err != nil {
+		case watch.Modified:
+			prior = c.snapshotCached(key)
+			if err := c.setToCache(key, watchEvent.Object); err != nil {
+				logger.WithValues("key", key).Error(err, "Error while updating cache")
+			}
+		case watch.Added:
+			if err := c.setToCache(key, watchEvent.Object); err != nil {
 				logger.WithValues("key", key).Error(err, "Error while updating cache")
 			}
 		case watch.Deleted:
+			prior = c.snapshotCached(key)
 			c.removeFromCache(key)
 		}
-		c.callHandlers(ctx, key, watchEvent)
+		c.callHandlers(ctx, key, watchEvent, prior)
 	}
 	logger.WithValues("key", key).Info("Watch terminated. Clearing cache entry.")
 	c.clearEntryByKey(key)
+}
+
+// snapshotCached returns a deep copy of the cached object before a watch update, or nil if none.
+func (c *Client) snapshotCached(key string) client.Object {
+	c.wmut.RLock()
+	defer c.wmut.RUnlock()
+	ca := c.watchedObjects[key]
+	if ca == nil || ca.cached == nil {
+		return nil
+	}
+	return ca.cached.DeepCopyObject().(client.Object)
 }
 
 func (c *Client) setToCache(key string, obj runtime.Object) error {
@@ -263,12 +280,15 @@ func (c *Client) removeFromCache(key string) {
 func (c *Client) addHandler(key string, hoq handlerOnQueue) {
 	c.wmut.Lock()
 	defer c.wmut.Unlock()
-	if ca := c.watchedObjects[key]; ca != nil {
-		ca.handlers = append(ca.handlers, hoq)
+	ca := c.watchedObjects[key]
+	if ca == nil {
+		c.watchedObjects[key] = &watchedObject{handlers: []handlerOnQueue{hoq}}
+		return
 	}
+	ca.handlers = append(ca.handlers, hoq)
 }
 
-func (c *Client) callHandlers(ctx context.Context, key string, ev watch.Event) {
+func (c *Client) callHandlers(ctx context.Context, key string, ev watch.Event, prior client.Object) {
 	var fn func(hoq handlerOnQueue)
 	switch ev.Type {
 	case watch.Added:
@@ -277,9 +297,15 @@ func (c *Client) callHandlers(ctx context.Context, key string, ev watch.Event) {
 			hoq.handler.Create(ctx, createEvent, hoq.queue)
 		}
 	case watch.Modified:
+		newObj := ev.Object.(client.Object)
 		fn = func(hoq handlerOnQueue) {
-			// old object unknown (not an issue for us - we just enqueue reconcile requests)
-			modEvent := event.UpdateEvent{ObjectOld: ev.Object.(client.Object), ObjectNew: ev.Object.(client.Object)}
+			if prior == nil {
+				// No prior cache entry (e.g. missed Added); treat like create for handlers.
+				createEvent := event.CreateEvent{Object: newObj}
+				hoq.handler.Create(ctx, createEvent, hoq.queue)
+				return
+			}
+			modEvent := event.UpdateEvent{ObjectOld: prior, ObjectNew: newObj}
 			hoq.handler.Update(ctx, modEvent, hoq.queue)
 		}
 	case watch.Deleted:
