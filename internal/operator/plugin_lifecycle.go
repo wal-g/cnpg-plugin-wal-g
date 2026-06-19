@@ -20,6 +20,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -126,9 +127,19 @@ func (impl LifecycleImplementation) reconcilePod(
 	if err != nil {
 		return nil, err
 	}
-
 	logger := logr.FromContextOrDiscard(ctx).WithValues("podName", pod.Name, "podNamespace", pod.Namespace)
 	logger.V(1).Info("Reconciling pod")
+
+	allowedChangeTypesToApplyPatch := []lifecycle.OperatorOperationType_Type{
+		lifecycle.OperatorOperationType_TYPE_CREATE,
+		lifecycle.OperatorOperationType_TYPE_EVALUATE,
+	}
+
+	// Perform spec changes only on "allowed" change requests
+	if !slices.Contains(allowedChangeTypesToApplyPatch, request.OperationType.Type) {
+		logger.V(1).Info("Nothing to do, because operation is not in allowed change types to be patched", "operation", request.OperationType.Type)
+		return &lifecycle.OperatorLifecycleResponse{}, nil
+	}
 
 	mutatedPod := pod.DeepCopy()
 
