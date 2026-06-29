@@ -142,7 +142,7 @@ func (m MetricsServerImplementation) Collect(
 	}
 	var lastSuccessfulBackupTS float64
 	if backupConfig.Status.LastSuccessfulBackup != nil {
-		lastSuccessfulBackupTS = float64(backupConfig.Status.FirstRecoverabilityPoint.Unix())
+		lastSuccessfulBackupTS = float64(backupConfig.Status.LastSuccessfulBackup.Unix())
 	}
 	var lastFailedBackupTS float64
 	if backupConfig.Status.LastFailedBackup != nil {
@@ -156,12 +156,14 @@ func (m MetricsServerImplementation) Collect(
 	}
 
 	var totalWALS3UsageBytes float64
-	if backupConfig.Status.ConsumedStorage.WALBytes != nil {
-		totalWALS3UsageBytes = float64(*backupConfig.Status.ConsumedStorage.WALBytes)
-	}
 	var totalBackupS3UsageBytes float64
-	if backupConfig.Status.ConsumedStorage.BackupsBytes != nil {
-		totalBackupS3UsageBytes = float64(*backupConfig.Status.ConsumedStorage.BackupsBytes)
+	if backupConfig.Status.ConsumedStorage != nil {
+		if backupConfig.Status.ConsumedStorage.WALBytes != nil {
+			totalWALS3UsageBytes = float64(*backupConfig.Status.ConsumedStorage.WALBytes)
+		}
+		if backupConfig.Status.ConsumedStorage.BackupsBytes != nil {
+			totalBackupS3UsageBytes = float64(*backupConfig.Status.ConsumedStorage.BackupsBytes)
+		}
 	}
 
 	var s3ReadAvailability float64
