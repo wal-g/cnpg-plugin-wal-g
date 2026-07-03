@@ -2,6 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: {{ include "cnpg-plugin-wal-g.fullname" . }}-controller-manager
+  namespace: {{ .Release.Namespace }}
   labels:
     {{- include "cnpg-plugin-wal-g.labels" . | nindent 4 }}
 spec:
