@@ -710,4 +710,135 @@ var _ = Describe("WAL-G Config Integration Tests", func() {
 			Expect(envMap).To(HaveKeyWithValue("WALG_LIBSODIUM_KEY_TRANSFORM", "hex"))
 		})
 	})
+
+	Context("GCS storage configuration", func() {
+		It("should generate correct wal-g config from BackupConfig with direct GCS values", func() {
+			backupConfig := &v1beta1.BackupConfig{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-backup-config",
+					Namespace: namespace,
+				},
+				Spec: v1beta1.BackupConfigSpec{
+					DeltaMaxSteps: 5,
+					Storage: v1beta1.StorageConfig{
+						StorageType: v1beta1.StorageTypeGCS,
+						GCS: &v1beta1.GCSStorageConfig{
+							Prefix: "gs://test-bucket/direct-prefix",
+							CredentialsSecretRef: &corev1.SecretKeySelector{
+								LocalObjectReference: corev1.LocalObjectReference{Name: "gcs-credentials"},
+								Key:                  "credentials.json",
+							},
+						},
+					},
+				},
+			}
+
+			gcsSecret := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "gcs-credentials",
+					Namespace: namespace,
+				},
+				Data: map[string][]byte{
+					"credentials.json": []byte(`{"type":"service_account"}`),
+				},
+			}
+
+			fakeClient = fake.NewClientBuilder().
+				WithScheme(scheme).
+				WithObjects(gcsSecret).
+				Build()
+
+			configWithSecrets, err := backupConfig.PrefetchSecretsData(ctx, fakeClient)
+			Expect(err).NotTo(HaveOccurred())
+
+			pgMajorVersion := 16
+			walgConfig := NewConfigFromBackupConfig(configWithSecrets, pgMajorVersion)
+
+			Expect(walgConfig.WalgGSPrefix).To(Equal("gs://test-bucket/direct-prefix/16"))
+			Expect(walgConfig.GoogleApplicationCredentials).To(HaveSuffix("test-namespace-test-backup-config-credentials.json"))
+			Expect(walgConfig.AWSAccessKeyID).To(BeEmpty())
+
+			envMap := walgConfig.ToEnvMap()
+			Expect(envMap["WALG_GS_PREFIX"]).To(Equal("gs://test-bucket/direct-prefix/16"))
+			Expect(envMap).To(HaveKey("GOOGLE_APPLICATION_CREDENTIALS"))
+			Expect(envMap).NotTo(HaveKey("AWS_ACCESS_KEY_ID"))
+		})
+
+		It("should generate correct wal-g config from BackupConfig with GCS prefix via Secret reference", func() {
+			backupConfig := &v1beta1.BackupConfig{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-backup-config",
+					Namespace: namespace,
+				},
+				Spec: v1beta1.BackupConfigSpec{
+					Storage: v1beta1.StorageConfig{
+						StorageType: v1beta1.StorageTypeGCS,
+						GCS: &v1beta1.GCSStorageConfig{
+							PrefixFrom: &v1beta1.ValueFromSource{
+								SecretKeyRef: &corev1.SecretKeySelector{
+									LocalObjectReference: corev1.LocalObjectReference{Name: "gcs-config"},
+									Key:                  "prefix",
+								},
+							},
+						},
+					},
+				},
+			}
+
+			gcsConfigSecret := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "gcs-config",
+					Namespace: namespace,
+				},
+				Data: map[string][]byte{
+					"prefix": []byte("gs://secret-bucket/secret-prefix"),
+				},
+			}
+
+			fakeClient = fake.NewClientBuilder().
+				WithScheme(scheme).
+				WithObjects(gcsConfigSecret).
+				Build()
+
+			configWithSecrets, err := backupConfig.PrefetchSecretsData(ctx, fakeClient)
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(configWithSecrets.Spec.Storage.GCS.ResolvedPrefix).To(Equal("gs://secret-bucket/secret-prefix"))
+
+			pgMajorVersion := 15
+			walgConfig := NewConfigFromBackupConfig(configWithSecrets, pgMajorVersion)
+
+			Expect(walgConfig.WalgGSPrefix).To(Equal("gs://secret-bucket/secret-prefix/15"))
+			// No credentials secret provided: rely on Application Default Credentials
+			Expect(walgConfig.GoogleApplicationCredentials).To(BeEmpty())
+		})
+
+		It("should trim trailing slashes in GCS ResolvedPrefix", func() {
+			backupConfig := &v1beta1.BackupConfig{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-backup-config",
+					Namespace: namespace,
+				},
+				Spec: v1beta1.BackupConfigSpec{
+					Storage: v1beta1.StorageConfig{
+						StorageType: v1beta1.StorageTypeGCS,
+						GCS: &v1beta1.GCSStorageConfig{
+							Prefix: "gs://test-bucket/trailing-slash-prefix/",
+						},
+					},
+				},
+			}
+
+			fakeClient = fake.NewClientBuilder().WithScheme(scheme).Build()
+
+			configWithSecrets, err := backupConfig.PrefetchSecretsData(ctx, fakeClient)
+			Expect(err).NotTo(HaveOccurred())
+
+			pgMajorVersion := 16
+			walgConfig := NewConfigFromBackupConfig(configWithSecrets, pgMajorVersion)
+
+			Expect(walgConfig.WalgGSPrefix).To(Equal("gs://test-bucket/trailing-slash-prefix/16"))
+			Expect(walgConfig.WalgGSPrefix).NotTo(ContainSubstring("//16"))
+		})
+	})
 })

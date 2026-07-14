@@ -568,6 +568,217 @@ var _ = Describe("BackupConfig Secrets", func() {
 		})
 	})
 
+	Context("makeGCSStorageConfigWithPrefilledSecrets", func() {
+		var (
+			backupConfig  *BackupConfig
+			testSecret    *corev1.Secret
+			testConfigMap *corev1.ConfigMap
+		)
+
+		BeforeEach(func() {
+			testSecret = &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-secret",
+					Namespace: namespace,
+				},
+				Data: map[string][]byte{
+					"credentials.json": []byte(`{"type":"service_account"}`),
+					"prefix":           []byte("gs://test-bucket/secret-prefix"),
+				},
+			}
+
+			testConfigMap = &corev1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-configmap",
+					Namespace: namespace,
+				},
+				Data: map[string]string{
+					"prefix": "gs://test-bucket/cm-prefix",
+				},
+			}
+
+			fakeClient = fake.NewClientBuilder().
+				WithScheme(scheme).
+				WithObjects(testSecret, testConfigMap).
+				Build()
+		})
+
+		It("should resolve values from direct fields", func() {
+			backupConfig = &BackupConfig{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-backup-config",
+					Namespace: namespace,
+				},
+				Spec: BackupConfigSpec{
+					Storage: StorageConfig{
+						StorageType: StorageTypeGCS,
+						GCS: &GCSStorageConfig{
+							Prefix: "gs://test-bucket/direct-prefix",
+							CredentialsSecretRef: &corev1.SecretKeySelector{
+								LocalObjectReference: corev1.LocalObjectReference{Name: "test-secret"},
+								Key:                  "credentials.json",
+							},
+						},
+					},
+				},
+			}
+
+			gcsConfig, err := backupConfig.makeGCSStorageConfigWithPrefilledSecrets(ctx, fakeClient)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(gcsConfig).NotTo(BeNil())
+			Expect(gcsConfig.CredentialsData).To(Equal(`{"type":"service_account"}`))
+			Expect(gcsConfig.ResolvedPrefix).To(Equal("gs://test-bucket/direct-prefix"))
+		})
+
+		It("should resolve prefix from Secret reference", func() {
+			backupConfig = &BackupConfig{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-backup-config",
+					Namespace: namespace,
+				},
+				Spec: BackupConfigSpec{
+					Storage: StorageConfig{
+						StorageType: StorageTypeGCS,
+						GCS: &GCSStorageConfig{
+							PrefixFrom: &ValueFromSource{
+								SecretKeyRef: &corev1.SecretKeySelector{
+									LocalObjectReference: corev1.LocalObjectReference{Name: "test-secret"},
+									Key:                  "prefix",
+								},
+							},
+						},
+					},
+				},
+			}
+
+			gcsConfig, err := backupConfig.makeGCSStorageConfigWithPrefilledSecrets(ctx, fakeClient)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(gcsConfig).NotTo(BeNil())
+			Expect(gcsConfig.CredentialsData).To(BeEmpty())
+			Expect(gcsConfig.ResolvedPrefix).To(Equal("gs://test-bucket/secret-prefix"))
+		})
+
+		It("should resolve prefix from ConfigMap reference", func() {
+			backupConfig = &BackupConfig{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-backup-config",
+					Namespace: namespace,
+				},
+				Spec: BackupConfigSpec{
+					Storage: StorageConfig{
+						StorageType: StorageTypeGCS,
+						GCS: &GCSStorageConfig{
+							PrefixFrom: &ValueFromSource{
+								ConfigMapKeyRef: &corev1.ConfigMapKeySelector{
+									LocalObjectReference: corev1.LocalObjectReference{Name: "test-configmap"},
+									Key:                  "prefix",
+								},
+							},
+						},
+					},
+				},
+			}
+
+			gcsConfig, err := backupConfig.makeGCSStorageConfigWithPrefilledSecrets(ctx, fakeClient)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(gcsConfig).NotTo(BeNil())
+			Expect(gcsConfig.ResolvedPrefix).To(Equal("gs://test-bucket/cm-prefix"))
+		})
+
+		It("should return nil when GCS config is nil", func() {
+			backupConfig = &BackupConfig{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-backup-config",
+					Namespace: namespace,
+				},
+				Spec: BackupConfigSpec{
+					Storage: StorageConfig{
+						StorageType: StorageTypeGCS,
+						GCS:         nil,
+					},
+				},
+			}
+
+			gcsConfig, err := backupConfig.makeGCSStorageConfigWithPrefilledSecrets(ctx, fakeClient)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(gcsConfig).To(BeNil())
+		})
+
+		It("should return error when both direct prefix and prefixFrom are provided", func() {
+			backupConfig = &BackupConfig{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-backup-config",
+					Namespace: namespace,
+				},
+				Spec: BackupConfigSpec{
+					Storage: StorageConfig{
+						StorageType: StorageTypeGCS,
+						GCS: &GCSStorageConfig{
+							Prefix: "gs://test-bucket/direct-prefix",
+							PrefixFrom: &ValueFromSource{
+								SecretKeyRef: &corev1.SecretKeySelector{
+									LocalObjectReference: corev1.LocalObjectReference{Name: "test-secret"},
+									Key:                  "prefix",
+								},
+							},
+						},
+					},
+				},
+			}
+
+			_, err := backupConfig.makeGCSStorageConfigWithPrefilledSecrets(ctx, fakeClient)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("cannot specify both prefix and prefixFrom"))
+		})
+
+		It("should return error when credentials secret does not exist", func() {
+			backupConfig = &BackupConfig{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-backup-config",
+					Namespace: namespace,
+				},
+				Spec: BackupConfigSpec{
+					Storage: StorageConfig{
+						StorageType: StorageTypeGCS,
+						GCS: &GCSStorageConfig{
+							Prefix: "gs://test-bucket/direct-prefix",
+							CredentialsSecretRef: &corev1.SecretKeySelector{
+								LocalObjectReference: corev1.LocalObjectReference{Name: "non-existent-secret"},
+								Key:                  "credentials.json",
+							},
+						},
+					},
+				},
+			}
+
+			_, err := backupConfig.makeGCSStorageConfigWithPrefilledSecrets(ctx, fakeClient)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("while getting secret non-existent-secret"))
+		})
+
+		It("should leave CredentialsData empty when credentialsSecretRef is not set", func() {
+			backupConfig = &BackupConfig{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-backup-config",
+					Namespace: namespace,
+				},
+				Spec: BackupConfigSpec{
+					Storage: StorageConfig{
+						StorageType: StorageTypeGCS,
+						GCS: &GCSStorageConfig{
+							Prefix: "gs://test-bucket/direct-prefix",
+						},
+					},
+				},
+			}
+
+			gcsConfig, err := backupConfig.makeGCSStorageConfigWithPrefilledSecrets(ctx, fakeClient)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(gcsConfig).NotTo(BeNil())
+			Expect(gcsConfig.CredentialsData).To(BeEmpty())
+		})
+	})
+
 	Context("PrefetchSecretsData", func() {
 		var (
 			backupConfig  *BackupConfig

@@ -6,7 +6,7 @@ spec:
   downloadFileRetries: 15  # How many times retry if storage is unavailable (optional, default: 15)
   deltaMaxSteps: 7 # How many incremental backups can be created before creating new full backup (optional, default: 0)
   storage:
-    type: s3  # Type of storage (only S3 supported currently)
+    type: s3  # Type of storage (s3 or gcs)
     s3:       # S3 storage configuration
       prefix: s3://<BUCKET_NAME>/<PREFIX_NAME> # Prefix for backups, should be unique among any other BackupConfig
       region: ru-central1

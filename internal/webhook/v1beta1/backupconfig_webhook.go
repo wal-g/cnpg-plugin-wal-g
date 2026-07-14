@@ -87,6 +87,7 @@ func (v *BackupConfigCustomValidator) validateBackupConfig(backupconfig *v1beta1
 	validations := []validationFunc{
 		v.validateStorage,
 		v.validateS3MutualExclusivity,
+		v.validateGCSMutualExclusivity,
 	}
 
 	var allWarnings admission.Warnings
@@ -116,6 +117,10 @@ func (v *BackupConfigCustomValidator) validateStorage(backupconfig *v1beta1.Back
 	if backupconfig.Spec.Storage.StorageType == v1beta1.StorageTypeS3 &&
 		backupconfig.Spec.Storage.S3 == nil {
 		return admission.Warnings{}, fmt.Errorf("failed to get S3-specific configuration for object storage")
+	}
+	if backupconfig.Spec.Storage.StorageType == v1beta1.StorageTypeGCS &&
+		backupconfig.Spec.Storage.GCS == nil {
+		return admission.Warnings{}, fmt.Errorf("failed to get GCS-specific configuration for object storage")
 	}
 	return nil, nil
 }
@@ -153,6 +158,26 @@ func (v *BackupConfigCustomValidator) validateS3MutualExclusivity(backupconfig *
 	}
 
 	if err := v.validateValueFromSource(s3Config.EndpointURLFrom, "endpointUrlFrom"); err != nil {
+		return admission.Warnings{}, err
+	}
+
+	return nil, nil
+}
+
+// validateGCSMutualExclusivity validates mutual exclusivity constraints for GCS configuration
+func (v *BackupConfigCustomValidator) validateGCSMutualExclusivity(backupconfig *v1beta1.BackupConfig) (admission.Warnings, error) {
+	if backupconfig.Spec.Storage.GCS == nil {
+		return nil, nil
+	}
+
+	gcsConfig := backupconfig.Spec.Storage.GCS
+
+	// Validate prefix mutual exclusivity
+	if gcsConfig.Prefix != "" && gcsConfig.PrefixFrom != nil {
+		return admission.Warnings{}, fmt.Errorf("cannot specify both prefix and prefixFrom")
+	}
+
+	if err := v.validateValueFromSource(gcsConfig.PrefixFrom, "prefixFrom"); err != nil {
 		return admission.Warnings{}, err
 	}
 

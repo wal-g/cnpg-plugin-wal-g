@@ -424,6 +424,94 @@ var _ = Describe("BackupConfig RBAC", func() {
 			configMapRule := role.Rules[3]
 			Expect(configMapRule.ResourceNames).To(ContainElement("configmap-1"))
 		})
+
+		It("should include permissions for direct GCS configuration", func() {
+			backupConfigs := []v1beta1.BackupConfig{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "test-backup-config",
+						Namespace: "test-namespace",
+					},
+					Spec: v1beta1.BackupConfigSpec{
+						Storage: v1beta1.StorageConfig{
+							StorageType: v1beta1.StorageTypeGCS,
+							GCS: &v1beta1.GCSStorageConfig{
+								Prefix: "gs://test-bucket/prefix",
+								CredentialsSecretRef: &corev1.SecretKeySelector{
+									LocalObjectReference: corev1.LocalObjectReference{Name: "gcs-credentials"},
+									Key:                  "credentials.json",
+								},
+							},
+						},
+					},
+				},
+			}
+
+			BuildRoleForBackupConfigs(role, cluster, backupConfigs)
+
+			secretRule := role.Rules[2]
+			Expect(secretRule.ResourceNames).To(ContainElement("gcs-credentials"))
+		})
+
+		It("should include permissions for GCS ValueFromSource Secret/ConfigMap references", func() {
+			backupConfigs := []v1beta1.BackupConfig{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "test-backup-config",
+						Namespace: "test-namespace",
+					},
+					Spec: v1beta1.BackupConfigSpec{
+						Storage: v1beta1.StorageConfig{
+							StorageType: v1beta1.StorageTypeGCS,
+							GCS: &v1beta1.GCSStorageConfig{
+								PrefixFrom: &v1beta1.ValueFromSource{
+									SecretKeyRef: &corev1.SecretKeySelector{
+										LocalObjectReference: corev1.LocalObjectReference{Name: "gcs-config-secret"},
+										Key:                  "prefix",
+									},
+								},
+								CredentialsSecretRef: &corev1.SecretKeySelector{
+									LocalObjectReference: corev1.LocalObjectReference{Name: "gcs-credentials"},
+									Key:                  "credentials.json",
+								},
+							},
+						},
+					},
+				},
+			}
+
+			BuildRoleForBackupConfigs(role, cluster, backupConfigs)
+
+			secretRule := role.Rules[2]
+			Expect(secretRule.ResourceNames).To(ContainElements(
+				"gcs-config-secret",
+				"gcs-credentials",
+			))
+		})
+
+		It("should not require GCS credentials secret when omitted (Application Default Credentials)", func() {
+			backupConfigs := []v1beta1.BackupConfig{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "test-backup-config",
+						Namespace: "test-namespace",
+					},
+					Spec: v1beta1.BackupConfigSpec{
+						Storage: v1beta1.StorageConfig{
+							StorageType: v1beta1.StorageTypeGCS,
+							GCS: &v1beta1.GCSStorageConfig{
+								Prefix: "gs://test-bucket/prefix",
+							},
+						},
+					},
+				},
+			}
+
+			BuildRoleForBackupConfigs(role, cluster, backupConfigs)
+
+			secretRule := role.Rules[2]
+			Expect(secretRule.ResourceNames).To(BeEmpty())
+		})
 	})
 
 	Context("BuildRoleBindingForBackupConfig", func() {

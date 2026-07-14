@@ -141,6 +141,23 @@ func collectSecretsAndConfigMapsNamesFromBackupConfig(config *v1beta1.BackupConf
 		}
 	}
 
+	if config.Spec.Storage.StorageType == v1beta1.StorageTypeGCS {
+		gcsConfig := config.Spec.Storage.GCS
+
+		if gcsConfig.CredentialsSecretRef != nil {
+			usedSecretNames = append(usedSecretNames, gcsConfig.CredentialsSecretRef.Name)
+		}
+
+		if gcsConfig.PrefixFrom != nil {
+			if gcsConfig.PrefixFrom.SecretKeyRef != nil {
+				usedSecretNames = append(usedSecretNames, gcsConfig.PrefixFrom.SecretKeyRef.Name)
+			}
+			if gcsConfig.PrefixFrom.ConfigMapKeyRef != nil {
+				usedConfigMapNames = append(usedConfigMapNames, gcsConfig.PrefixFrom.ConfigMapKeyRef.Name)
+			}
+		}
+	}
+
 	// Add encryption secrets to the list of secrets that need permissions
 	if config.Spec.Encryption.Method != "" && config.Spec.Encryption.Method != "none" {
 		encryptionSecretName := v1beta1.GetBackupConfigEncryptionSecretName(config)

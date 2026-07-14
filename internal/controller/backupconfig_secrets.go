@@ -55,6 +55,14 @@ func getSecretReferencesFromBackupConfig(backupConfig *v1beta1.BackupConfig) []t
 		}
 	}
 
+	// Add GCS storage credentials if they exist
+	if backupConfig.Spec.Storage.GCS != nil && backupConfig.Spec.Storage.GCS.CredentialsSecretRef != nil {
+		secretRefs = append(secretRefs, types.NamespacedName{
+			Namespace: backupConfig.Namespace,
+			Name:      backupConfig.Spec.Storage.GCS.CredentialsSecretRef.Name,
+		})
+	}
+
 	// Add encryption secret if it exists
 	if backupConfig.Spec.Encryption.Method != "" && backupConfig.Spec.Encryption.Method != "none" {
 		secretRefs = append(secretRefs, types.NamespacedName{

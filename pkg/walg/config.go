@@ -37,6 +37,7 @@ type Config struct {
 	AWSS3ForcePathStyle               bool   `json:"AWS_S3_FORCE_PATH_STYLE,omitempty"`
 	AWSRegion                         string `json:"AWS_REGION,omitempty"`
 	AWSSecretAccessKey                string `json:"AWS_SECRET_ACCESS_KEY,omitempty"`
+	GoogleApplicationCredentials      string `json:"GOOGLE_APPLICATION_CREDENTIALS,omitempty"`
 	GoDebug                           string `json:"GODEBUG,omitempty"`
 	GoMaxProcs                        int    `json:"GOMAXPROCS,omitempty"`
 	PgHost                            string `json:"PGHOST,omitempty"`
@@ -44,6 +45,7 @@ type Config struct {
 	S3LogLevel                        string `json:"S3_LOG_LEVEL,omitempty"`
 	TotalBgUploadedLimit              int    `json:"TOTAL_BG_UPLOADED_LIMIT,omitempty"`
 	WaleGPGKeyID                      string `json:"WALE_GPG_KEY_ID,omitempty"`
+	WalgGSPrefix                      string `json:"WALG_GS_PREFIX,omitempty"`
 	WaleS3Prefix                      string `json:"WALE_S3_PREFIX,omitempty"`
 	WalgAliveCheckInterval            string `json:"WALG_ALIVE_CHECK_INTERVAL,omitempty"`
 	WalgCompressionMethod             string `json:"WALG_COMPRESSION_METHOD,omitempty"`
@@ -120,7 +122,8 @@ func (c *Client) Config() *Config {
 func NewConfigFromBackupConfig(backupConfig *v1beta1.BackupConfigWithSecrets, pgMajorVersion int) *Config {
 	config := NewConfigWithDefaults()
 
-	if backupConfig.Spec.Storage.StorageType == v1beta1.StorageTypeS3 {
+	switch backupConfig.Spec.Storage.StorageType {
+	case v1beta1.StorageTypeS3:
 		config.AWSAccessKeyID = backupConfig.Spec.Storage.S3.AccessKeyID
 		config.AWSSecretAccessKey = backupConfig.Spec.Storage.S3.AccessKeySecret
 		config.AWSEndpoint = backupConfig.Spec.Storage.S3.ResolvedEndpointURL
@@ -141,6 +144,21 @@ func NewConfigFromBackupConfig(backupConfig *v1beta1.BackupConfigWithSecrets, pg
 				panic(fmt.Sprintf("Warning: Failed to ensure CA certificate file: %s", err.Error()))
 			} else if caFilePath != "" {
 				config.WalgS3CACertFile = caFilePath
+			}
+		}
+	case v1beta1.StorageTypeGCS:
+		config.WalgGSPrefix = fmt.Sprintf("%s/%d", strings.TrimRight(backupConfig.Spec.Storage.GCS.ResolvedPrefix, "/"), pgMajorVersion)
+
+		if backupConfig.Spec.Storage.GCS.CredentialsData != "" {
+			credentialsFilePath, err := ensureGCSCredentialsFile(
+				backupConfig.Namespace,
+				backupConfig.Name,
+				backupConfig.Spec.Storage.GCS.CredentialsData,
+			)
+			if err != nil {
+				panic(fmt.Sprintf("Warning: Failed to ensure GCS credentials file: %s", err.Error()))
+			} else if credentialsFilePath != "" {
+				config.GoogleApplicationCredentials = credentialsFilePath
 			}
 		}
 	}
