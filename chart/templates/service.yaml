@@ -32,7 +32,7 @@ kind: Service
 metadata:
   labels:
     {{- include "cnpg-plugin-wal-g.labels" . | nindent 4 }}
-  name: {{ include "cnpg-plugin-wal-g.fullname" . }}-webhook-service
+  name: cnpg-plugin-wal-g-webhook-service  # FIXME: Should not be hardcoded, used in plugin to generate PKI
 spec:
   type: ClusterIP
   ports:
