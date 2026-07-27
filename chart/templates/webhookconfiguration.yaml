@@ -8,7 +8,7 @@ webhooks:
   - v1
   clientConfig:
     service:
-      name: {{ include "cnpg-plugin-wal-g.fullname" . }}-webhook-service
+      name: cnpg-plugin-wal-g-webhook-service  # FIXME: Should not be hardcoded, used in plugin to generate PKI
       namespace: {{ .Release.Namespace }}
       path: /mutate-cnpg-extensions-yandex-cloud-v1beta1-backupconfig
   failurePolicy: Fail
@@ -34,7 +34,7 @@ webhooks:
   - v1
   clientConfig:
     service:
-      name: {{ include "cnpg-plugin-wal-g.fullname" . }}-webhook-service
+      name: cnpg-plugin-wal-g-webhook-service  # FIXME: Should not be hardcoded, used in plugin to generate PKI
       namespace: {{ .Release.Namespace }}
       path: /validate-cnpg-extensions-yandex-cloud-v1beta1-backupconfig
   failurePolicy: Fail

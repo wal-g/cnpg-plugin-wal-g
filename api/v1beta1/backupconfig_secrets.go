@@ -37,10 +37,19 @@ type S3StorageConfigWithSecrets struct {
 	ResolvedEndpointURL string // Resolved value from EndpointURL or EndpointURLFrom
 }
 
+// gcsStorageConfigWithSecrets defines GCS-specific configuration with embedded secrets data (credentials)
+type GCSStorageConfigWithSecrets struct {
+	GCSStorageConfig
+	CredentialsData string // GCP service account JSON key data, empty if using Application Default Credentials
+	// Resolved values from references
+	ResolvedPrefix string // Resolved value from Prefix or PrefixFrom
+}
+
 // storageConfigWithSecrets defines object storage configuration extended with secrets data
 type StorageConfigWithSecrets struct {
 	StorageConfig
-	S3 *S3StorageConfigWithSecrets `json:"s3,omitempty"` // S3-specific parameters
+	S3  *S3StorageConfigWithSecrets  `json:"s3,omitempty"`  // S3-specific parameters
+	GCS *GCSStorageConfigWithSecrets `json:"gcs,omitempty"` // GCS-specific parameters
 }
 
 // BackupEncryptionConfigWithSecrets defines encryption configuration with embedded secrets data
@@ -137,9 +146,15 @@ func (b *BackupConfig) makeStorageConfigWithPrefilledSecrets(
 		return StorageConfigWithSecrets{}, err
 	}
 
+	gcs, err := b.makeGCSStorageConfigWithPrefilledSecrets(ctx, c)
+	if err != nil {
+		return StorageConfigWithSecrets{}, err
+	}
+
 	return StorageConfigWithSecrets{
 		StorageConfig: *b.Spec.Storage.DeepCopy(),
 		S3:            s3,
+		GCS:           gcs,
 	}, nil
 }
 
@@ -217,6 +232,37 @@ func (b *BackupConfig) makeS3StorageConfigWithPrefilledSecrets(
 		ResolvedPrefix:      resolvedPrefix,
 		ResolvedRegion:      resolvedRegion,
 		ResolvedEndpointURL: resolvedEndpointURL,
+	}, nil
+}
+
+func (b *BackupConfig) makeGCSStorageConfigWithPrefilledSecrets(
+	ctx context.Context,
+	c client.Client,
+) (*GCSStorageConfigWithSecrets, error) {
+	if b.Spec.Storage.GCS == nil {
+		return nil, nil
+	}
+
+	gcsConfig := b.Spec.Storage.GCS.DeepCopy()
+
+	var credentialsData []byte
+	if gcsConfig.CredentialsSecretRef != nil {
+		var err error
+		credentialsData, err = extractValueFromSecret(ctx, c, gcsConfig.CredentialsSecretRef, b.Namespace)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	resolvedPrefix, err := b.resolveStringValue(ctx, c, gcsConfig.Prefix, gcsConfig.PrefixFrom, "prefix")
+	if err != nil {
+		return nil, err
+	}
+
+	return &GCSStorageConfigWithSecrets{
+		GCSStorageConfig: *gcsConfig,
+		CredentialsData:  string(credentialsData),
+		ResolvedPrefix:   resolvedPrefix,
 	}, nil
 }
 

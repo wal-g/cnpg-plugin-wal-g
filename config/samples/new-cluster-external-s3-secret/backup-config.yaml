@@ -5,7 +5,7 @@ metadata:
 spec:
   deltaMaxSteps: 7 # How many incremental backups can be created before creating new full backup (optional, default: 0)
   storage:
-    type: s3  # Type of storage (only S3 supported currently)
+    type: s3  # Type of storage (s3 or gcs)
     s3:       # S3 storage configuration
       prefixFrom:
         secretKeyRef: # Can also be "configMapKeyRef" if configMap is used

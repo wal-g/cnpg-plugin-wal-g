@@ -109,13 +109,32 @@ type CustomCAReference struct {
 type StorageType string
 
 const (
-	StorageTypeS3 = "s3"
+	StorageTypeS3  = "s3"
+	StorageTypeGCS = "gcs"
 )
+
+// GCSStorageConfig defines Google Cloud Storage-specific configuration for object storage
+type GCSStorageConfig struct {
+	// e.g. gs://bucket/path/to/folder
+	// Mutually exclusive with PrefixFrom
+	Prefix string `json:"prefix,omitempty"`
+
+	// Reference to get prefix value from Secret or ConfigMap
+	// Mutually exclusive with Prefix
+	// +optional
+	PrefixFrom *ValueFromSource `json:"prefixFrom,omitempty"`
+
+	// Reference to a Secret key containing a GCP service account JSON key.
+	// If omitted, Application Default Credentials are used (e.g. GKE Workload Identity).
+	// +optional
+	CredentialsSecretRef *corev1.SecretKeySelector `json:"credentialsSecretRef,omitempty"`
+}
 
 // StorageConfig defines object storage configuration for BackupConfig
 type StorageConfig struct {
-	StorageType StorageType      `json:"type"`         // Type of storage to use, currently supported "s3" only
-	S3          *S3StorageConfig `json:"s3,omitempty"` // S3-specific parameters
+	StorageType StorageType       `json:"type"`          // Type of storage to use, currently supported "s3" and "gcs"
+	S3          *S3StorageConfig  `json:"s3,omitempty"`  // S3-specific parameters
+	GCS         *GCSStorageConfig `json:"gcs,omitempty"` // GCS-specific parameters
 }
 
 // BackupConfigSpec defines the desired state of BackupConfig.

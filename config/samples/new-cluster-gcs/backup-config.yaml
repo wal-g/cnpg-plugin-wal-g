@@ -1,0 +1,29 @@
+apiVersion: cnpg-extensions.yandex.cloud/v1beta1
+kind: BackupConfig
+metadata:
+  name: example-backup-config
+spec:
+  deltaMaxSteps: 7 # How many incremental backups can be created before creating new full backup (optional, default: 0)
+  storage:
+    type: gcs # Type of storage (s3 or gcs)
+    gcs:      # GCS storage configuration
+      prefix: gs://<GCS_BUCKET_NAME>/<GCS_PREFIX_NAME>
+      credentialsSecretRef: # Optional: omit to use Application Default Credentials (e.g. GKE Workload Identity)
+        name: gcs-connection-settings
+        key: credentials.json
+  retention: # Retention config explained at `cnpg-plugin-wal-g/config/samples/new-cluster/backup-config.yaml`
+    ignoreForManualBackups: true
+    minBackupsToKeep: 5
+    deleteBackupsAfter: 1d
+# ---
+# apiVersion: v1
+# kind: Secret
+# metadata:
+#   name: gcs-connection-settings
+# type: Opaque
+# stringData:
+#   credentials.json: |
+#     {
+#       "type": "service_account",
+#       ...
+#     }
