@@ -216,6 +216,95 @@ spec:
               storage:
                 description: Backups storage configuration
                 properties:
+                  gcs:
+                    description: GCSStorageConfig defines Google Cloud Storage-specific
+                      configuration for object storage
+                    properties:
+                      credentialsSecretRef:
+                        description: |-
+                          Reference to a Secret key containing a GCP service account JSON key.
+                          If omitted, Application Default Credentials are used (e.g. GKE Workload Identity).
+                        properties:
+                          key:
+                            description: The key of the secret to select from.  Must
+                              be a valid secret key.
+                            type: string
+                          name:
+                            default: ""
+                            description: |-
+                              Name of the referent.
+                              This field is effectively required, but due to backwards compatibility is
+                              allowed to be empty. Instances of this type with an empty value here are
+                              almost certainly wrong.
+                              More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                            type: string
+                          optional:
+                            description: Specify whether the Secret or its key must
+                              be defined
+                            type: boolean
+                        required:
+                        - key
+                        type: object
+                        x-kubernetes-map-type: atomic
+                      prefix:
+                        description: |-
+                          e.g. gs://bucket/path/to/folder
+                          Mutually exclusive with PrefixFrom
+                        type: string
+                      prefixFrom:
+                        description: |-
+                          Reference to get prefix value from Secret or ConfigMap
+                          Mutually exclusive with Prefix
+                        properties:
+                          configMapKeyRef:
+                            description: Reference to a key in a ConfigMap
+                            properties:
+                              key:
+                                description: The key to select.
+                                type: string
+                              name:
+                                default: ""
+                                description: |-
+                                  Name of the referent.
+                                  This field is effectively required, but due to backwards compatibility is
+                                  allowed to be empty. Instances of this type with an empty value here are
+                                  almost certainly wrong.
+                                  More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                                type: string
+                              optional:
+                                description: Specify whether the ConfigMap or its
+                                  key must be defined
+                                type: boolean
+                            required:
+                            - key
+                            type: object
+                            x-kubernetes-map-type: atomic
+                          secretKeyRef:
+                            description: Reference to a key in a Secret
+                            properties:
+                              key:
+                                description: The key of the secret to select from.  Must
+                                  be a valid secret key.
+                                type: string
+                              name:
+                                default: ""
+                                description: |-
+                                  Name of the referent.
+                                  This field is effectively required, but due to backwards compatibility is
+                                  allowed to be empty. Instances of this type with an empty value here are
+                                  almost certainly wrong.
+                                  More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                                type: string
+                              optional:
+                                description: Specify whether the Secret or its key
+                                  must be defined
+                                type: boolean
+                            required:
+                            - key
+                            type: object
+                            x-kubernetes-map-type: atomic
+                        type: object
+                    type: object
                   s3:
                     description: S3StorageConfig defines S3-specific configuration
                       for object storage
@@ -1045,8 +1134,8 @@ spec:
         - --cnpg-i-pg-sidecar-image=$(SIDECAR_IMAGE)
         env:
         - name: SIDECAR_IMAGE
-          value: ghcr.io/wal-g/cnpg-plugin-wal-g:0.3.0-rc1
-        image: ghcr.io/wal-g/cnpg-plugin-wal-g:0.3.0-rc1
+          value: ghcr.io/wal-g/cnpg-plugin-wal-g:0.3.0
+        image: ghcr.io/wal-g/cnpg-plugin-wal-g:0.3.0
         livenessProbe:
           httpGet:
             path: /healthz

@@ -27,14 +27,14 @@ This plugin adds backup and restore functionality to [CloudNativePG](https://clo
 #### Lifecycle
 
 - [x] Retention and auto-removal of outdated backups and WALs
-- [ ] Marking Backups as persistent (protect from removing from storage, even if `Backup` or `BackupConfig` custom resource deleted) (planned)
-- [ ] Monitoring (planned)
-- [ ] `BackupConfig` Status displaying for last recoverability point, last successful backup, storage consumption (planned)
+- [x] Marking Backups as persistent (protect from removing from storage, even if `Backup` or `BackupConfig` custom resource deleted)
+- [x] Monitoring
+- [x] `BackupConfig` Status displaying for last recoverability point, last successful backup, storage consumption
 
 ## Dependencies
 
-- [Kubernetes](https://kubernetes.io/releases/) version 1.11 or higher
-- [CloudNative PG](https://cloudnative-pg.io/releases/) version 1.25 or higher
+- [Kubernetes](https://kubernetes.io/releases/) version 1.28 or higher
+- [CloudNative PG](https://cloudnative-pg.io/releases/) version 1.28 or higher
 - [Cert-manager](https://cert-manager.io/docs/releases/) version 1.13 or higher
 
 ## Quickstart
@@ -44,7 +44,7 @@ This plugin adds backup and restore functionality to [CloudNativePG](https://clo
     ```sh
     # Install CNPG
     kubectl apply --server-side -f \
-    https://raw.githubusercontent.com/cloudnative-pg/cloudnative-pg/release-1.26/releases/cnpg-1.26.0.yaml
+    https://raw.githubusercontent.com/cloudnative-pg/cloudnative-pg/release-1.28/releases/cnpg-1.28.0.yaml
 
     # Install cert-manager
     kubectl apply -f https://github.com/cert-manager/cert-manager/releases/download/v1.18.2/cert-manager.yaml
@@ -53,11 +53,11 @@ This plugin adds backup and restore functionality to [CloudNativePG](https://clo
 2) Install latest plugin release into `cnpg-system` namespace (that should be the same namespace where `cloudnative-pg` installed)
 - via Helm:
     ```sh
-    helm -n cnpg-system upgrade --install cnpg-plugin-wal-g oci://ghcr.io/wal-g/cnpg-plugin-wal-g:0.2.1-helm-chart 
+    helm -n cnpg-system upgrade --install cnpg-plugin-wal-g oci://ghcr.io/wal-g/cnpg-plugin-wal-g:0.3.0-helm-chart 
     ```
 - or via static manifest
     ```sh
-    kubectl apply -f https://raw.githubusercontent.com/wal-g/cnpg-plugin-wal-g/v0.2.1/dist/install.yaml
+    kubectl apply -f https://raw.githubusercontent.com/wal-g/cnpg-plugin-wal-g/v0.3.0/dist/install.yaml
     ```
 
 3) **Adjust** sample manifests from `config/samples/new-cluster` and apply
