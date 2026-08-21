@@ -105,13 +105,13 @@ func (c Builder) Run() (result *RunResult, err error) {
 	cmd.Stdout = &stdoutBuf
 	cmd.Stderr = &stderrBuf
 
-	cmdExitSubscription := make(chan ProcessInfo, 8)
-	subscribeOnProcessExits(cmdExitSubscription)
-	defer unsubscribeFromProcessExits(cmdExitSubscription)
+	cmdExitSubscription := make(chan ProcessInfo, 1)
 
 	if err = cmd.Start(); err != nil {
 		return result, fmt.Errorf("subprocess cmd.Start() error: %w", err)
 	}
+	subscribeOnProcessExits(cmd.Process.Pid, cmdExitSubscription)
+	defer unsubscribeFromProcessExits(cmd.Process.Pid)
 	logger = logger.WithValues("pid", cmd.Process.Pid)
 	logger.V(1).Info("Starting subprocess")
 

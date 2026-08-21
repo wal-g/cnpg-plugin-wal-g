@@ -22,37 +22,52 @@ import (
 )
 
 var (
-	subscribers   map[chan ProcessInfo]bool
+	subscribers   map[int]chan ProcessInfo
+	pendingExits  map[int]syscall.WaitStatus
 	subscribersMx sync.Mutex
 )
 
-func subscribeOnProcessExits(ch chan ProcessInfo) {
+func subscribeOnProcessExits(pid int, ch chan ProcessInfo) {
 	subscribersMx.Lock()
 	defer subscribersMx.Unlock()
 
-	// Initialize map on first access
 	if subscribers == nil {
-		subscribers = make(map[chan ProcessInfo]bool)
+		subscribers = make(map[int]chan ProcessInfo)
 	}
-	subscribers[ch] = true
+	if pendingExits == nil {
+		pendingExits = make(map[int]syscall.WaitStatus)
+	}
+	// the process may have exited between cmd.Start() and subscribing
+	if st, ok := pendingExits[pid]; ok {
+		delete(pendingExits, pid)
+		ch <- ProcessInfo{Pid: pid, Status: st} // buffer >= 1: never blocks
+		return
+	}
+	subscribers[pid] = ch
 }
 
-func unsubscribeFromProcessExits(ch chan ProcessInfo) {
+func unsubscribeFromProcessExits(pid int) {
 	subscribersMx.Lock()
 	defer subscribersMx.Unlock()
 
-	delete(subscribers, ch)
+	delete(subscribers, pid)
+	delete(pendingExits, pid)
 }
 
 func notifyAllSubscribers(pid int, wstatus syscall.WaitStatus) {
 	subscribersMx.Lock()
-	subscribersSafeCopy := make([]chan ProcessInfo, 0, len(subscribers))
-	for subscriber := range subscribers {
-		subscribersSafeCopy = append(subscribersSafeCopy, subscriber)
-	}
 	defer subscribersMx.Unlock()
 
-	for _, subscriber := range subscribersSafeCopy {
-		subscriber <- ProcessInfo{Pid: pid, Status: wstatus}
+	if ch, ok := subscribers[pid]; ok {
+		select {
+		case ch <- ProcessInfo{Pid: pid, Status: wstatus}:
+		default: // buffer of 1 per pid; only reachable on duplicate delivery
+		}
+		delete(subscribers, pid)
+		return
 	}
+	if pendingExits == nil {
+		pendingExits = make(map[int]syscall.WaitStatus)
+	}
+	pendingExits[pid] = wstatus
 }
