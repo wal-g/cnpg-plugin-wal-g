@@ -105,17 +105,15 @@ func (c Builder) Run() (result *RunResult, err error) {
 	cmd.Stdout = &stdoutBuf
 	cmd.Stderr = &stderrBuf
 
-	cmdExitSubscription := make(chan ProcessInfo, 8)
-	subscribeOnProcessExits(cmdExitSubscription)
-	defer unsubscribeFromProcessExits(cmdExitSubscription)
-
-	if err = cmd.Start(); err != nil {
+	cmdExitSubscription, err := startAndSubscribe(cmd)
+	if err != nil {
 		return result, fmt.Errorf("subprocess cmd.Start() error: %w", err)
 	}
+	defer unsubscribeFromProcessExits(cmd.Process.Pid, cmdExitSubscription)
 	logger = logger.WithValues("pid", cmd.Process.Pid)
 	logger.V(1).Info("Starting subprocess")
 
-	cmdWaitStatus, err := wait(logr.NewContext(c.ctx, logger), cmd.Process.Pid, cmdExitSubscription)
+	cmdWaitStatus, err := wait(logr.NewContext(c.ctx, logger), cmdExitSubscription)
 	_ = cmd.Wait() // runnning explicit cmd.Wait to finish stdout/stderr piping && do resources cleanup
 
 	result.stdout = stdoutBuf.Bytes()
@@ -138,17 +136,12 @@ func (c Builder) Run() (result *RunResult, err error) {
 	return result, nil
 }
 
-func wait(ctx context.Context, pid int, ch chan ProcessInfo) (syscall.WaitStatus, error) {
-	logger := logr.FromContextOrDiscard(ctx)
-	for {
-		select {
-		case processInfo := <-ch:
-			logger.V(1).Info(fmt.Sprintf("Received notification on process with pid %d finished", processInfo.Pid))
-			if processInfo.Pid == pid {
-				return processInfo.Status, nil
-			}
-		case <-ctx.Done():
-			return 0, fmt.Errorf("context deadline exceeded")
-		}
+func wait(ctx context.Context, ch chan syscall.WaitStatus) (syscall.WaitStatus, error) {
+	select {
+	case status := <-ch:
+		logr.FromContextOrDiscard(ctx).V(1).Info("Received notification on process finished")
+		return status, nil
+	case <-ctx.Done():
+		return 0, fmt.Errorf("context deadline exceeded")
 	}
 }

@@ -17,42 +17,47 @@ limitations under the License.
 package cmd
 
 import (
+	"os/exec"
 	"sync"
 	"syscall"
 )
 
 var (
-	subscribers   map[chan ProcessInfo]bool
+	subscribers   map[int]chan syscall.WaitStatus
 	subscribersMx sync.Mutex
 )
 
-func subscribeOnProcessExits(ch chan ProcessInfo) {
+// startAndSubscribe starts the command and registers a channel for its exit status.
+func startAndSubscribe(command *exec.Cmd) (chan syscall.WaitStatus, error) {
 	subscribersMx.Lock()
 	defer subscribersMx.Unlock()
 
-	// Initialize map on first access
+	if err := command.Start(); err != nil {
+		return nil, err
+	}
+
 	if subscribers == nil {
-		subscribers = make(map[chan ProcessInfo]bool)
+		subscribers = make(map[int]chan syscall.WaitStatus)
 	}
-	subscribers[ch] = true
+	ch := make(chan syscall.WaitStatus, 1)
+	subscribers[command.Process.Pid] = ch
+	return ch, nil
 }
 
-func unsubscribeFromProcessExits(ch chan ProcessInfo) {
+func unsubscribeFromProcessExits(pid int, ch chan syscall.WaitStatus) {
 	subscribersMx.Lock()
 	defer subscribersMx.Unlock()
 
-	delete(subscribers, ch)
+	// Do not remove a newer subscription for a reused PID.
+	if subscribers[pid] == ch {
+		delete(subscribers, pid)
+	}
 }
 
-func notifyAllSubscribers(pid int, wstatus syscall.WaitStatus) {
-	subscribersMx.Lock()
-	subscribersSafeCopy := make([]chan ProcessInfo, 0, len(subscribers))
-	for subscriber := range subscribers {
-		subscribersSafeCopy = append(subscribersSafeCopy, subscriber)
-	}
-	defer subscribersMx.Unlock()
-
-	for _, subscriber := range subscribersSafeCopy {
-		subscriber <- ProcessInfo{Pid: pid, Status: wstatus}
+// Hold subscribersMx from Wait4 through delivery. One send per buffered channel cannot block.
+func notifyProcessExitLocked(pid int, wstatus syscall.WaitStatus) {
+	if ch, ok := subscribers[pid]; ok {
+		delete(subscribers, pid)
+		ch <- wstatus
 	}
 }
