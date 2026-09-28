@@ -221,10 +221,7 @@ func (c *Client) MarkBackupPermanent(ctx context.Context, backupName string) err
 func (c *Client) UnmarkBackupPermanent(ctx context.Context, backupName string) error {
 	logger := logr.FromContextOrDiscard(ctx)
 
-	result, err := cmd.New("wal-g", "backup-mark", "-i", backupName).
-		WithContext(ctx).
-		WithEnv(c.config.ToEnvMap()).
-		Run()
+	result, err := c.unmarkBackupPermanent(ctx, backupName)
 
 	if err != nil {
 		logger.Error(
@@ -235,25 +232,42 @@ func (c *Client) UnmarkBackupPermanent(ctx context.Context, backupName string) e
 	return err
 }
 
+func (c *Client) unmarkBackupPermanent(ctx context.Context, backupName string) (*cmd.RunResult, error) {
+	return cmd.New("wal-g", "backup-mark", "-i", backupName).
+		WithContext(ctx).
+		WithEnv(c.config.ToEnvMap()).
+		Run()
+}
+
 // DeleteBackup deletes a backup and runs garbage collection using wal-g.
 func (c *Client) DeleteBackup(ctx context.Context, backupName string) (*cmd.RunResult, error) {
 	logger := logr.FromContextOrDiscard(ctx)
 
 	// Ignore errors on UnmarkBackupPermanent and try our best to remove backup
-	_ = c.UnmarkBackupPermanent(ctx, backupName)
+	result, err := c.unmarkBackupPermanent(ctx, backupName)
+	if err != nil {
+		missingMetadataStr := fmt.Sprintf("/%s/metadata.json' not found in storage", backupName)
+		if strings.Contains(string(result.Stderr()), missingMetadataStr) {
+			logger.Info("Backup metadata is missing, attempting deletion", "backupID", backupName)
+		} else {
+			logger.Error(
+				err, fmt.Sprintf("Error while 'wal-g backup-mark -i %s'", backupName),
+				"stdout", result.Stdout(), "stderr", result.Stderr(),
+			)
+		}
+	}
 
-	result, err := cmd.New("wal-g", "delete", "target", backupName, "--confirm").
+	result, err = cmd.New("wal-g", "delete", "target", backupName, "--confirm").
 		WithContext(ctx).
 		WithEnv(c.config.ToEnvMap()).
 		Run()
-
-	backupDoesNotExistStr := fmt.Sprintf("Backup '%s' does not exist.", backupName)
 	// If backup already not exists in storage - do not treat this as an error, return success
+	backupDoesNotExistStr := fmt.Sprintf("Backup '%s' does not exist.", backupName)
 	if err != nil && strings.Contains(string(result.Stderr()), backupDoesNotExistStr) {
 		err = nil
 	}
-	// Do not abort if error not-nil and try anyway to perform `wal-g delete garbage` anyway
 
+	// Do not abort if error not-nil and try anyway to perform `wal-g delete garbage` anyway
 	gcResult, gcErr := cmd.New("wal-g", "delete", "garbage", "--confirm").
 		WithContext(ctx).
 		WithEnv(c.config.ToEnvMap()).
