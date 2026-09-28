@@ -17,8 +17,19 @@ limitations under the License.
 package walg
 
 import (
+	"bytes"
+	"context"
+	"os"
+	"path/filepath"
+	"strings"
+	"time"
+
+	"github.com/go-logr/logr"
+	"github.com/go-logr/logr/funcr"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"github.com/wal-g/cnpg-plugin-wal-g/internal/util/cmd"
+	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 )
 
 var _ = Describe("BackupMetadata", func() {
@@ -100,4 +111,100 @@ var _ = Describe("BackupMetadata", func() {
 			})
 		})
 	})
+})
+
+var _ = Describe("DeleteBackup", func() {
+	const backupName = "base_000000010000000000000005_D_000000010000000000000003"
+	const missingBackup = "Backup '" + backupName + "' does not exist."
+	const missingMetadata = "object 'prefix/" + backupName + "/metadata.json' not found in storage"
+
+	var (
+		testCtx context.Context
+		dir     string
+		logs    bytes.Buffer
+	)
+
+	BeforeEach(func() {
+		logs.Reset()
+		var cancel context.CancelFunc
+		testCtx, cancel = context.WithTimeout(context.Background(), 10*time.Second)
+		DeferCleanup(cancel)
+		testCtx = logr.NewContext(testCtx, zap.New(zap.WriteTo(&logs)))
+
+		reaperCtx, stopReaper := context.WithCancel(context.Background())
+		ready, done := make(chan struct{}), make(chan struct{})
+		reaperCtx = logr.NewContext(reaperCtx, funcr.New(func(_, message string) {
+			if strings.Contains(message, "Starting zombie process reaper") {
+				close(ready)
+			}
+		}, funcr.Options{}))
+		go func() {
+			defer close(done)
+			_ = (&cmd.ZombieProcessReaper{}).Start(reaperCtx)
+		}()
+		DeferCleanup(func() {
+			stopReaper()
+			Eventually(done, 5*time.Second).Should(BeClosed())
+		})
+		Eventually(ready, 5*time.Second).Should(BeClosed())
+
+		dir = GinkgoT().TempDir()
+		Expect(os.WriteFile(filepath.Join(dir, "wal-g"), []byte(`#!/bin/sh
+printf '%s\000' "$@" >> "$WALG_TEST_DIR/calls"
+printf '\n' >> "$WALG_TEST_DIR/calls"
+case "$1 $2" in
+  'backup-mark -i') printf '%s' "$WALG_TEST_UNMARK_ERROR" >&2; test -z "$WALG_TEST_UNMARK_ERROR" ;;
+  'delete target') printf '%s' "$WALG_TEST_DELETE_ERROR" >&2; test -z "$WALG_TEST_DELETE_ERROR" ;;
+  'delete garbage') printf '%s' "$WALG_TEST_GC_ERROR" >&2; test -z "$WALG_TEST_GC_ERROR" ;;
+  *) exit 1 ;;
+esac
+`), 0700)).To(Succeed())
+		GinkgoT().Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+		GinkgoT().Setenv("WALG_TEST_DIR", dir)
+	})
+
+	type testCase struct {
+		unmarkError string
+		deleteError string
+		gcError     string
+	}
+
+	DescribeTable("deleting a backup",
+		func(tc testCase) {
+			GinkgoT().Setenv("WALG_TEST_UNMARK_ERROR", tc.unmarkError)
+			GinkgoT().Setenv("WALG_TEST_DELETE_ERROR", tc.deleteError)
+			GinkgoT().Setenv("WALG_TEST_GC_ERROR", tc.gcError)
+
+			result, err := NewClient(&Config{}).DeleteBackup(testCtx, backupName)
+
+			Expect(result).NotTo(BeNil())
+			Expect(string(result.Stderr())).To(Equal(tc.deleteError))
+			if tc.deleteError != "" && tc.deleteError != missingBackup {
+				Expect(err).To(HaveOccurred())
+			} else {
+				Expect(err).NotTo(HaveOccurred())
+			}
+			calls, readErr := os.ReadFile(filepath.Join(dir, "calls"))
+			Expect(readErr).NotTo(HaveOccurred())
+			Expect(string(calls)).To(Equal(
+				"backup-mark\x00-i\x00" + backupName + "\x00\n" +
+					"delete\x00target\x00" + backupName + "\x00--confirm\x00\n" +
+					"delete\x00garbage\x00--confirm\x00\n",
+			))
+			if (tc.unmarkError != "" && tc.unmarkError != missingMetadata) || tc.gcError != "" {
+				Expect(logs.String()).To(ContainSubstring(`"level":"error"`))
+			} else {
+				Expect(logs.String()).NotTo(ContainSubstring(`"level":"error"`))
+			}
+			if tc.unmarkError == missingMetadata {
+				Expect(logs.String()).To(ContainSubstring("Backup metadata is missing, attempting deletion"))
+			}
+		},
+		Entry("deletes a backup after unmarking", testCase{}),
+		Entry("accepts a backup already removed with its parent", testCase{unmarkError: missingMetadata, deleteError: missingBackup}),
+		Entry("attempts deletion when only metadata is missing", testCase{unmarkError: missingMetadata}),
+		Entry("continues after a metadata error for another backup", testCase{unmarkError: "object 'prefix/other/metadata.json' not found in storage"}),
+		Entry("preserves deletion errors despite unmark and garbage errors", testCase{unmarkError: "AccessDenied", deleteError: "Unable to delete permanent backup", gcError: "garbage failed"}),
+		Entry("does not fail deletion on garbage errors", testCase{gcError: "garbage failed"}),
+	)
 })
