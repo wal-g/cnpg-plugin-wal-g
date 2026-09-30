@@ -110,7 +110,7 @@ func (b BackupServiceImplementation) Backup(
 
 	walgClient := walg.NewClientFromBackupConfig(backupConfigWithSecrets, pgMajorVersion)
 
-	backupsListCtx, cancelBackupsListCtx := context.WithTimeout(ctx, 1*time.Minute)
+	backupsListCtx, cancelBackupsListCtx := context.WithTimeout(ctx, 2*time.Minute)
 	defer cancelBackupsListCtx()
 	backupsList, err := walgClient.GetBackupsList(backupsListCtx)
 	if err != nil {

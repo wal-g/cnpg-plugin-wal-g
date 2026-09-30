@@ -36,6 +36,8 @@ spec:
           args:
           - operator
           - --leader-elect
+          - {{ printf "--backup-config-status-interval=%s" .Values.backupConfigStatus.interval | quote }}
+          - {{ printf "--backup-config-status-archive-interval=%s" .Values.backupConfigStatus.archiveInterval | quote }}
           - --health-probe-bind-address=:8081
           - --cnpg-i-bind-address=:{{ .Values.service.port }}
           - --cnpg-i-cert-path=/tls/cnpgi-server
