@@ -22,6 +22,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"sort"
+	"strconv"
 	"sync"
 	"time"
 
@@ -472,6 +473,62 @@ func (c *BackupConfigStatusController) checkStorageWritable(
 	return err == nil
 }
 
+// Known PG major versions probed in the storage when the set of versions
+// cannot be derived from existing Backup resources.
+const (
+	minKnownPGMajorVersion = 11
+	maxKnownPGMajorVersion = 19
+)
+
+// resolvePGVersions returns PG major versions that have CNPG Backup resources
+// owned by this BackupConfig (label v1beta1.BackupPgVersionLabelName is set by
+// BackupReconciler). Scanning only these prefixes avoids running wal-show,
+// backup-list and st ls for every known PG major version on each archive
+// check. When no owned Backups with a version label exist (for example a fresh
+// cluster that has not completed its first backup yet) or Backups cannot be
+// listed, all known versions are probed as before.
+func (c *BackupConfigStatusController) resolvePGVersions(
+	ctx context.Context,
+	backupConfig *v1beta1.BackupConfig,
+	logger logr.Logger,
+) []int {
+	allVersions := make([]int, 0, maxKnownPGMajorVersion-minKnownPGMajorVersion+1)
+	for pgVersion := minKnownPGMajorVersion; pgVersion <= maxKnownPGMajorVersion; pgVersion++ {
+		allVersions = append(allVersions, pgVersion)
+	}
+
+	backupsList := cnpgv1.BackupList{}
+	if err := c.client.List(ctx, &backupsList, client.InNamespace(backupConfig.Namespace)); err != nil {
+		logger.V(1).Info("Failed to list Backups, probing all PG versions", "error", err)
+		return allVersions
+	}
+
+	versions := make(map[int]struct{})
+	for i := range backupsList.Items {
+		backup := &backupsList.Items[i]
+		owned := lo.ContainsBy(backup.OwnerReferences, func(o metav1.OwnerReference) bool {
+			return o.Kind == "BackupConfig" && o.Name == backupConfig.Name
+		})
+		if !owned {
+			continue
+		}
+		pgVersion, err := strconv.Atoi(backup.Labels[v1beta1.BackupPgVersionLabelName])
+		if err != nil || pgVersion < minKnownPGMajorVersion || pgVersion > maxKnownPGMajorVersion {
+			continue
+		}
+		versions[pgVersion] = struct{}{}
+	}
+
+	if len(versions) == 0 {
+		logger.V(1).Info("No owned Backups with PG version label found, probing all PG versions")
+		return allVersions
+	}
+
+	result := lo.Keys(versions)
+	sort.Ints(result)
+	return result
+}
+
 // reconcileWALStatus checks WAL integrity and evaluates recoverability points
 // by running `wal-g wal-show --detailed-json` across all known PG major versions
 func (c *BackupConfigStatusController) reconcileWALStatus(
@@ -484,8 +541,8 @@ func (c *BackupConfigStatusController) reconcileWALStatus(
 	hasMissingSegments := false
 	var earliestBackupTime *time.Time
 
-	// Iterate over all known PG major versions to collect WAL info
-	for pgVersion := 11; pgVersion <= 19; pgVersion++ {
+	// Iterate over PG major versions that actually have backups for this BackupConfig
+	for _, pgVersion := range c.resolvePGVersions(ctx, backupConfig, logger) {
 		walgClient := c.newWALClient(backupConfigWithSecrets, pgVersion)
 		timelines, err := walgClient.WALShow(ctx)
 		if err != nil {
@@ -615,9 +672,8 @@ func (c *BackupConfigStatusController) reconcileConsumedStorage(
 	var backupBytes int64
 	var walBytes int64
 
-	// Iterate over all known PG major versions to collect backup and WAL sizes
-	// (same approach as in deleteBackupConfig)
-	for pgVersion := 11; pgVersion <= 19; pgVersion++ {
+	// Iterate over PG major versions that actually have backups for this BackupConfig
+	for _, pgVersion := range c.resolvePGVersions(ctx, backupConfig, logger) {
 		walgClient := c.newWALClient(backupConfigWithSecrets, pgVersion)
 
 		// Sum backup compressed sizes from wal-g backup-list

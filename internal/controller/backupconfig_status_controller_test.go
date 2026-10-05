@@ -193,6 +193,60 @@ var _ = Describe("BackupConfig Status Controller", func() {
 		Expect(s.calls.size).To(Equal(18))
 	})
 
+	It("should scan only PG versions that have Backups owned by the BackupConfig", func() {
+		config := s.config()
+		newBackup := func(name, pgVersion string, owned bool) *cnpgv1.Backup {
+			backup := &cnpgv1.Backup{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      name,
+					Namespace: config.Namespace,
+					Labels:    map[string]string{v1beta1.BackupPgVersionLabelName: pgVersion},
+				},
+			}
+			if owned {
+				backup.OwnerReferences = []metav1.OwnerReference{{
+					APIVersion: config.APIVersion,
+					Kind:       "BackupConfig",
+					Name:       config.Name,
+					UID:        config.UID,
+				}}
+			}
+			return backup
+		}
+		Expect(s.controller.client.Create(s.ctx, newBackup("owned-17", "17", true))).To(Succeed())
+		Expect(s.controller.client.Create(s.ctx, newBackup("foreign-16", "16", false))).To(Succeed())
+		Expect(s.controller.client.Create(s.ctx, newBackup("owned-bad", "unknown", true))).To(Succeed())
+
+		Expect(s.reconcile()).To(Succeed())
+		Expect(s.calls.wal).To(Equal(1))
+		Expect(s.calls.backups).To(Equal(1))
+		Expect(s.calls.size).To(Equal(1))
+		Expect(*s.config().Status.ConsumedStorage.TotalBytes).To(Equal(int64(30)))
+		Expect(getConditionStatus(s.config(), v1beta1.ConditionTypeWALIntegrityCheck)).To(Equal(metav1.ConditionTrue))
+	})
+
+	It("should probe all known PG versions when no owned Backups carry a version label", func() {
+		config := s.config()
+		backup := &cnpgv1.Backup{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "owned-unlabeled",
+				Namespace: config.Namespace,
+				OwnerReferences: []metav1.OwnerReference{{
+					APIVersion: config.APIVersion,
+					Kind:       "BackupConfig",
+					Name:       config.Name,
+					UID:        config.UID,
+				}},
+			},
+		}
+		Expect(s.controller.client.Create(s.ctx, backup)).To(Succeed())
+
+		Expect(s.reconcile()).To(Succeed())
+		Expect(s.calls.wal).To(Equal(9))
+		Expect(s.calls.backups).To(Equal(9))
+		Expect(s.calls.size).To(Equal(9))
+	})
+
 	DescribeTable("should delay archive retries after storage failures", func(failure string) {
 		errUnavailable := errors.New("archive unavailable")
 		switch failure {
