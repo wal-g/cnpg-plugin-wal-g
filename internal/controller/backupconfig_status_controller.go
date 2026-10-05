@@ -18,6 +18,8 @@ package controller
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/json"
 	"fmt"
 	"sort"
 	"sync"
@@ -27,9 +29,13 @@ import (
 	"github.com/go-logr/logr"
 	"github.com/samber/lo"
 	v1beta1 "github.com/wal-g/cnpg-plugin-wal-g/api/v1beta1"
+	"github.com/wal-g/cnpg-plugin-wal-g/internal/util/cmd"
 	"github.com/wal-g/cnpg-plugin-wal-g/pkg/walg"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/util/retry"
+	"k8s.io/utils/clock"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -46,6 +52,26 @@ const (
 	statusReconcileQueueSize = 256
 )
 
+type statusWALClient interface {
+	StorageCheckReadable(context.Context) (*cmd.RunResult, error)
+	StorageCheckWritable(context.Context) (*cmd.RunResult, error)
+	WALShow(context.Context) ([]walg.WALTimelineInfo, error)
+	GetBackupsList(context.Context) ([]walg.BackupMetadata, error)
+	StorageLsTotalSize(context.Context, string) (int64, error)
+}
+
+type archiveCheck struct {
+	uid           types.UID
+	generation    int64
+	configHash    [sha256.Size]byte
+	nextCheck     time.Time
+	pendingStatus *v1beta1.BackupConfigStatus
+}
+
+func (a archiveCheck) matchesConfig(other archiveCheck) bool {
+	return a.uid == other.uid && a.generation == other.generation && a.configHash == other.configHash
+}
+
 // BackupConfigStatusController periodically reconciles BackupConfigStatus fields
 // for all BackupConfig resources. It uses a static goroutine pool with a single
 // shared queue to limit concurrency and prevent overloading S3 storage.
@@ -54,8 +80,14 @@ const (
 // concurrently by multiple workers. Manual status updates can be enqueued
 // via EnqueueStatusUpdate.
 type BackupConfigStatusController struct {
-	client        client.Client
-	checkInterval time.Duration
+	client          client.Client
+	checkInterval   time.Duration
+	archiveInterval time.Duration
+	clock           clock.PassiveClock
+	newWALClient    func(*v1beta1.BackupConfigWithSecrets, int) statusWALClient
+
+	archiveChecks   map[types.NamespacedName]archiveCheck
+	archiveChecksMu sync.Mutex
 
 	// queue is the single shared channel for all reconciliation requests
 	queue chan types.NamespacedName
@@ -71,10 +103,16 @@ type BackupConfigStatusController struct {
 }
 
 // NewBackupConfigStatusController creates a new BackupConfigStatusController
-func NewBackupConfigStatusController(client client.Client, checkInterval time.Duration) *BackupConfigStatusController {
+func NewBackupConfigStatusController(client client.Client, checkInterval, archiveInterval time.Duration) *BackupConfigStatusController {
 	return &BackupConfigStatusController{
-		client:        client,
-		checkInterval: checkInterval,
+		client:          client,
+		checkInterval:   checkInterval,
+		archiveInterval: archiveInterval,
+		clock:           clock.RealClock{},
+		newWALClient: func(config *v1beta1.BackupConfigWithSecrets, pgVersion int) statusWALClient {
+			return walg.NewClientFromBackupConfig(config, pgVersion)
+		},
+		archiveChecks: make(map[types.NamespacedName]archiveCheck),
 		queue:         make(chan types.NamespacedName, statusReconcileQueueSize),
 		inFlight:      make(map[string]struct{}),
 	}
@@ -85,6 +123,7 @@ func (c *BackupConfigStatusController) Start(ctx context.Context) error {
 	c.logger = ctrl.Log.WithName("BackupConfigStatusController")
 	c.logger.Info("Starting BackupConfig status controller",
 		"checkInterval", c.checkInterval,
+		"archiveInterval", c.archiveInterval,
 		"workers", maxStatusReconcileConcurrency,
 	)
 	ctx = logr.NewContext(ctx, c.logger)
@@ -144,6 +183,19 @@ func (c *BackupConfigStatusController) enqueueAllStatuses(ctx context.Context) {
 		c.logger.Error(err, "Failed to list BackupConfig resources")
 		return
 	}
+
+	// Drop schedules for deleted resources to bound the in-memory cache.
+	active := make(map[types.NamespacedName]struct{}, len(backupConfigList.Items))
+	for i := range backupConfigList.Items {
+		active[client.ObjectKeyFromObject(&backupConfigList.Items[i])] = struct{}{}
+	}
+	c.archiveChecksMu.Lock()
+	for key := range c.archiveChecks {
+		if _, exists := active[key]; !exists {
+			delete(c.archiveChecks, key)
+		}
+	}
+	c.archiveChecksMu.Unlock()
 
 	if len(c.queue) > 0 {
 		c.logger.Error(fmt.Errorf("there are still some backupconfigs pending in queue"), "Cannot enqueue backupconfigs for status update")
@@ -237,7 +289,7 @@ func (c *BackupConfigStatusController) reconcileStatusByKey(
 	}
 
 	// Use a fixed PG version for storage checks (version doesn't matter for st check commands)
-	walgClient := walg.NewClientFromBackupConfig(backupConfigWithSecrets, 16)
+	walgClient := c.newWALClient(backupConfigWithSecrets, 16)
 
 	// Mark credentials as valid since we successfully fetched secrets
 	setCondition(backupConfig, v1beta1.ConditionTypeCredentialsValid, metav1.ConditionTrue,
@@ -245,35 +297,148 @@ func (c *BackupConfigStatusController) reconcileStatusByKey(
 
 	// Check storage readability
 	readable := c.checkStorageReadable(ctx, backupConfig, walgClient, logger)
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 
 	// Check storage writability
 	c.checkStorageWritable(ctx, backupConfig, walgClient, logger)
+	// Hash resolved values too: Secret/ConfigMap changes need not change Generation.
+	configJSON, err := json.Marshal(backupConfigWithSecrets.Spec)
+	if err != nil {
+		return fmt.Errorf("hash archive check configuration: %w", err)
+	}
+	check := archiveCheck{
+		uid: backupConfig.UID, generation: backupConfig.Generation, configHash: sha256.Sum256(configJSON),
+	}
+	c.archiveChecksMu.Lock()
+	previous, exists := c.archiveChecks[key]
+	c.archiveChecksMu.Unlock()
+	if !exists || !previous.matchesConfig(check) || getConditionStatus(backupConfig, v1beta1.ConditionTypeWALIntegrityCheck) == "" {
+		setCondition(backupConfig, v1beta1.ConditionTypeWALIntegrityCheck, metav1.ConditionUnknown,
+			"WALIntegrityCheckPending", "WAL integrity has not been checked for the current archive configuration")
+	}
+	c.reconcileBackupTimestamps(ctx, backupConfig, logger)
 
-	if readable {
-		// Check WAL integrity and reconcile WAL-related status fields via wal-g wal-show
-		c.reconcileWALStatus(ctx, backupConfig, backupConfigWithSecrets, logger)
-
-		// Reconcile backup-related status fields from wal-g backup-list and CNPG Backup resources
-		c.reconcileBackupFields(ctx, backupConfig, backupConfigWithSecrets, logger)
+	// Persist availability before a slow or failed archive scan can consume the deadline.
+	if err := c.updateStatus(ctx, backupConfig); err != nil {
+		return err
 	}
 
-	// Determine overall phase from conditions
-	backupConfig.Status.Phase = determinePhase(backupConfig)
-
-	// Update the status
-	if err := c.client.Status().Update(ctx, backupConfig); err != nil {
-		return fmt.Errorf("failed to update BackupConfig status: %w", err)
+	if readable {
+		if err := c.reconcileArchiveStatus(ctx, backupConfig, backupConfigWithSecrets, check, logger); err != nil {
+			return err
+		}
 	}
 
 	logger.Info("Successfully reconciled BackupConfig status", "phase", backupConfig.Status.Phase)
 	return nil
 }
 
+func (c *BackupConfigStatusController) updateStatus(ctx context.Context, backupConfig *v1beta1.BackupConfig) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	backupConfig.Status.Phase = determinePhase(backupConfig)
+	if err := c.client.Status().Update(ctx, backupConfig); err != nil {
+		return fmt.Errorf("failed to update BackupConfig status: %w", err)
+	}
+	return nil
+}
+
+func (c *BackupConfigStatusController) reconcileArchiveStatus(
+	ctx context.Context,
+	backupConfig *v1beta1.BackupConfig,
+	backupConfigWithSecrets *v1beta1.BackupConfigWithSecrets,
+	check archiveCheck,
+	logger logr.Logger,
+) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	key := client.ObjectKeyFromObject(backupConfig)
+	c.archiveChecksMu.Lock()
+	previous, exists := c.archiveChecks[key]
+	c.archiveChecksMu.Unlock()
+	if exists && previous.matchesConfig(check) && c.clock.Now().Before(previous.nextCheck) {
+		if previous.pendingStatus != nil {
+			// Retry saving a completed scan without reading the archive again.
+			backupConfig.Status = *previous.pendingStatus.DeepCopy()
+			if err := c.updateArchiveStatus(ctx, backupConfig); err != nil {
+				return err
+			}
+			previous.pendingStatus = nil
+			c.archiveChecksMu.Lock()
+			c.archiveChecks[key] = previous
+			c.archiveChecksMu.Unlock()
+		}
+		return nil
+	}
+
+	// Per-resource inFlight deduplication already serializes these attempts.
+	// Throttle archive attempts, including failed storage checks.
+	defer func() {
+		check.nextCheck = c.clock.Now().Add(c.archiveInterval)
+		c.archiveChecksMu.Lock()
+		c.archiveChecks[key] = check
+		c.archiveChecksMu.Unlock()
+	}()
+
+	c.reconcileWALStatus(ctx, backupConfig, backupConfigWithSecrets, logger)
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	c.reconcileConsumedStorage(ctx, backupConfig, backupConfigWithSecrets, logger)
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	check.pendingStatus = backupConfig.Status.DeepCopy()
+	err := c.updateArchiveStatus(ctx, backupConfig)
+	if err == nil {
+		check.pendingStatus = nil
+	}
+	return err
+}
+
+func (c *BackupConfigStatusController) updateArchiveStatus(ctx context.Context, scanned *v1beta1.BackupConfig) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	err := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
+		latest := &v1beta1.BackupConfig{}
+		if err := c.client.Get(ctx, client.ObjectKeyFromObject(scanned), latest); err != nil {
+			return err
+		}
+		if latest.UID != scanned.UID || latest.Generation != scanned.Generation {
+			return fmt.Errorf("BackupConfig %s changed during archive check", client.ObjectKeyFromObject(scanned))
+		}
+
+		// Keep current availability and other conditions while saving the archive result.
+		latest.Status.FirstRecoverabilityPoint = scanned.Status.FirstRecoverabilityPoint
+		latest.Status.ConsumedStorage = scanned.Status.ConsumedStorage
+		for _, condition := range scanned.Status.Conditions {
+			if condition.Type == v1beta1.ConditionTypeWALIntegrityCheck {
+				meta.SetStatusCondition(&latest.Status.Conditions, condition)
+			}
+		}
+		c.reconcileBackupTimestamps(ctx, latest, logr.FromContextOrDiscard(ctx))
+		if err := c.updateStatus(ctx, latest); err != nil {
+			return err
+		}
+		scanned.Status = latest.Status
+		return nil
+	})
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	return err
+}
+
 // checkStorageReadable checks if the storage is accessible for reading, returns check result as bool
 func (c *BackupConfigStatusController) checkStorageReadable(
 	ctx context.Context,
 	backupConfig *v1beta1.BackupConfig,
-	walgClient *walg.Client,
+	walgClient statusWALClient,
 	logger logr.Logger,
 ) bool {
 	_, err := walgClient.StorageCheckReadable(ctx)
@@ -292,7 +457,7 @@ func (c *BackupConfigStatusController) checkStorageReadable(
 func (c *BackupConfigStatusController) checkStorageWritable(
 	ctx context.Context,
 	backupConfig *v1beta1.BackupConfig,
-	walgClient *walg.Client,
+	walgClient statusWALClient,
 	logger logr.Logger,
 ) bool {
 	_, err := walgClient.StorageCheckWritable(ctx)
@@ -321,7 +486,7 @@ func (c *BackupConfigStatusController) reconcileWALStatus(
 
 	// Iterate over all known PG major versions to collect WAL info
 	for pgVersion := 11; pgVersion <= 19; pgVersion++ {
-		walgClient := walg.NewClientFromBackupConfig(backupConfigWithSecrets, pgVersion)
+		walgClient := c.newWALClient(backupConfigWithSecrets, pgVersion)
 		timelines, err := walgClient.WALShow(ctx)
 		if err != nil {
 			// Not all PG versions will have WAL data, so we just log and continue
@@ -379,22 +544,6 @@ func (c *BackupConfigStatusController) reconcileWALStatus(
 		setCondition(backupConfig, v1beta1.ConditionTypeWALIntegrityCheck, metav1.ConditionFalse,
 			reason, message)
 	}
-}
-
-// reconcileBackupFields reconciles backup-related status fields by fetching backup metadata
-// from wal-g backup-list (for storage size via CompressedSize) and from CNPG Backup resources
-// (for last successful/failed backup timestamps and first recoverability point)
-func (c *BackupConfigStatusController) reconcileBackupFields(
-	ctx context.Context,
-	backupConfig *v1beta1.BackupConfig,
-	backupConfigWithSecrets *v1beta1.BackupConfigWithSecrets,
-	logger logr.Logger,
-) {
-	// Reconcile timestamps from CNPG Backup resources
-	c.reconcileBackupTimestamps(ctx, backupConfig, logger)
-
-	// Reconcile consumed storage from wal-g backup-list across all known PG versions
-	c.reconcileConsumedStorage(ctx, backupConfig, backupConfigWithSecrets, logger)
 }
 
 // reconcileBackupTimestamps reconciles timestamp-related status fields from CNPG Backup resources
@@ -469,7 +618,7 @@ func (c *BackupConfigStatusController) reconcileConsumedStorage(
 	// Iterate over all known PG major versions to collect backup and WAL sizes
 	// (same approach as in deleteBackupConfig)
 	for pgVersion := 11; pgVersion <= 19; pgVersion++ {
-		walgClient := walg.NewClientFromBackupConfig(backupConfigWithSecrets, pgVersion)
+		walgClient := c.newWALClient(backupConfigWithSecrets, pgVersion)
 
 		// Sum backup compressed sizes from wal-g backup-list
 		backupsList, err := walgClient.GetBackupsList(ctx)

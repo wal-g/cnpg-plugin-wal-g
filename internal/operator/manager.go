@@ -19,6 +19,7 @@ package operator
 import (
 	"context"
 	"crypto/tls"
+	"errors"
 	"flag"
 	"os"
 	"path/filepath"
@@ -93,6 +94,15 @@ func init() {
 
 // nolint:gocyclo,funlen
 func Start(ctx context.Context) error {
+	statusInterval := viper.GetDuration("backup-config-status-interval")
+	if statusInterval <= 0 {
+		return errors.New("backup-config-status-interval must be a positive duration")
+	}
+	archiveInterval := viper.GetDuration("backup-config-status-archive-interval")
+	if archiveInterval <= 0 {
+		return errors.New("backup-config-status-archive-interval must be a positive duration")
+	}
+
 	var tlsOpts []func(*tls.Config)
 
 	opts := zap.Options{}
@@ -208,7 +218,8 @@ func Start(ctx context.Context) error {
 	// Create and add the BackupConfigStatusController
 	backupConfigStatusController := controller.NewBackupConfigStatusController(
 		mgr.GetClient(),
-		2*time.Minute, // Run status reconciliation each 2 minutes
+		statusInterval,
+		archiveInterval,
 	)
 	if err := mgr.Add(backupConfigStatusController); err != nil {
 		setupLog.Error(err, "unable to add controller", "controller", "BackupConfigStatusController")

@@ -17,6 +17,8 @@ limitations under the License.
 package cmd
 
 import (
+	"time"
+
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 
@@ -49,6 +51,13 @@ func NewOperatorCmd() *cobra.Command {
 		"Enable leader election for controller manager. "+
 			"Enabling this will ensure there is only one active controller manager.")
 	_ = viper.BindPFlag("leader-elect", cmd.Flags().Lookup("leader-elect"))
+
+	cmd.Flags().Duration("backup-config-status-interval", 2*time.Minute,
+		"Interval between BackupConfig storage availability checks. Must be positive.")
+	_ = viper.BindPFlag("backup-config-status-interval", cmd.Flags().Lookup("backup-config-status-interval"))
+	cmd.Flags().Duration("backup-config-status-archive-interval", 5*time.Minute,
+		"Minimum delay after each BackupConfig archive check before another attempt. Must be positive. Controls WAL, backup metadata, and storage size checks.")
+	_ = viper.BindPFlag("backup-config-status-archive-interval", cmd.Flags().Lookup("backup-config-status-archive-interval"))
 
 	cmd.Flags().Bool("metrics-secure", true,
 		"If set, the metrics endpoint is served securely via HTTPS. Use --metrics-secure=false to use HTTP instead.")

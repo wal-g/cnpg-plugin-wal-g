@@ -15,6 +15,13 @@ cnpg:
 # Number of replicas for plugin controller-manager deployment
 replicaCount: 1
 
+backupConfigStatus:
+  # Storage availability checks.
+  interval: "2m"
+  # Interval between WAL, backup, and storage usage checks.
+  # Increase to reduce storage load at the cost of less frequent archive status updates.
+  archiveInterval: "5m"
+
 # Image for plugin controller-manager deployment
 image:
   repository: ghcr.io/wal-g/cnpg-plugin-wal-g
