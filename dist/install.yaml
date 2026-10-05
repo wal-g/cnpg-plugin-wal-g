@@ -1134,8 +1134,8 @@ spec:
         - --cnpg-i-pg-sidecar-image=$(SIDECAR_IMAGE)
         env:
         - name: SIDECAR_IMAGE
-          value: ghcr.io/wal-g/cnpg-plugin-wal-g:0.3.0
-        image: ghcr.io/wal-g/cnpg-plugin-wal-g:0.3.0
+          value: ghcr.io/wal-g/cnpg-plugin-wal-g:0.3.1-rc1
+        image: ghcr.io/wal-g/cnpg-plugin-wal-g:0.3.1-rc1
         livenessProbe:
           httpGet:
             path: /healthz
