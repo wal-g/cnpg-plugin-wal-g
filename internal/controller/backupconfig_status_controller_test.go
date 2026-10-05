@@ -44,6 +44,7 @@ type statusWALCalls struct {
 	read, write, wal, backups, size int
 	readErr, writeErr, walErr       error
 	backupErr, sizeErr              error
+	walTimelines                    map[int][]walg.WALTimelineInfo
 	onArchive                       func()
 	onBackups, onSize               func()
 }
@@ -71,6 +72,9 @@ func (f fakeStatusWALClient) WALShow(context.Context) ([]walg.WALTimelineInfo, e
 	}
 	if f.calls.walErr != nil {
 		return nil, f.calls.walErr
+	}
+	if timelines, ok := f.calls.walTimelines[f.pgVersion]; ok {
+		return timelines, nil
 	}
 	if f.pgVersion != 17 {
 		return nil, nil
@@ -215,7 +219,7 @@ var _ = Describe("BackupConfig Status Controller", func() {
 		}
 		Expect(s.controller.client.Create(s.ctx, newBackup("owned-17", "17", true))).To(Succeed())
 		Expect(s.controller.client.Create(s.ctx, newBackup("foreign-16", "16", false))).To(Succeed())
-		Expect(s.controller.client.Create(s.ctx, newBackup("owned-bad", "unknown", true))).To(Succeed())
+		Expect(s.controller.client.Create(s.ctx, newBackup("foreign-bad", "unknown", false))).To(Succeed())
 
 		Expect(s.reconcile()).To(Succeed())
 		Expect(s.calls.wal).To(Equal(1))
@@ -246,6 +250,54 @@ var _ = Describe("BackupConfig Status Controller", func() {
 		Expect(s.calls.backups).To(Equal(9))
 		Expect(s.calls.size).To(Equal(9))
 	})
+
+	DescribeTable("should scan all archives when Backup resources do not identify every version",
+		func(preserveArchives bool, unknownVersion *string) {
+			s.calls.walTimelines = map[int][]walg.WALTimelineInfo{
+				17: {{Status: "LOST_SEGMENTS", MissingSegments: []string{"missing-wal"}}},
+			}
+			config := s.config()
+			config.Spec.Retention.IgnoreForBackupDeletion = preserveArchives
+			Expect(s.controller.client.Update(s.ctx, config)).To(Succeed())
+			backup := &cnpgv1.Backup{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "owned-18",
+					Namespace: config.Namespace,
+					Labels:    map[string]string{v1beta1.BackupPgVersionLabelName: "18"},
+					OwnerReferences: []metav1.OwnerReference{{
+						APIVersion: config.APIVersion,
+						Kind:       "BackupConfig",
+						Name:       config.Name,
+						UID:        config.UID,
+					}},
+				},
+			}
+			Expect(s.controller.client.Create(s.ctx, backup)).To(Succeed())
+			if unknownVersion != nil {
+				unknown := backup.DeepCopy()
+				unknown.Name = "owned-unknown"
+				unknown.ResourceVersion = ""
+				unknown.Labels = nil
+				if *unknownVersion != "" {
+					unknown.Labels = map[string]string{v1beta1.BackupPgVersionLabelName: *unknownVersion}
+				}
+				Expect(s.controller.client.Create(s.ctx, unknown)).To(Succeed())
+			}
+
+			Expect(s.reconcile()).To(Succeed())
+			Expect(s.calls.wal).To(Equal(9))
+			Expect(s.calls.backups).To(Equal(9))
+			Expect(s.calls.size).To(Equal(9))
+			// The fake storage contains PG17 data even though only PG18 is labeled.
+			Expect(*s.config().Status.ConsumedStorage.TotalBytes).To(Equal(int64(30)))
+			Expect(getConditionStatus(s.config(), v1beta1.ConditionTypeWALIntegrityCheck)).To(Equal(metav1.ConditionFalse))
+		},
+		Entry("Backup deletion preserves archives", true, nil),
+		Entry("an owned Backup has no version label", false, ptr.To("")),
+		Entry("an owned Backup has a malformed version label", false, ptr.To("unknown")),
+		Entry("an owned Backup has a version below the known range", false, ptr.To("10")),
+		Entry("an owned Backup has a version above the known range", false, ptr.To("20")),
+	)
 
 	DescribeTable("should delay archive retries after storage failures", func(failure string) {
 		errUnavailable := errors.New("archive unavailable")

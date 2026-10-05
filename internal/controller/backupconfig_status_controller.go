@@ -484,9 +484,9 @@ const (
 // owned by this BackupConfig (label v1beta1.BackupPgVersionLabelName is set by
 // BackupReconciler). Scanning only these prefixes avoids running wal-show,
 // backup-list and st ls for every known PG major version on each archive
-// check. When no owned Backups with a version label exist (for example a fresh
-// cluster that has not completed its first backup yet) or Backups cannot be
-// listed, all known versions are probed as before.
+// check. Probe all known versions when deleting Backup resources can retain
+// their archives, any owned Backup has an unknown version, no owned Backups
+// exist, or Backups cannot be listed.
 func (c *BackupConfigStatusController) resolvePGVersions(
 	ctx context.Context,
 	backupConfig *v1beta1.BackupConfig,
@@ -495,6 +495,11 @@ func (c *BackupConfigStatusController) resolvePGVersions(
 	allVersions := make([]int, 0, maxKnownPGMajorVersion-minKnownPGMajorVersion+1)
 	for pgVersion := minKnownPGMajorVersion; pgVersion <= maxKnownPGMajorVersion; pgVersion++ {
 		allVersions = append(allVersions, pgVersion)
+	}
+
+	if backupConfig.Spec.Retention.IgnoreForBackupDeletion {
+		logger.V(1).Info("Backup deletion preserves archives, probing all PG versions")
+		return allVersions
 	}
 
 	backupsList := cnpgv1.BackupList{}
@@ -514,7 +519,8 @@ func (c *BackupConfigStatusController) resolvePGVersions(
 		}
 		pgVersion, err := strconv.Atoi(backup.Labels[v1beta1.BackupPgVersionLabelName])
 		if err != nil || pgVersion < minKnownPGMajorVersion || pgVersion > maxKnownPGMajorVersion {
-			continue
+			logger.V(1).Info("Owned Backup has an unknown PG version, probing all PG versions", "backup", backup.Name)
+			return allVersions
 		}
 		versions[pgVersion] = struct{}{}
 	}
