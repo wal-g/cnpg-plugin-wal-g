@@ -27,11 +27,6 @@ import (
 	"github.com/go-logr/logr"
 )
 
-type ProcessInfo struct {
-	Pid    int
-	Status syscall.WaitStatus
-}
-
 type ZombieProcessReaper struct {
 }
 
@@ -43,6 +38,9 @@ func (r *ZombieProcessReaper) Start(ctx context.Context) error {
 	defer signal.Stop(sigCh)
 
 	logger.Info("Starting zombie process reaper")
+
+	// Collect children that exited before signal registration.
+	r.doReaping(ctx)
 
 	for {
 		// wait for SIGCHLD
@@ -59,9 +57,8 @@ func (r *ZombieProcessReaper) Start(ctx context.Context) error {
 
 func (r *ZombieProcessReaper) doReaping(ctx context.Context) {
 	logger := logr.FromContextOrDiscard(ctx)
-	var wstatus syscall.WaitStatus
 	for {
-		pid, err := syscall.Wait4(-1, &wstatus, syscall.WNOHANG, nil)
+		pid, err := reapProcess()
 		if errors.Is(err, syscall.EINTR) {
 			continue // Need to retry later
 		}
@@ -76,6 +73,18 @@ func (r *ZombieProcessReaper) doReaping(ctx context.Context) {
 		}
 
 		logger.V(1).Info("Handled process finish", "pid", pid)
-		notifyAllSubscribers(pid, wstatus)
 	}
+}
+
+// Keep Wait4 and delivery atomic with child registration.
+func reapProcess() (int, error) {
+	subscribersMx.Lock()
+	defer subscribersMx.Unlock()
+
+	var status syscall.WaitStatus
+	pid, err := syscall.Wait4(-1, &status, syscall.WNOHANG, nil)
+	if err == nil && pid > 0 {
+		notifyProcessExitLocked(pid, status)
+	}
+	return pid, err
 }
