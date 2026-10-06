@@ -575,6 +575,27 @@ var _ = Describe("LifecycleImplementation", func() {
 
 			// Check that the resources were set correctly
 			Expect(sidecar.Resources).To(Equal(testBackupConfig.Spec.Resources))
+
+			// Check that the native sidecar waits for the plugin's socket
+			Expect(sidecar.RestartPolicy).To(Equal(ptr.To(corev1.ContainerRestartPolicyAlways)))
+			Expect(sidecar.StartupProbe).NotTo(BeNil())
+			Expect(sidecar.StartupProbe.Exec).NotTo(BeNil())
+			Expect(sidecar.StartupProbe.Exec.Command).To(Equal(
+				[]string{"/usr/local/bin/cnpg-plugin-wal-g", "healthcheck", "unix"}))
+		})
+
+		It("should not set a startup probe on a traditional init container", func() {
+			testCluster.Spec.Plugins[0].Parameters["sidecarRestartPolicy"] = "unset"
+			podSpec := &corev1.PodSpec{
+				Containers: []corev1.Container{{Name: "postgres"}},
+			}
+
+			err := reconcilePodSpecWithPluginSidecar(testCluster, testBackupConfig, podSpec, "postgres", nil)
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(podSpec.InitContainers).To(HaveLen(1))
+			Expect(podSpec.InitContainers[0].RestartPolicy).To(BeNil())
+			Expect(podSpec.InitContainers[0].StartupProbe).To(BeNil())
 		})
 
 		It("should set recovery mode for recovery jobs", func() {
