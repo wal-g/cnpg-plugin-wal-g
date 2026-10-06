@@ -259,17 +259,6 @@ func reconcilePodSpecWithPluginSidecar(
 
 	envs = append(envs, additionalEnvs...)
 
-	// TODO: @endevir implement me
-	// baseProbe := &corev1.Probe{
-	// 	FailureThreshold: 10,
-	// 	TimeoutSeconds:   10,
-	// 	ProbeHandler: corev1.ProbeHandler{
-	// 		Exec: &corev1.ExecAction{
-	// 			Command: []string{"/manager", "healthcheck", "unix"},
-	// 		},
-	// 	},
-	// }
-
 	sidecarConfig := corev1.Container{}
 	sidecarConfig.Name = "plugin-wal-g"
 	sidecarConfig.Image = viper.GetString("cnpg-i-pg-sidecar-image")
@@ -282,8 +271,6 @@ func reconcilePodSpecWithPluginSidecar(
 
 	sidecarConfig.Resources = backupConfig.Spec.Resources
 
-	// TODO: @endevir implement me
-	// sidecarConfig.StartupProbe = baseProbe.DeepCopy()
 	sidecarConfig.SecurityContext = &corev1.SecurityContext{
 		AllowPrivilegeEscalation: ptr.To(false),
 		RunAsNonRoot:             ptr.To(true),
@@ -332,6 +319,24 @@ func reconcilePodSpecWithPluginSidecar(
 	}
 
 	restartPolicy := common.GetInitContainerRestartPolicy(cluster)
+
+	// The kubelet starts the containers after a native sidecar only once the
+	// sidecar's startup probe succeeds. Without the probe, PostgreSQL or the
+	// full-recovery job can call the plugin before its socket is served, and a
+	// restore fails at once with "no plugin supports the restore job hooks
+	// capability". Only a native sidecar (restartPolicy Always) may have one.
+	if restartPolicy != nil && *restartPolicy == corev1.ContainerRestartPolicyAlways {
+		sidecarConfig.StartupProbe = &corev1.Probe{
+			PeriodSeconds:    1,
+			FailureThreshold: 30,
+			TimeoutSeconds:   5,
+			ProbeHandler: corev1.ProbeHandler{
+				Exec: &corev1.ExecAction{
+					Command: []string{"/usr/local/bin/cnpg-plugin-wal-g", "healthcheck", "unix"},
+				},
+			},
+		}
+	}
 
 	if err := injectPluginSidecarPodSpec(spec, &sidecarConfig, jobRole, restartPolicy); err != nil {
 		return err
