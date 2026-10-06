@@ -18,6 +18,7 @@ package walg
 
 import (
 	"context"
+	"os"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -840,5 +841,22 @@ var _ = Describe("WAL-G Config Integration Tests", func() {
 			Expect(walgConfig.WalgGSPrefix).To(Equal("gs://test-bucket/trailing-slash-prefix/16"))
 			Expect(walgConfig.WalgGSPrefix).NotTo(ContainSubstring("//16"))
 		})
+	})
+})
+
+var _ = Describe("emptyConfigFile", func() {
+	It("returns the same file, holding an empty JSON object, on every call", func() {
+		path := emptyConfigFile()
+		Expect(path).NotTo(BeEmpty())
+
+		content, err := os.ReadFile(path)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(string(content)).To(Equal("{}"))
+
+		info, err := os.Stat(path)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(info.Mode().Perm()).To(Equal(os.FileMode(0o600)))
+
+		Expect(emptyConfigFile()).To(Equal(path))
 	})
 })
