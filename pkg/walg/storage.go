@@ -61,10 +61,7 @@ func (c *Client) StorageCheckReadable(ctx context.Context) (*cmd.RunResult, erro
 
 	commandCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
-	result, err := cmd.New("wal-g", "st", "check", "read").
-		WithContext(commandCtx).
-		WithEnv(c.config.ToEnvMap()).
-		Run()
+	result, err := c.newCmd(commandCtx, "st", "check", "read").Run()
 
 	if err != nil {
 		logger.Error(
@@ -83,10 +80,7 @@ func (c *Client) StorageCheckWritable(ctx context.Context) (*cmd.RunResult, erro
 
 	commandCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
-	result, err := cmd.New("wal-g", "st", "check", "write").
-		WithContext(commandCtx).
-		WithEnv(c.config.ToEnvMap()).
-		Run()
+	result, err := c.newCmd(commandCtx, "st", "check", "write").Run()
 
 	if err != nil {
 		logger.Error(
@@ -106,10 +100,7 @@ func (c *Client) WALShow(ctx context.Context) ([]WALTimelineInfo, error) {
 
 	commandCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
 	defer cancel()
-	result, err := cmd.New("wal-g", "wal-show", "--detailed-json").
-		WithContext(commandCtx).
-		WithEnv(c.config.ToEnvMap()).
-		Run()
+	result, err := c.newCmd(commandCtx, "wal-show", "--detailed-json").Run()
 
 	if err != nil {
 		logger.Error(
@@ -140,10 +131,7 @@ func (c *Client) StorageLsTotalSize(ctx context.Context, path string) (int64, er
 
 	commandCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
 	defer cancel()
-	result, err := cmd.New("wal-g", "st", "ls", path).
-		WithContext(commandCtx).
-		WithEnv(c.config.ToEnvMap()).
-		Run()
+	result, err := c.newCmd(commandCtx, "st", "ls", path).Run()
 
 	if err != nil {
 		logger.Error(

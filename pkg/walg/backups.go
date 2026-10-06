@@ -93,10 +93,7 @@ func (m *BackupMetadata) HasMatchingTimeline(targetTimeline string) bool {
 func (c *Client) BackupPush(ctx context.Context, pgdata string, userDataJSON string) (*cmd.RunResult, error) {
 	logger := logr.FromContextOrDiscard(ctx)
 
-	result, err := cmd.New("wal-g", "backup-push", pgdata, "--add-user-data", userDataJSON).
-		WithContext(ctx).
-		WithEnv(c.config.ToEnvMap()).
-		Run()
+	result, err := c.newCmd(ctx, "backup-push", pgdata, "--add-user-data", userDataJSON).Run()
 
 	if err != nil {
 		logger.Error(
@@ -111,10 +108,7 @@ func (c *Client) BackupPush(ctx context.Context, pgdata string, userDataJSON str
 func (c *Client) BackupFetch(ctx context.Context, targetDir, backupName string) (*cmd.RunResult, error) {
 	logger := logr.FromContextOrDiscard(ctx)
 
-	result, err := cmd.New("wal-g", "backup-fetch", "--turbo", targetDir, backupName).
-		WithContext(ctx).
-		WithEnv(c.config.ToEnvMap()).
-		Run()
+	result, err := c.newCmd(ctx, "backup-fetch", "--turbo", targetDir, backupName).Run()
 
 	if err != nil {
 		logger.Error(
@@ -128,10 +122,7 @@ func (c *Client) BackupFetch(ctx context.Context, targetDir, backupName string) 
 // GetBackupsList fetches the full list of backups from wal-g storage.
 func (c *Client) GetBackupsList(ctx context.Context) ([]BackupMetadata, error) {
 	logger := logr.FromContextOrDiscard(ctx)
-	result, err := cmd.New("wal-g", "backup-list", "--detail", "--json").
-		WithContext(ctx).
-		WithEnv(c.config.ToEnvMap()).
-		Run()
+	result, err := c.newCmd(ctx, "backup-list", "--detail", "--json").Run()
 	if err != nil {
 		logger.Error(
 			err, "GetBackupsList: error on wal-g backup-list --detail --json",
@@ -201,10 +192,7 @@ func (c *Client) GetBackupByName(ctx context.Context, backupList []BackupMetadat
 func (c *Client) MarkBackupPermanent(ctx context.Context, backupName string) error {
 	logger := logr.FromContextOrDiscard(ctx)
 
-	result, err := cmd.New("wal-g", "backup-mark", backupName).
-		WithContext(ctx).
-		WithEnv(c.config.ToEnvMap()).
-		Run()
+	result, err := c.newCmd(ctx, "backup-mark", backupName).Run()
 
 	if err != nil {
 		logger.Error(
@@ -233,10 +221,7 @@ func (c *Client) UnmarkBackupPermanent(ctx context.Context, backupName string) e
 }
 
 func (c *Client) unmarkBackupPermanent(ctx context.Context, backupName string) (*cmd.RunResult, error) {
-	return cmd.New("wal-g", "backup-mark", "-i", backupName).
-		WithContext(ctx).
-		WithEnv(c.config.ToEnvMap()).
-		Run()
+	return c.newCmd(ctx, "backup-mark", "-i", backupName).Run()
 }
 
 // DeleteBackup deletes a backup and runs garbage collection using wal-g.
@@ -257,10 +242,7 @@ func (c *Client) DeleteBackup(ctx context.Context, backupName string) (*cmd.RunR
 		}
 	}
 
-	result, err = cmd.New("wal-g", "delete", "target", backupName, "--confirm").
-		WithContext(ctx).
-		WithEnv(c.config.ToEnvMap()).
-		Run()
+	result, err = c.newCmd(ctx, "delete", "target", backupName, "--confirm").Run()
 	// If backup already not exists in storage - do not treat this as an error, return success
 	backupDoesNotExistStr := fmt.Sprintf("Backup '%s' does not exist.", backupName)
 	if err != nil && strings.Contains(string(result.Stderr()), backupDoesNotExistStr) {
@@ -268,10 +250,7 @@ func (c *Client) DeleteBackup(ctx context.Context, backupName string) (*cmd.RunR
 	}
 
 	// Do not abort if error not-nil and try anyway to perform `wal-g delete garbage` anyway
-	gcResult, gcErr := cmd.New("wal-g", "delete", "garbage", "--confirm").
-		WithContext(ctx).
-		WithEnv(c.config.ToEnvMap()).
-		Run()
+	gcResult, gcErr := c.newCmd(ctx, "delete", "garbage", "--confirm").Run()
 	if gcErr != nil {
 		// Actually errors on garbage collect do not block us from deleting backup
 		// So only logging them and not reporting them to caller
@@ -302,10 +281,7 @@ func (c *Client) DeleteAllBackupsAndWALsInStorage(ctx context.Context) (*cmd.Run
 		}
 	}
 
-	return cmd.New("wal-g", "delete", "everything", "FORCE", "--confirm").
-		WithContext(ctx).
-		WithEnv(c.config.ToEnvMap()).
-		Run()
+	return c.newCmd(ctx, "delete", "everything", "FORCE", "--confirm").Run()
 }
 
 // GetDependentBackups returns a list of backups that depend on the current backup.

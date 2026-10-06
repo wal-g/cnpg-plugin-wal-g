@@ -28,10 +28,7 @@ import (
 func (c *Client) WALPush(ctx context.Context, sourceFileName string) (*cmd.RunResult, error) {
 	logger := logr.FromContextOrDiscard(ctx)
 
-	result, err := cmd.New("wal-g", "wal-push", sourceFileName).
-		WithContext(ctx).
-		WithEnv(c.config.ToEnvMap()).
-		Run()
+	result, err := c.newCmd(ctx, "wal-push", sourceFileName).Run()
 
 	if err != nil {
 		logger.Error(
@@ -47,10 +44,7 @@ func (c *Client) WALPush(ctx context.Context, sourceFileName string) (*cmd.RunRe
 func (c *Client) WALFetch(ctx context.Context, sourceWalName, destinationFileName string) (*cmd.RunResult, error) {
 	logger := logr.FromContextOrDiscard(ctx)
 
-	result, err := cmd.New("wal-g", "wal-fetch", sourceWalName, destinationFileName).
-		WithContext(ctx).
-		WithEnv(c.config.ToEnvMap()).
-		Run()
+	result, err := c.newCmd(ctx, "wal-fetch", sourceWalName, destinationFileName).Run()
 
 	if err != nil {
 		logger.Error(

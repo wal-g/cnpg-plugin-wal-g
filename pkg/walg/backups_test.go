@@ -152,6 +152,7 @@ var _ = Describe("DeleteBackup", func() {
 		Expect(os.WriteFile(filepath.Join(dir, "wal-g"), []byte(`#!/bin/sh
 printf '%s\000' "$@" >> "$WALG_TEST_DIR/calls"
 printf '\n' >> "$WALG_TEST_DIR/calls"
+if [ "$1" = --config ]; then shift 2; fi
 case "$1 $2" in
   'backup-mark -i') printf '%s' "$WALG_TEST_UNMARK_ERROR" >&2; test -z "$WALG_TEST_UNMARK_ERROR" ;;
   'delete target') printf '%s' "$WALG_TEST_DELETE_ERROR" >&2; test -z "$WALG_TEST_DELETE_ERROR" ;;
@@ -186,10 +187,11 @@ esac
 			}
 			calls, readErr := os.ReadFile(filepath.Join(dir, "calls"))
 			Expect(readErr).NotTo(HaveOccurred())
+			config := "--config\x00" + emptyConfigFile() + "\x00"
 			Expect(string(calls)).To(Equal(
-				"backup-mark\x00-i\x00" + backupName + "\x00\n" +
-					"delete\x00target\x00" + backupName + "\x00--confirm\x00\n" +
-					"delete\x00garbage\x00--confirm\x00\n",
+				config + "backup-mark\x00-i\x00" + backupName + "\x00\n" +
+					config + "delete\x00target\x00" + backupName + "\x00--confirm\x00\n" +
+					config + "delete\x00garbage\x00--confirm\x00\n",
 			))
 			if (tc.unmarkError != "" && tc.unmarkError != missingMetadata) || tc.gcError != "" {
 				Expect(logs.String()).To(ContainSubstring(`"level":"error"`))
