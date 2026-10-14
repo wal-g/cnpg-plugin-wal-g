@@ -24,6 +24,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
@@ -47,6 +48,126 @@ var _ = Describe("WAL-G Config Integration Tests", func() {
 	})
 
 	Context("End-to-End WAL-G Configuration", func() {
+		It("should keep hardcoded WAL-G defaults when spec.walg is not set", func() {
+			config := NewConfigWithDefaults()
+			expectedConfig := config
+
+			applyWalgConfigOverrides(&config, nil)
+
+			Expect(config).To(Equal(expectedConfig))
+		})
+
+		It("should not drop explicit false WAL-G bool overrides", func() {
+			config := NewConfigWithDefaults()
+			config.WalgFailoverStoragesCheck = true
+
+			applyWalgConfigOverrides(&config, &v1beta1.WalgConfig{
+				FailoverStoragesCheck: ptr.To(false),
+				PreventWalOverwrite:   ptr.To(false),
+				TarDisableFsync:       ptr.To(false),
+			})
+
+			Expect(config.WalgFailoverStoragesCheck).To(BeFalse())
+			Expect(config.WalgPreventWalOverwrite).To(Equal("false"))
+			Expect(config.WalgTarDisableFsync).To(Equal("false"))
+		})
+
+		It("should apply WAL-G runtime overrides from spec.walg", func() {
+			backupConfig := &v1beta1.BackupConfigWithSecrets{
+				Spec: v1beta1.BackupConfigSpecWithSecrets{
+					BackupConfigSpec: v1beta1.BackupConfigSpec{
+						Walg: &v1beta1.WalgConfig{
+							GoMaxProcs:                     ptr.To(9),
+							TotalBgUploadedLimit:           ptr.To(64),
+							AliveCheckInterval:             "45s",
+							CompressionMethod:              "zstd",
+							DeltaMaxSteps:                  ptr.To(11),
+							DiskRateLimitBytesPerSecond:    ptr.To(123456789),
+							DownloadConcurrency:            ptr.To(7),
+							DownloadFileRetries:            ptr.To(13),
+							FailoverStoragesCacheLifetime:  "5m",
+							FailoverStoragesCheck:          ptr.To(true),
+							FailoverStoragesCheckSize:      "2KB",
+							NetworkRateLimitBytesPerSecond: ptr.To(987654321),
+							TarDisableFsync:                ptr.To(true),
+							TarSizeThreshold:               ptr.To(int64(2048)),
+							UploadConcurrency:              ptr.To(4),
+							UploadDiskConcurrency:          ptr.To(3),
+							PreventWalOverwrite:            ptr.To(false),
+						},
+					},
+				},
+			}
+
+			walgConfig := NewConfigFromBackupConfig(backupConfig, 16)
+
+			Expect(walgConfig.GoMaxProcs).To(Equal(9))
+			Expect(walgConfig.TotalBgUploadedLimit).To(Equal(64))
+			Expect(walgConfig.WalgAliveCheckInterval).To(Equal("45s"))
+			Expect(walgConfig.WalgCompressionMethod).To(Equal("zstd"))
+			Expect(walgConfig.WalgDeltaMaxSteps).To(Equal(11))
+			Expect(walgConfig.WalgDiskRateLimit).To(Equal(123456789))
+			Expect(walgConfig.WalgDownloadConcurrency).To(Equal(7))
+			Expect(walgConfig.WalgDownloadFileRetries).To(Equal(13))
+			Expect(walgConfig.WalgFailoverStoragesCacheLifetime).To(Equal("5m"))
+			Expect(walgConfig.WalgFailoverStoragesCheck).To(BeTrue())
+			Expect(walgConfig.WalgFailoverStoragesCheckSize).To(Equal("2KB"))
+			Expect(walgConfig.WalgNetworkRateLimit).To(Equal(987654321))
+			Expect(walgConfig.WalgTarDisableFsync).To(Equal("true"))
+			Expect(walgConfig.WalgTarSizeThreshold).To(Equal(int64(2048)))
+			Expect(walgConfig.WalgUploadConcurrency).To(Equal(4))
+			Expect(walgConfig.WalgUploadDiskConcurrency).To(Equal(3))
+			Expect(walgConfig.WalgPreventWalOverwrite).To(Equal("false"))
+
+			envMap := walgConfig.ToEnvMap()
+			Expect(envMap).To(HaveKeyWithValue("GOMAXPROCS", "9"))
+			Expect(envMap).To(HaveKeyWithValue("TOTAL_BG_UPLOADED_LIMIT", "64"))
+			Expect(envMap).To(HaveKeyWithValue("WALG_ALIVE_CHECK_INTERVAL", "45s"))
+			Expect(envMap).To(HaveKeyWithValue("WALG_COMPRESSION_METHOD", "zstd"))
+			Expect(envMap).To(HaveKeyWithValue("WALG_DELTA_MAX_STEPS", "11"))
+			Expect(envMap).To(HaveKeyWithValue("WALG_DISK_RATE_LIMIT", "123456789"))
+			Expect(envMap).To(HaveKeyWithValue("WALG_DOWNLOAD_CONCURRENCY", "7"))
+			Expect(envMap).To(HaveKeyWithValue("WALG_DOWNLOAD_FILE_RETRIES", "13"))
+			Expect(envMap).To(HaveKeyWithValue("WALG_FAILOVER_STORAGES_CACHE_LIFETIME", "5m"))
+			Expect(envMap).To(HaveKeyWithValue("WALG_FAILOVER_STORAGES_CHECK", "true"))
+			Expect(envMap).To(HaveKeyWithValue("WALG_FAILOVER_STORAGES_CHECK_SIZE", "2KB"))
+			Expect(envMap).To(HaveKeyWithValue("WALG_NETWORK_RATE_LIMIT", "987654321"))
+			Expect(envMap).To(HaveKeyWithValue("WALG_TAR_DISABLE_FSYNC", "true"))
+			Expect(envMap).To(HaveKeyWithValue("WALG_TAR_SIZE_THRESHOLD", "2048"))
+			Expect(envMap).To(HaveKeyWithValue("WALG_UPLOAD_CONCURRENCY", "4"))
+			Expect(envMap).To(HaveKeyWithValue("WALG_UPLOAD_DISK_CONCURRENCY", "3"))
+			Expect(envMap).To(HaveKeyWithValue("WALG_PREVENT_WAL_OVERWRITE", "false"))
+		})
+
+		It("should allow spec.walg zero and false values to override legacy fields", func() {
+			backupConfig := &v1beta1.BackupConfigWithSecrets{
+				Spec: v1beta1.BackupConfigSpecWithSecrets{
+					BackupConfigSpec: v1beta1.BackupConfigSpec{
+						DeltaMaxSteps:     5,
+						TarDisableFsync:   true,
+						UploadConcurrency: ptr.To(8),
+						Walg: &v1beta1.WalgConfig{
+							DeltaMaxSteps:       ptr.To(0),
+							UploadConcurrency:   ptr.To(0),
+							TarDisableFsync:     ptr.To(false),
+							PreventWalOverwrite: ptr.To(false),
+						},
+					},
+				},
+			}
+
+			walgConfig := NewConfigFromBackupConfig(backupConfig, 16)
+
+			Expect(walgConfig.WalgDeltaMaxSteps).To(Equal(0))
+			Expect(walgConfig.WalgUploadConcurrency).To(Equal(0))
+			Expect(walgConfig.WalgTarDisableFsync).To(Equal("false"))
+			Expect(walgConfig.WalgPreventWalOverwrite).To(Equal("false"))
+
+			envMap := walgConfig.ToEnvMap()
+			Expect(envMap).To(HaveKeyWithValue("WALG_TAR_DISABLE_FSYNC", "false"))
+			Expect(envMap).To(HaveKeyWithValue("WALG_PREVENT_WAL_OVERWRITE", "false"))
+		})
+
 		It("should generate correct wal-g config from BackupConfig with direct values", func() {
 			// Create test BackupConfig with direct values
 			backupConfig := &v1beta1.BackupConfig{

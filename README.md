@@ -67,6 +67,22 @@ This plugin adds backup and restore functionality to [CloudNativePG](https://clo
 
 You should encounter new CNPG `Cluster` with encrypted WAL archivation and periodic auto-backups performed by plugin and `WAL-G`.
 
+### WAL-G runtime settings
+
+`BackupConfig` supports optional WAL-G runtime overrides under `spec.walg`.
+Unset fields keep the plugin defaults, and existing top-level fields remain supported for backward compatibility.
+
+```yaml
+apiVersion: cnpg-extensions.yandex.cloud/v1beta1
+kind: BackupConfig
+spec:
+  walg:
+    compressionMethod: lz4
+    uploadConcurrency: 16
+    uploadDiskConcurrency: 8
+    networkRateLimitBytesPerSecond: 536870912
+```
+
 ## Development
 
 ### Prerequisites
