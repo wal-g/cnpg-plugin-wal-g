@@ -189,7 +189,8 @@ func (impl LifecycleImplementation) reconcileJob(
 
 	logger := logr.FromContextOrDiscard(ctx).WithValues("jobName", job.Name, "jobNamespace", job.Namespace, "jobRole", getCNPGJobRole(&job))
 
-	if getCNPGJobRole(&job) != "full-recovery" {
+	jobRole := getCNPGJobRole(&job)
+	if !isRecoveryJobRole(jobRole) {
 		logger.V(1).Info("job is not a recovery job, skipping")
 		return &lifecycle.OperatorLifecycleResponse{}, nil
 	}
@@ -209,7 +210,7 @@ func (impl LifecycleImplementation) reconcileJob(
 		cluster,
 		recoveryBackupConfig,
 		&mutatedJob.Spec.Template.Spec,
-		"full-recovery",
+		jobRole,
 		make([]corev1.EnvVar, 0),
 	); err != nil {
 		return nil, fmt.Errorf("while reconciling pod spec for job: %w", err)
@@ -274,7 +275,7 @@ func reconcilePodSpecWithPluginSidecar(
 	sidecarConfig.Name = "plugin-wal-g"
 	sidecarConfig.Image = viper.GetString("cnpg-i-pg-sidecar-image")
 	sidecarConfig.ImagePullPolicy = cluster.Spec.ImagePullPolicy
-	if jobRole == "full-recovery" {
+	if isRecoveryJobRole(jobRole) {
 		sidecarConfig.Args = []string{"instance", "--mode", "recovery"}
 	} else {
 		sidecarConfig.Args = []string{"instance", "--mode", "normal"}
@@ -426,6 +427,13 @@ func injectPluginVolumePodSpec(spec *corev1.PodSpec, mainContainerName string) {
 			)
 		}
 	}
+}
+
+// isRecoveryJobRole reports whether a CNPG job restores a cluster and so needs
+// the plugin to fetch WAL: "full-recovery" restores a wal-g base backup,
+// "snapshot-recovery" starts from volume snapshots and replays archived WAL.
+func isRecoveryJobRole(jobRole string) bool {
+	return jobRole == "full-recovery" || jobRole == "snapshot-recovery"
 }
 
 // getCNPGJobRole gets the role associated to a CNPG job
