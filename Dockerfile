@@ -40,73 +40,54 @@ RUN sed -i 's/#cgo LDFLAGS: -lbrotli.*/#cgo LDFLAGS: -Wl,-Bstatic -lbrotlienc -l
     && cp /usr/share/doc/libbrotli1/copyright /out/licenses/brotli \
     && cp /usr/share/doc/libsodium23/copyright /out/licenses/libsodium \
     && cp /usr/share/doc/liblzo2-2/copyright /out/licenses/lzo \
-    && cp -a internal/crypto/libsodium/testdata /out/testdata \
     && mkdir -p /out/home/postgres && chown 26:26 /out/home/postgres
-ARG WALG_BUILD_SUFFIX=omdb.791
 # Use a standard version symbol, also read by binary inventory scanners.
 # Keep ELF symbols while removing DWARF; -trimpath omits ldflags from build info.
 RUN sed -i 's/\bwalgVersion\b/version/g' cmd/pg/pg.go \
     && CC=$(cat /target-triplet)-gcc-14 CGO_ENABLED=1 GOOS=${TARGETOS} GOARCH=${TARGETARCH} GOEXPERIMENT=jsonv2 go build -mod=vendor \
     -tags brotli,libsodium,lzo -trimpath \
-    -ldflags "-w -X github.com/wal-g/wal-g/cmd/pg.gitRevision=${WALG_REVISION} -X github.com/wal-g/wal-g/cmd/pg.version=${WALG_VERSION}+${WALG_BUILD_SUFFIX}" \
-    -o /out/wal-g ./main/pg \
-    && $(cat /target-triplet)-readelf -d /out/wal-g \
-    && CC=$(cat /target-triplet)-gcc-14 CGO_ENABLED=1 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
-       go test -c -mod=vendor -tags libsodium -o /out/libsodium.test ./internal/crypto/libsodium
+    -ldflags "-w -X github.com/wal-g/wal-g/cmd/pg.gitRevision=${WALG_REVISION} -X github.com/wal-g/wal-g/cmd/pg.version=${WALG_VERSION}" \
+    -o /out/wal-g ./main/pg
 
-# Retain only the shell and utilities needed by OMDB's backup-migration Job.
-# Extract target binaries instead of replacing the builder's native shell.
-RUN set -eu; apt-get update && mkdir -p /out/bin /tmp/runtime-packages \
-    && for package in dash coreutils patch xz-utils; do \
-       package_arch=${TARGETARCH}; \
-       if [ "$package" = patch ] || [ "$package" = xz-utils ]; then package_arch=$(dpkg --print-architecture); fi; \
-       apt-cache --no-all-versions show ${package}:${package_arch} > /tmp/runtime-control; \
-       package_file=$(sed -n 's/^Filename: //p' /tmp/runtime-control); \
-       package_sha=$(sed -n 's/^SHA256: //p' /tmp/runtime-control); \
-       (curl -fsSL --retry 3 https://deb.debian.org/debian/${package_file} -o /tmp/${package}.deb \
-        || curl -fsSL --retry 3 https://deb.debian.org/debian-security/${package_file} -o /tmp/${package}.deb) || exit 1; \
-       printf '%s  /tmp/%s.deb\n' "$package_sha" "$package" | sha256sum -c - || exit 1; \
-       dpkg-deb -x /tmp/${package}.deb /tmp/runtime-packages; \
-       if [ "$package" = dash ] || [ "$package" = coreutils ]; then \
-       printf '\n' >> /out/walg-static-libraries.status; \
-       dpkg-deb -f /tmp/${package}.deb >> /out/walg-static-libraries.status; \
-       printf 'Status: install ok installed\n' >> /out/walg-static-libraries.status; \
-       cp /tmp/runtime-packages/usr/share/doc/${package}/copyright /out/licenses/${package}; \
-       fi; \
-       done \
-    && cp /tmp/runtime-packages/usr/bin/patch /usr/local/bin/patch \
-    && cp /tmp/runtime-packages/usr/bin/xz /usr/local/bin/xz \
-    && cp /tmp/runtime-packages/usr/bin/dash /out/bin/dash \
-    && cp /tmp/runtime-packages/usr/bin/sleep /out/bin/sleep \
-    && ln -s dash /out/bin/sh
-# GNU sed without ACL/SELinux avoids unnecessary runtime libraries. The existing
-# migration script uses plain stream substitution, not ACL-preserving file edits.
-RUN printf 'deb-src [check-valid-until=no signed-by=/usr/share/keyrings/debian-archive-keyring.gpg] https://snapshot.debian.org/archive/debian/%s/ trixie main\n' "${DEBIAN_SNAPSHOT}" >> /etc/apt/sources.list \
-    && printf 'deb-src [check-valid-until=no signed-by=/usr/share/keyrings/debian-archive-keyring.gpg] https://snapshot.debian.org/archive/debian-security/%s/ trixie-security main\n' "${DEBIAN_SNAPSHOT}" >> /etc/apt/sources.list \
-    && apt-get update && cd /tmp \
-    && apt-cache showsrc sed | awk '/^Checksums-Sha256:/ {copy=1;next} /^[^ ]/ {copy=0} copy {print}' | sort -u > /tmp/sed-source-hashes \
-    && while read -r checksum size filename; do \
-       curl -fsSL --retry 3 https://deb.debian.org/debian/pool/main/s/sed/${filename} -o "$filename" || exit 1; \
-       printf '%s  %s\n' "$checksum" "$filename" | sha256sum -c - || exit 1; \
-       done < /tmp/sed-source-hashes \
-    && tar -xf sed_4.9.orig.tar.xz \
-    && tar -xf sed_4.9-2+deb13u1.debian.tar.xz -C sed-4.9 \
-    && cd /tmp/sed-4.9 \
-    && while read -r fix; do patch -p1 < debian/patches/$fix || exit 1; done < debian/patches/series \
-    && CC=$(cat /target-triplet)-gcc-14 ./configure --host=$(cat /target-triplet) --disable-acl --without-selinux --disable-nls \
-    && make -j2 sed/sed && cp sed/sed /out/bin/sed \
-    && $(cat /target-triplet)-readelf -d /out/bin/sed \
-    && printf '\n' >> /out/walg-static-libraries.status \
-    && apt-cache --no-all-versions show sed:${TARGETARCH} >> /out/walg-static-libraries.status \
-    && printf 'Status: install ok installed\n' >> /out/walg-static-libraries.status \
-    && cp debian/copyright /out/licenses/sed \
-    && rm -rf /var/lib/apt/lists/*
+# Retain the shell utilities used by the backup migration Job.
+# Extract target utilities without replacing the builder's native shell.
+RUN <<'SH'
+set -eu
+sed -n 's/^deb /deb-src /p' /etc/apt/sources.list > /tmp/debian-sources
+cat /tmp/debian-sources >> /etc/apt/sources.list
+apt-get update
+apt-get install -y --no-install-recommends dpkg-dev patch xz-utils
+mkdir -p /out/bin /tmp/runtime-packages
+cd /tmp/runtime-packages
+apt-get download "dash:$TARGETARCH" "coreutils:$TARGETARCH"
+for package in ./*.deb; do
+    dpkg-deb -x "$package" root
+    printf '\n' >> /out/walg-static-libraries.status
+    dpkg-deb -f "$package" >> /out/walg-static-libraries.status
+    printf 'Status: install ok installed\n' >> /out/walg-static-libraries.status
+done
+cp root/usr/bin/dash root/usr/bin/sleep /out/bin/
+ln -s dash /out/bin/sh
+cp root/usr/share/doc/dash/copyright /out/licenses/dash
+cp root/usr/share/doc/coreutils/copyright /out/licenses/coreutils
 
+# The migration uses stream substitution, so sed needs no ACL or SELinux support.
+apt-get source --only-source sed=4.9-2+deb13u1
+cd sed-4.9
+CC=$(cat /target-triplet)-gcc-14 ./configure --host="$(cat /target-triplet)" --disable-acl --without-selinux --disable-nls
+make -j2 sed/sed
+cp sed/sed /out/bin/sed
+printf '\n' >> /out/walg-static-libraries.status
+apt-cache show "sed:$TARGETARCH=4.9-2+deb13u1" >> /out/walg-static-libraries.status
+printf 'Status: install ok installed\n' >> /out/walg-static-libraries.status
+cp debian/copyright /out/licenses/sed
+rm -rf /var/lib/apt/lists/*
+SH
 
 FROM --platform=$BUILDPLATFORM ${GO_IMAGE} AS controller-builder
 ARG TARGETOS
 ARG TARGETARCH
-ARG GIT_TAG=v0.3.0-omdb.791
+ARG GIT_TAG=v0.3.0
 ARG GIT_COMMIT=unknown
 ENV GOTOOLCHAIN=local
 WORKDIR /src/plugin
@@ -116,10 +97,6 @@ COPY . .
 RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -mod=readonly -trimpath \
     -ldflags "-s -w -X github.com/wal-g/cnpg-plugin-wal-g/pkg/version.version=${GIT_TAG} -X github.com/wal-g/cnpg-plugin-wal-g/pkg/version.commitHash=${GIT_COMMIT}" \
     -o /out/cnpg-plugin-wal-g ./cmd/main.go
-
-# Export tests separately; never include test executables in the runtime image.
-FROM scratch AS build-artifacts
-COPY --from=walg-builder /out/ /
 
 FROM ${RUNTIME_IMAGE} AS runtime
 LABEL org.opencontainers.image.source=https://github.com/wal-g/cnpg-plugin-wal-g
