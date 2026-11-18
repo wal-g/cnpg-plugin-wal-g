@@ -824,6 +824,21 @@ var _ = Describe("RetentionController", func() {
 			}
 		})
 
+		It("should not delete backups of a read-only BackupConfig", func() {
+			backupConfig := createBackupConfig("source", "default", 0, "1d", false)
+			backupConfig.Spec.ReadOnly = true
+			backup := createBackup("backup-old", "default", testBackupOptions{
+				BackupConfigName: "source",
+				StartTime:        time.Now().Add(-48 * time.Hour),
+			})
+			fakeClient := setupFakeClient(backupConfig, &backup)
+			controller := &RetentionController{client: fakeClient, checkInterval: time.Hour}
+
+			controller.runBackupsRetentionCheck(ctx)
+
+			Expect(fakeClient.Get(ctx, client.ObjectKeyFromObject(&backup), &cnpgv1.Backup{})).To(Succeed())
+		})
+
 		It("should handle complex scenarios with overlapping retention policies", func() {
 			// Create two BackupConfigs with different retention policies but sharing a cluster
 			backupConfig1 := createBackupConfig("daily-backups", "shared-ns", 3, "2d", false)

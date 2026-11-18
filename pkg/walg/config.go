@@ -130,6 +130,14 @@ func (c *Client) newCmd(ctx context.Context, args ...string) cmd.Builder {
 		WithEnv(c.config.ToEnvMap())
 }
 
+func storagePrefix(prefix string, readOnly bool, pgMajorVersion int) string {
+	prefix = strings.TrimRight(prefix, "/")
+	if readOnly {
+		return prefix
+	}
+	return fmt.Sprintf("%s/%d", prefix, pgMajorVersion)
+}
+
 func NewConfigFromBackupConfig(backupConfig *v1beta1.BackupConfigWithSecrets, pgMajorVersion int) *Config {
 	config := NewConfigWithDefaults()
 
@@ -140,7 +148,7 @@ func NewConfigFromBackupConfig(backupConfig *v1beta1.BackupConfigWithSecrets, pg
 		config.AWSEndpoint = backupConfig.Spec.Storage.S3.ResolvedEndpointURL
 		config.AWSRegion = backupConfig.Spec.Storage.S3.ResolvedRegion
 		config.AWSS3ForcePathStyle = backupConfig.Spec.Storage.S3.ForcePathStyle
-		config.WaleS3Prefix = fmt.Sprintf("%s/%d", strings.TrimRight(backupConfig.Spec.Storage.S3.ResolvedPrefix, "/"), pgMajorVersion)
+		config.WaleS3Prefix = storagePrefix(backupConfig.Spec.Storage.S3.ResolvedPrefix, backupConfig.Spec.ReadOnly, pgMajorVersion)
 		config.WalgS3StorageClass = backupConfig.Spec.Storage.S3.StorageClass
 
 		// Handle custom CA certificate if provided
@@ -158,7 +166,7 @@ func NewConfigFromBackupConfig(backupConfig *v1beta1.BackupConfigWithSecrets, pg
 			}
 		}
 	case v1beta1.StorageTypeGCS:
-		config.WalgGSPrefix = fmt.Sprintf("%s/%d", strings.TrimRight(backupConfig.Spec.Storage.GCS.ResolvedPrefix, "/"), pgMajorVersion)
+		config.WalgGSPrefix = storagePrefix(backupConfig.Spec.Storage.GCS.ResolvedPrefix, backupConfig.Spec.ReadOnly, pgMajorVersion)
 
 		if backupConfig.Spec.Storage.GCS.CredentialsData != "" {
 			credentialsFilePath, err := ensureGCSCredentialsFile(

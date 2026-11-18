@@ -33,6 +33,10 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
 
+var backupPhasesWithoutData = []cnpgv1.BackupPhase{
+	"", cnpgv1.BackupPhasePending, cnpgv1.BackupPhaseFailed, cnpgv1.BackupPhaseWalArchivingFailing,
+}
+
 // BackupConfigReconciler reconciles a BackupConfig object
 type BackupConfigReconciler struct {
 	client.Client
@@ -80,6 +84,10 @@ func (r *BackupConfigReconciler) Reconcile(ctx context.Context, req ctrl.Request
 
 		// Check if there is at leas one Backup resource with OwnerReference matching current Backup
 		foundChildBackup := lo.ContainsBy(backupList.Items, func(b cnpgv1.Backup) bool {
+			// A read-only BackupConfig refuses backups, so one that failed or never started wrote nothing to the archive
+			if backupConfig.Spec.ReadOnly && lo.Contains(backupPhasesWithoutData, b.Status.Phase) {
+				return false
+			}
 			return lo.ContainsBy(b.OwnerReferences, func(owner metav1.OwnerReference) bool {
 				return owner.Kind == "BackupConfig" && owner.Name == backupConfig.Name
 			})

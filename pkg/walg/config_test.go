@@ -467,6 +467,25 @@ var _ = Describe("WAL-G Config Integration Tests", func() {
 			Expect(envMap["WALE_S3_PREFIX"]).To(Equal("s3://test-bucket/trailing-slash-prefix/16"))
 		})
 
+		It("should use ResolvedPrefix as is when readOnly is set", func() {
+			configWithSecrets := &v1beta1.BackupConfigWithSecrets{
+				Spec: v1beta1.BackupConfigSpecWithSecrets{
+					BackupConfigSpec: v1beta1.BackupConfigSpec{ReadOnly: true},
+					Storage: v1beta1.StorageConfigWithSecrets{
+						StorageConfig: v1beta1.StorageConfig{
+							StorageType: v1beta1.StorageTypeS3,
+						},
+						S3: &v1beta1.S3StorageConfigWithSecrets{
+							ResolvedPrefix: "s3://test-bucket/external-archive/",
+						},
+					},
+				},
+			}
+
+			walgConfig := NewConfigFromBackupConfig(configWithSecrets, 16)
+			Expect(walgConfig.ToEnvMap()["WALE_S3_PREFIX"]).To(Equal("s3://test-bucket/external-archive"))
+		})
+
 		It("should trim multiple trailing slashes in ResolvedPrefix", func() {
 			// Edge case: more than one trailing slash should also be trimmed.
 			backupConfig := &v1beta1.BackupConfig{
@@ -839,6 +858,25 @@ var _ = Describe("WAL-G Config Integration Tests", func() {
 
 			Expect(walgConfig.WalgGSPrefix).To(Equal("gs://test-bucket/trailing-slash-prefix/16"))
 			Expect(walgConfig.WalgGSPrefix).NotTo(ContainSubstring("//16"))
+		})
+
+		It("should use GCS ResolvedPrefix as is when readOnly is set", func() {
+			configWithSecrets := &v1beta1.BackupConfigWithSecrets{
+				Spec: v1beta1.BackupConfigSpecWithSecrets{
+					BackupConfigSpec: v1beta1.BackupConfigSpec{ReadOnly: true},
+					Storage: v1beta1.StorageConfigWithSecrets{
+						StorageConfig: v1beta1.StorageConfig{
+							StorageType: v1beta1.StorageTypeGCS,
+						},
+						GCS: &v1beta1.GCSStorageConfigWithSecrets{
+							ResolvedPrefix: "gs://test-bucket/external-archive/",
+						},
+					},
+				},
+			}
+
+			walgConfig := NewConfigFromBackupConfig(configWithSecrets, 16)
+			Expect(walgConfig.ToEnvMap()["WALG_GS_PREFIX"]).To(Equal("gs://test-bucket/external-archive"))
 		})
 	})
 })

@@ -302,8 +302,12 @@ func (c *BackupConfigStatusController) reconcileStatusByKey(
 		return err
 	}
 
-	// Check storage writability
-	c.checkStorageWritable(ctx, backupConfig, walgClient, logger)
+	// Check storage writability, skipped for a read-only source since the check uploads a test object
+	if backupConfig.Spec.ReadOnly {
+		meta.RemoveStatusCondition(&backupConfig.Status.Conditions, v1beta1.ConditionTypeStorageWritable)
+	} else {
+		c.checkStorageWritable(ctx, backupConfig, walgClient, logger)
+	}
 	// Hash resolved values too: Secret/ConfigMap changes need not change Generation.
 	configJSON, err := json.Marshal(backupConfigWithSecrets.Spec)
 	if err != nil {
@@ -492,6 +496,11 @@ func (c *BackupConfigStatusController) resolvePGVersions(
 	backupConfig *v1beta1.BackupConfig,
 	logger logr.Logger,
 ) []int {
+	if backupConfig.Spec.ReadOnly {
+		// All PG versions share one prefix, so scanning more than one would count the archive repeatedly
+		return []int{minKnownPGMajorVersion}
+	}
+
 	allVersions := make([]int, 0, maxKnownPGMajorVersion-minKnownPGMajorVersion+1)
 	for pgVersion := minKnownPGMajorVersion; pgVersion <= maxKnownPGMajorVersion; pgVersion++ {
 		allVersions = append(allVersions, pgVersion)

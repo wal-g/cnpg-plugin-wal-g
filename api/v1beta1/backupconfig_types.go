@@ -172,6 +172,13 @@ type BackupConfigSpec struct {
 	// Backups storage configuration
 	Storage StorageConfig `json:"storage"`
 
+	// Use the storage as a read-only source, e.g. an archive written by WAL-G running outside this plugin.
+	// The prefix is used as is, without appending /<PG major version>. Clusters can restore and fetch WALs from it,
+	// while WAL archiving and backups through it are refused. Retention and BackupConfig deletion never delete from it.
+	// Default: false.
+	// +optional
+	ReadOnly bool `json:"readOnly,omitempty"`
+
 	// Resources for wal-g sidecar configurations
 	//
 	// IMPORTANT: resource changes will NOT trigger auto-update on clusters
