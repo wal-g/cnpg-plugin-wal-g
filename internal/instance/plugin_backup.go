@@ -92,6 +92,9 @@ func (b BackupServiceImplementation) Backup(
 	if err != nil {
 		return nil, fmt.Errorf("backup request failed: %w", err)
 	}
+	if backupConfigWithSecrets.Spec.ReadOnly {
+		return nil, fmt.Errorf("backup request failed: BackupConfig %s is read-only", backupConfigWithSecrets.Name)
+	}
 
 	backupHumanName := fmt.Sprintf("backup-%v", pgTime.ToCompactISO8601(time.Now()))
 

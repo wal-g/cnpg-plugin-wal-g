@@ -95,6 +95,9 @@ func (w WALServiceImplementation) Archive(
 	if err != nil {
 		return nil, fmt.Errorf("failed to get backup config: %w", err)
 	}
+	if backupConfig.Spec.ReadOnly {
+		return nil, fmt.Errorf("WAL archiving refused: BackupConfig %s is read-only, set isWALArchiver to false in the cluster plugin configuration", backupConfig.Name)
+	}
 
 	walgClient := walg.NewClientFromBackupConfig(backupConfig, pgMajorVersion)
 	result, err := walgClient.WALPush(childrenCtx, request.SourceFileName)
