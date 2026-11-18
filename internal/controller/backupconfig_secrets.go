@@ -47,6 +47,13 @@ func getSecretReferencesFromBackupConfig(backupConfig *v1beta1.BackupConfig) []t
 			})
 		}
 
+		if s3.SessionTokenRef != nil {
+			secretRefs = append(secretRefs, types.NamespacedName{
+				Namespace: backupConfig.Namespace,
+				Name:      s3.SessionTokenRef.Name,
+			})
+		}
+
 		if s3.CustomCA != nil && s3.CustomCA.Kind == "Secret" {
 			secretRefs = append(secretRefs, types.NamespacedName{
 				Namespace: backupConfig.Namespace,

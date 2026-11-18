@@ -37,6 +37,7 @@ type Config struct {
 	AWSS3ForcePathStyle               bool   `json:"AWS_S3_FORCE_PATH_STYLE,omitempty"`
 	AWSRegion                         string `json:"AWS_REGION,omitempty"`
 	AWSSecretAccessKey                string `json:"AWS_SECRET_ACCESS_KEY,omitempty"`
+	AWSSessionToken                   string `json:"AWS_SESSION_TOKEN,omitempty"`
 	GoogleApplicationCredentials      string `json:"GOOGLE_APPLICATION_CREDENTIALS,omitempty"`
 	GoDebug                           string `json:"GODEBUG,omitempty"`
 	GoMaxProcs                        int    `json:"GOMAXPROCS,omitempty"`
@@ -126,6 +127,7 @@ func NewConfigFromBackupConfig(backupConfig *v1beta1.BackupConfigWithSecrets, pg
 	case v1beta1.StorageTypeS3:
 		config.AWSAccessKeyID = backupConfig.Spec.Storage.S3.AccessKeyID
 		config.AWSSecretAccessKey = backupConfig.Spec.Storage.S3.AccessKeySecret
+		config.AWSSessionToken = backupConfig.Spec.Storage.S3.SessionToken
 		config.AWSEndpoint = backupConfig.Spec.Storage.S3.ResolvedEndpointURL
 		config.AWSRegion = backupConfig.Spec.Storage.S3.ResolvedRegion
 		config.AWSS3ForcePathStyle = backupConfig.Spec.Storage.S3.ForcePathStyle
