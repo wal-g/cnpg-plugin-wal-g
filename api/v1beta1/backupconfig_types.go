@@ -90,6 +90,10 @@ type S3StorageConfig struct {
 
 	AccessKeyIDRef     *corev1.SecretKeySelector `json:"accessKeyId,omitempty"`
 	AccessKeySecretRef *corev1.SecretKeySelector `json:"accessKeySecret,omitempty"`
+
+	// Session token for temporary credentials (e.g. from an assumed role), passed to WAL-G as AWS_SESSION_TOKEN
+	// +optional
+	SessionTokenRef *corev1.SecretKeySelector `json:"sessionToken,omitempty"`
 }
 
 // CustomCAReference defines a reference to a custom CA certificate stored in a ConfigMap or Secret
