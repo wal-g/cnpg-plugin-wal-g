@@ -13,6 +13,7 @@ import (
 	"github.com/wal-g/cnpg-plugin-wal-g/api/v1beta1"
 	"github.com/wal-g/cnpg-plugin-wal-g/pkg/walg"
 	"golang.org/x/sync/semaphore"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -31,6 +32,16 @@ const (
 	// Timeout for resource cleanup, if exceeded - deletion process will be aborted and retried
 	// Needed to prevent stuck on deletion when incorrect BackupConfig / etc.
 	DeletionRequestTimeout time.Duration = 5 * time.Minute
+
+	// DeletionRetryInterval is how often a Backup that still has the cleanup finalizer is
+	// enqueued for deletion again, so a deletion that failed, timed out or was postponed
+	// (e.g. because of dependent backups) is retried instead of being left stuck.
+	DeletionRetryInterval time.Duration = DeletionRequestTimeout + time.Minute
+
+	// FinalizerUpdateTimeout bounds the API call that removes the cleanup finalizer once the
+	// physical backup is gone. It does not share DeletionRequestTimeout: a WAL-G deletion
+	// that uses up most of that timeout must still be able to remove the finalizer.
+	FinalizerUpdateTimeout time.Duration = 30 * time.Second
 )
 
 // DeletionRequest represents a request to delete a resource
@@ -203,7 +214,6 @@ func (b *BackupDeletionController) processDeletionQueue(
 			logger.Info("Processing deletion request", "type", request.Type, "key", request.Key)
 
 			ctxWithTimeout, cancel := context.WithTimeout(ctx, DeletionRequestTimeout)
-			defer cancel() // releases timeout resources if deletion completes before timeout elapses
 
 			var err error
 			switch request.Type {
@@ -215,6 +225,8 @@ func (b *BackupDeletionController) processDeletionQueue(
 			default:
 				err = fmt.Errorf("unknown resource type: %s", request.Type)
 			}
+
+			cancel() // release the timeout's resources now; a defer here would only run when the loop exits
 
 			if err != nil {
 				logger.Error(err, "Failed to process deletion request", "type", request.Type, "key", request.Key)
@@ -235,6 +247,9 @@ func (b *BackupDeletionController) deleteWALGBackup(ctx context.Context, backupK
 	logger.Info("Started processing wal-g backup deletion", "backup", backupKey)
 	backup := &cnpgv1.Backup{}
 	err = b.Get(ctx, backupKey, backup)
+	if apierrors.IsNotFound(err) {
+		return nil // already deleted, e.g. by an earlier request for the same Backup
+	}
 	if err != nil {
 		return fmt.Errorf("while getting backup %v: %w", backupKey, err)
 	}
@@ -310,7 +325,18 @@ func (b *BackupDeletionController) deleteWALGBackup(ctx context.Context, backupK
 		)
 	}
 
-	return removeBackupFinalizer(ctx, backup, b.Client)
+	// The physical backup is gone. Remove the finalizer with a context of its own: the
+	// deletion context may be about to expire after a long WAL-G run, and if this update
+	// fails the Backup stays in Terminating although nothing is left to clean up.
+	return removeBackupFinalizerDetached(ctx, backup, b.Client)
+}
+
+// removeBackupFinalizerDetached removes the cleanup finalizer using a fresh timeout that does not
+// inherit the caller's deadline or cancellation (only its values, such as the logger).
+func removeBackupFinalizerDetached(ctx context.Context, backup *cnpgv1.Backup, c client.Client) error {
+	finalizerCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), FinalizerUpdateTimeout)
+	defer cancel()
+	return removeBackupFinalizer(finalizerCtx, backup, c)
 }
 
 func removeBackupFinalizer(ctx context.Context, backup *cnpgv1.Backup, client client.Client) error {
