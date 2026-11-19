@@ -362,7 +362,3 @@ type BackupConfigList struct {
 	metav1.ListMeta `json:"metadata,omitempty"`
 	Items           []BackupConfig `json:"items"`
 }
-
-func init() {
-	SchemeBuilder.Register(&BackupConfig{}, &BackupConfigList{})
-}

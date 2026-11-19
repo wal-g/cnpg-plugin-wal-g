@@ -47,13 +47,15 @@ RUN make build && ./output/cnpg-plugin-wal-g version
 
 # Runtime image section
 #
-# Primary runtime image (using trixie-slim due to wal-g dynamic linked C dependencies)
-FROM docker.io/debian:trixie-slim AS runtime
+FROM docker.io/library/ubuntu:24.04 AS runtime
 LABEL org.opencontainers.image.source=https://github.com/wal-g/cnpg-plugin-wal-g
 LABEL org.opencontainers.image.description="CloudNativePG WAL-G Backup Plugin"
 LABEL org.opencontainers.image.licenses="Apache-2.0"
 
-RUN apt update && apt install -y ca-certificates curl procps && apt-get clean && rm -rf /var/lib/apt/lists/*
+RUN apt-get update \
+    && apt-get upgrade -y \
+    && apt-get install -y --no-install-recommends ca-certificates curl procps \
+    && rm -rf /var/lib/apt/lists/*
 RUN groupadd -o -g 26 postgres && useradd -ms /bin/bash -u 26 -g postgres postgres
 WORKDIR /home/postgres
 COPY --from=controller-builder --chmod=0755 /cnpg-plugin-wal-g/output/cnpg-plugin-wal-g /usr/local/bin/cnpg-plugin-wal-g
