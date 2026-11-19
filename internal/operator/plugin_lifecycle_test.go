@@ -510,6 +510,36 @@ var _ = Describe("LifecycleImplementation", func() {
 			Expect(foundPluginVolume).To(BeTrue())
 		})
 
+		It("should add a recovery-mode sidecar to the snapshot recovery job", func() {
+			job.Spec.Template.ObjectMeta.Labels["cnpg.io/jobRole"] = "snapshot-recovery"
+			job.Spec.Template.Spec.Containers[0].Name = "snapshot-recovery"
+
+			jobBytes, err := json.Marshal(job)
+			Expect(err).NotTo(HaveOccurred())
+			jobRequest.ObjectDefinition = jobBytes
+
+			result, err := lifecycleImpl.reconcileJob(ctx, testCluster, jobRequest)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result).NotTo(BeNil())
+
+			var ops []map[string]interface{}
+			Expect(json.Unmarshal(result.JsonPatch, &ops)).To(Succeed())
+			var sidecar corev1.Container
+			for _, op := range ops {
+				if op["path"] != "/spec/template/spec/initContainers" {
+					continue
+				}
+				raw, err := json.Marshal(op["value"])
+				Expect(err).NotTo(HaveOccurred())
+				var containers []corev1.Container
+				Expect(json.Unmarshal(raw, &containers)).To(Succeed())
+				Expect(containers).To(HaveLen(1))
+				sidecar = containers[0]
+			}
+			Expect(sidecar.Name).To(Equal("plugin-wal-g"))
+			Expect(sidecar.Args).To(Equal([]string{"instance", "--mode", "recovery"}))
+		})
+
 		It("should skip non-recovery jobs", func() {
 			// Change job role to something else
 			job.Spec.Template.ObjectMeta.Labels["cnpg.io/jobRole"] = "backup"
@@ -527,6 +557,37 @@ var _ = Describe("LifecycleImplementation", func() {
 	})
 
 	Describe("reconcilePodSpecWithPluginSidecar", func() {
+		It("should run the snapshot recovery sidecar in recovery mode with the job's env and mounts", func() {
+			podSpec := &corev1.PodSpec{
+				Containers: []corev1.Container{
+					{
+						Name: "snapshot-recovery",
+						Env: []corev1.EnvVar{
+							{Name: "PGDATA", Value: "/var/lib/postgresql/data/pgdata"},
+							{Name: "POD_NAME", Value: "test-pod"},
+						},
+						VolumeMounts: []corev1.VolumeMount{
+							{Name: "pgdata", MountPath: "/var/lib/postgresql/data"},
+						},
+					},
+				},
+			}
+
+			err := reconcilePodSpecWithPluginSidecar(testCluster, testBackupConfig, podSpec, "snapshot-recovery", nil)
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(podSpec.InitContainers).To(HaveLen(1))
+			sidecar := podSpec.InitContainers[0]
+			Expect(sidecar.Args).To(Equal([]string{"instance", "--mode", "recovery"}))
+			Expect(sidecar.Env).To(ContainElement(corev1.EnvVar{Name: "POD_NAME", Value: "test-pod"}))
+			Expect(sidecar.VolumeMounts).To(ContainElement(corev1.VolumeMount{
+				Name: "pgdata", MountPath: "/var/lib/postgresql/data",
+			}))
+			Expect(podSpec.Containers[0].VolumeMounts).To(ContainElement(corev1.VolumeMount{
+				Name: "plugins", MountPath: "/plugins",
+			}))
+		})
+
 		It("should add sidecar container with correct configuration", func() {
 			podSpec := &corev1.PodSpec{
 				Containers: []corev1.Container{
