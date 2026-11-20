@@ -251,6 +251,23 @@ var _ = Describe("BackupConfig Status Controller", func() {
 		Expect(s.calls.size).To(Equal(9))
 	})
 
+	It("should scan a read-only archive once and never check it for writes", func() {
+		Expect(s.reconcile()).To(Succeed())
+		Expect(getConditionStatus(s.config(), v1beta1.ConditionTypeStorageWritable)).To(Equal(metav1.ConditionTrue))
+
+		config := s.config()
+		config.Spec.ReadOnly = true
+		Expect(s.controller.client.Update(s.ctx, config)).To(Succeed())
+		*s.calls = statusWALCalls{}
+
+		Expect(s.reconcile()).To(Succeed())
+		Expect(s.calls.write).To(Equal(0))
+		Expect(s.calls.wal).To(Equal(1))
+		Expect(s.calls.backups).To(Equal(1))
+		Expect(s.calls.size).To(Equal(1))
+		Expect(getConditionStatus(s.config(), v1beta1.ConditionTypeStorageWritable)).To(BeEmpty())
+	})
+
 	DescribeTable("should scan all archives when Backup resources do not identify every version",
 		func(preserveArchives bool, unknownVersion *string) {
 			s.calls.walTimelines = map[int][]walg.WALTimelineInfo{

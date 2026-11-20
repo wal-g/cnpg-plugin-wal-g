@@ -96,6 +96,13 @@ spec:
                       Use "none" or leave empty to disable encryption.
                     type: string
                 type: object
+              readOnly:
+                description: |-
+                  Use the storage as a read-only source, e.g. an archive written by WAL-G running outside this plugin.
+                  The prefix is used as is, without appending /<PG major version>. Clusters can restore and fetch WALs from it,
+                  while WAL archiving and backups through it are refused. Retention and BackupConfig deletion never delete from it.
+                  Default: false.
+                type: boolean
               resources:
                 description: |-
                   Resources for wal-g sidecar configurations
