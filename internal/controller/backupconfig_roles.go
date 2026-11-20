@@ -105,6 +105,10 @@ func collectSecretsAndConfigMapsNamesFromBackupConfig(config *v1beta1.BackupConf
 			s3Config.AccessKeySecretRef.Name,
 		)
 
+		if s3Config.SessionTokenRef != nil {
+			usedSecretNames = append(usedSecretNames, s3Config.SessionTokenRef.Name)
+		}
+
 		if s3Config.PrefixFrom != nil {
 			if s3Config.PrefixFrom.SecretKeyRef != nil {
 				usedSecretNames = append(usedSecretNames, s3Config.PrefixFrom.SecretKeyRef.Name)
