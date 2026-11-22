@@ -26,7 +26,6 @@ import (
 	"slices"
 	"strconv"
 	"strings"
-	"sync"
 
 	"github.com/spf13/viper"
 	"github.com/wal-g/cnpg-plugin-wal-g/api/v1beta1"
@@ -122,48 +121,13 @@ func (c *Client) Config() *Config {
 	return c.config
 }
 
-// newCmd returns a wal-g invocation with the client's configuration in its
-// environment.
-//
-// Unless --config names a file, wal-g looks for ~/.walg and resolves the home
-// directory with user.Current(), which exits fatally when the process's uid has
-// no passwd entry. The sidecar runs as the Cluster's postgresUID, which the
-// image does not have to know (timescale/timescaledb-ha uses 1000), so --config
-// points at an empty file. The configuration itself stays in the environment.
+// The image ships an empty config so WAL-G can use the client's environment
+// without looking up a home directory for the cluster's postgresUID.
 func (c *Client) newCmd(ctx context.Context, args ...string) cmd.Builder {
-	if path := emptyConfigFile(); path != "" {
-		args = append([]string{"--config", path}, args...)
-	}
+	args = append([]string{"--config", "/etc/wal-g/empty.json"}, args...)
 	return cmd.New("wal-g", args...).
 		WithContext(ctx).
 		WithEnv(c.config.ToEnvMap())
-}
-
-var (
-	emptyConfigOnce sync.Once
-	emptyConfigPath string
-)
-
-// emptyConfigFile returns the path of an empty wal-g configuration file, created
-// once per process in the temporary directory, or "" if it could not be created;
-// wal-g then falls back to looking for ~/.walg.
-func emptyConfigFile() string {
-	emptyConfigOnce.Do(func() {
-		f, err := os.CreateTemp("", "wal-g-config-*.json")
-		if err != nil {
-			return
-		}
-		_, err = f.WriteString("{}")
-		if closeErr := f.Close(); err == nil {
-			err = closeErr
-		}
-		if err != nil {
-			_ = os.Remove(f.Name())
-			return
-		}
-		emptyConfigPath = f.Name()
-	})
-	return emptyConfigPath
 }
 
 func NewConfigFromBackupConfig(backupConfig *v1beta1.BackupConfigWithSecrets, pgMajorVersion int) *Config {

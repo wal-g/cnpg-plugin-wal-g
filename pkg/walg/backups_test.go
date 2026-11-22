@@ -162,6 +162,7 @@ esac
 `), 0700)).To(Succeed())
 		GinkgoT().Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
 		GinkgoT().Setenv("WALG_TEST_DIR", dir)
+		GinkgoT().Setenv("TMPDIR", filepath.Join(dir, "missing"))
 	})
 
 	type testCase struct {
@@ -187,11 +188,11 @@ esac
 			}
 			calls, readErr := os.ReadFile(filepath.Join(dir, "calls"))
 			Expect(readErr).NotTo(HaveOccurred())
-			config := "--config\x00" + emptyConfigFile() + "\x00"
+			const configArgs = "--config\x00/etc/wal-g/empty.json\x00"
 			Expect(string(calls)).To(Equal(
-				config + "backup-mark\x00-i\x00" + backupName + "\x00\n" +
-					config + "delete\x00target\x00" + backupName + "\x00--confirm\x00\n" +
-					config + "delete\x00garbage\x00--confirm\x00\n",
+				configArgs + "backup-mark\x00-i\x00" + backupName + "\x00\n" +
+					configArgs + "delete\x00target\x00" + backupName + "\x00--confirm\x00\n" +
+					configArgs + "delete\x00garbage\x00--confirm\x00\n",
 			))
 			if (tc.unmarkError != "" && tc.unmarkError != missingMetadata) || tc.gcError != "" {
 				Expect(logs.String()).To(ContainSubstring(`"level":"error"`))
