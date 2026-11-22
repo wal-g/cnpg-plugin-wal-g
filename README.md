@@ -22,7 +22,7 @@ This plugin adds backup and restore functionality to [CloudNativePG](https://clo
 
 - [x] S3-compatible storage support (AWS S3, MinIO)
 - [x] Google Cloud Storage (GCS) support
-- [ ] Azure (currently not planned, need community support)
+- [x] Azure Blob Storage support (access key, SAS token, or Workload/Managed Identity)
 
 #### Lifecycle
 

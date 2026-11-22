@@ -39,6 +39,11 @@ type Config struct {
 	AWSS3ForcePathStyle               bool   `json:"AWS_S3_FORCE_PATH_STYLE,omitempty"`
 	AWSRegion                         string `json:"AWS_REGION,omitempty"`
 	AWSSecretAccessKey                string `json:"AWS_SECRET_ACCESS_KEY,omitempty"`
+	AzureEndpointSuffix               string `json:"AZURE_ENDPOINT_SUFFIX,omitempty"`
+	AzureEnvironmentName              string `json:"AZURE_ENVIRONMENT_NAME,omitempty"`
+	AzureStorageAccessKey             string `json:"AZURE_STORAGE_ACCESS_KEY,omitempty"`
+	AzureStorageAccount               string `json:"AZURE_STORAGE_ACCOUNT,omitempty"`
+	AzureStorageSasToken              string `json:"AZURE_STORAGE_SAS_TOKEN,omitempty"`
 	GoogleApplicationCredentials      string `json:"GOOGLE_APPLICATION_CREDENTIALS,omitempty"`
 	GoDebug                           string `json:"GODEBUG,omitempty"`
 	GoMaxProcs                        int    `json:"GOMAXPROCS,omitempty"`
@@ -47,6 +52,7 @@ type Config struct {
 	S3LogLevel                        string `json:"S3_LOG_LEVEL,omitempty"`
 	TotalBgUploadedLimit              int    `json:"TOTAL_BG_UPLOADED_LIMIT,omitempty"`
 	WaleGPGKeyID                      string `json:"WALE_GPG_KEY_ID,omitempty"`
+	WalgAzPrefix                      string `json:"WALG_AZ_PREFIX,omitempty"`
 	WalgGSPrefix                      string `json:"WALG_GS_PREFIX,omitempty"`
 	WaleS3Prefix                      string `json:"WALE_S3_PREFIX,omitempty"`
 	WalgAliveCheckInterval            string `json:"WALG_ALIVE_CHECK_INTERVAL,omitempty"`
@@ -172,6 +178,15 @@ func NewConfigFromBackupConfig(backupConfig *v1beta1.BackupConfigWithSecrets, pg
 				config.GoogleApplicationCredentials = credentialsFilePath
 			}
 		}
+	case v1beta1.StorageTypeAzure:
+		azure := backupConfig.Spec.Storage.Azure
+		config.WalgAzPrefix = fmt.Sprintf("%s/%d", strings.TrimRight(azure.ResolvedPrefix, "/"), pgMajorVersion)
+		config.AzureStorageAccount = azure.ResolvedStorageAccount
+		// wal-g picks auth by precedence: access key, then SAS token, then DefaultAzureCredential
+		config.AzureStorageAccessKey = azure.AccessKey
+		config.AzureStorageSasToken = azure.SASToken
+		config.AzureEnvironmentName = azure.EnvironmentName
+		config.AzureEndpointSuffix = azure.EndpointSuffix
 	}
 
 	// Configure encryption if enabled

@@ -43,6 +43,18 @@ podAnnotations: {}
 # For more information checkout: https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/
 podLabels: {}
 
+serviceAccount:
+  # Annotations to add to the controller-manager ServiceAccount.
+  # The controller-manager runs wal-g itself (retention, backup deletion, storage status checks),
+  # so keyless cloud auth must be configured here as well as on the CNPG Cluster.
+  # Example for Azure Workload Identity (also set podLabels: {azure.workload.identity/use: "true"}):
+  #   azure.workload.identity/client-id: <MANAGED_IDENTITY_CLIENT_ID>
+  # Example for GKE Workload Identity:
+  #   iam.gke.io/gcp-service-account: <GSA_NAME>@<PROJECT_ID>.iam.gserviceaccount.com
+  # Example for AWS IRSA:
+  #   eks.amazonaws.com/role-arn: arn:aws:iam::<ACCOUNT_ID>:role/<ROLE_NAME>
+  annotations: {}
+
 podSecurityContext:
   runAsNonRoot: true
   seccompProfile:

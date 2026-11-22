@@ -5,7 +5,7 @@ metadata:
 spec:
   deltaMaxSteps: 7 # How many incremental backups can be created before creating new full backup (optional, default: 0)
   storage:
-    type: gcs # Type of storage (s3 or gcs)
+    type: gcs # Type of storage (s3, gcs or azure)
     gcs:      # GCS storage configuration
       prefix: gs://<GCS_BUCKET_NAME>/<GCS_PREFIX_NAME>
       credentialsSecretRef: # Optional: omit to use Application Default Credentials (e.g. GKE Workload Identity)

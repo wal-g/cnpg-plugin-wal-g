@@ -1,0 +1,35 @@
+apiVersion: cnpg-extensions.yandex.cloud/v1beta1
+kind: BackupConfig
+metadata:
+  name: example-backup-config
+spec:
+  deltaMaxSteps: 7 # How many incremental backups can be created before creating new full backup (optional, default: 0)
+  storage:
+    type: azure # Type of storage (s3, gcs or azure)
+    azure:      # Azure Blob Storage configuration
+      prefix: azure://<CONTAINER_NAME>/<PREFIX_NAME> # Prefix for backups, should be unique among any other BackupConfig
+      storageAccount: <STORAGE_ACCOUNT_NAME>         # Can also be taken from Secret/ConfigMap via "storageAccountFrom"
+      # Authentication: set at most one of "accessKey" or "sasToken".
+      # Omit both to use DefaultAzureCredential (e.g. AKS Workload Identity or Managed Identity),
+      # see notes in `cnpg-cluster.yaml` next to this file.
+      accessKey:
+        name: azure-connection-settings
+        key: accessKey
+      # sasToken:
+      #   name: azure-connection-settings
+      #   key: sasToken
+      # environmentName: AzurePublicCloud # Optional: AzurePublicCloud (default), AzureUSGovernmentCloud, AzureChinaCloud, AzureGermanCloud
+      # endpointSuffix: core.windows.net  # Optional: overrides environmentName
+  retention: # Retention config explained at `cnpg-plugin-wal-g/config/samples/new-cluster/backup-config.yaml`
+    ignoreForManualBackups: true
+    minBackupsToKeep: 5
+    deleteBackupsAfter: 1d
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: azure-connection-settings
+type: Opaque
+stringData:
+  accessKey: <STORAGE_ACCOUNT_ACCESS_KEY>
+  # sasToken: <SAS_TOKEN>

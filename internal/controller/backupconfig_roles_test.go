@@ -512,6 +512,72 @@ var _ = Describe("BackupConfig RBAC", func() {
 			secretRule := role.Rules[2]
 			Expect(secretRule.ResourceNames).To(BeEmpty())
 		})
+
+		It("should include permissions for Azure credentials and ValueFromSource references", func() {
+			backupConfigs := []v1beta1.BackupConfig{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "test-backup-config",
+						Namespace: "test-namespace",
+					},
+					Spec: v1beta1.BackupConfigSpec{
+						Storage: v1beta1.StorageConfig{
+							StorageType: v1beta1.StorageTypeAzure,
+							Azure: &v1beta1.AzureStorageConfig{
+								PrefixFrom: &v1beta1.ValueFromSource{
+									ConfigMapKeyRef: &corev1.ConfigMapKeySelector{
+										LocalObjectReference: corev1.LocalObjectReference{Name: "azure-config-cm"},
+										Key:                  "prefix",
+									},
+								},
+								StorageAccountFrom: &v1beta1.ValueFromSource{
+									SecretKeyRef: &corev1.SecretKeySelector{
+										LocalObjectReference: corev1.LocalObjectReference{Name: "azure-config-secret"},
+										Key:                  "storageAccount",
+									},
+								},
+								SASTokenRef: &corev1.SecretKeySelector{
+									LocalObjectReference: corev1.LocalObjectReference{Name: "azure-credentials"},
+									Key:                  "sasToken",
+								},
+							},
+						},
+					},
+				},
+			}
+
+			BuildRoleForBackupConfigs(role, cluster, backupConfigs)
+
+			secretRule := role.Rules[2]
+			Expect(secretRule.ResourceNames).To(ConsistOf("azure-config-secret", "azure-credentials"))
+			configMapRule := role.Rules[3]
+			Expect(configMapRule.ResourceNames).To(ConsistOf("azure-config-cm"))
+		})
+
+		It("should not require Azure secrets when relying on DefaultAzureCredential", func() {
+			backupConfigs := []v1beta1.BackupConfig{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "test-backup-config",
+						Namespace: "test-namespace",
+					},
+					Spec: v1beta1.BackupConfigSpec{
+						Storage: v1beta1.StorageConfig{
+							StorageType: v1beta1.StorageTypeAzure,
+							Azure: &v1beta1.AzureStorageConfig{
+								Prefix:         "azure://test-container/prefix",
+								StorageAccount: "account",
+							},
+						},
+					},
+				},
+			}
+
+			BuildRoleForBackupConfigs(role, cluster, backupConfigs)
+
+			secretRule := role.Rules[2]
+			Expect(secretRule.ResourceNames).To(BeEmpty())
+		})
 	})
 
 	Context("BuildRoleBindingForBackupConfig", func() {

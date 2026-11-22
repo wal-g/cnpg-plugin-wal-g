@@ -63,6 +63,19 @@ func getSecretReferencesFromBackupConfig(backupConfig *v1beta1.BackupConfig) []t
 		})
 	}
 
+	// Add Azure storage credentials if they exist
+	if backupConfig.Spec.Storage.Azure != nil {
+		azure := backupConfig.Spec.Storage.Azure
+		for _, ref := range []*corev1.SecretKeySelector{azure.AccessKeyRef, azure.SASTokenRef} {
+			if ref != nil {
+				secretRefs = append(secretRefs, types.NamespacedName{
+					Namespace: backupConfig.Namespace,
+					Name:      ref.Name,
+				})
+			}
+		}
+	}
+
 	// Add encryption secret if it exists
 	if backupConfig.Spec.Encryption.Method != "" && backupConfig.Spec.Encryption.Method != "none" {
 		secretRefs = append(secretRefs, types.NamespacedName{
