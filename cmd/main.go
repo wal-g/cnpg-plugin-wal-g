@@ -52,6 +52,7 @@ func main() {
 		cmd.NewInstanceSubcommand(),
 		cmd.NewOperatorCmd(),
 		cmd.NewDumpConfigCmd(),
+		cmd.NewHealthcheckCmd(),
 		cmd.NewVersionCmd(),
 	)
 
