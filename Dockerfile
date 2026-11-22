@@ -58,6 +58,9 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 RUN groupadd -o -g 26 postgres && useradd -ms /bin/bash -u 26 -g postgres postgres
 WORKDIR /home/postgres
+RUN install -d -m 0755 /etc/wal-g && \
+    printf '{}\n' > /etc/wal-g/empty.json && \
+    chmod 0444 /etc/wal-g/empty.json
 COPY --from=controller-builder --chmod=0755 /cnpg-plugin-wal-g/output/cnpg-plugin-wal-g /usr/local/bin/cnpg-plugin-wal-g
 COPY --from=walg-builder /wal-g /usr/local/bin/wal-g
 # Using same user as postgres user in postgresql instances to be able to manage files in PGDATA

@@ -152,6 +152,7 @@ var _ = Describe("DeleteBackup", func() {
 		Expect(os.WriteFile(filepath.Join(dir, "wal-g"), []byte(`#!/bin/sh
 printf '%s\000' "$@" >> "$WALG_TEST_DIR/calls"
 printf '\n' >> "$WALG_TEST_DIR/calls"
+if [ "$1" = --config ]; then shift 2; fi
 case "$1 $2" in
   'backup-mark -i') printf '%s' "$WALG_TEST_UNMARK_ERROR" >&2; test -z "$WALG_TEST_UNMARK_ERROR" ;;
   'delete target') printf '%s' "$WALG_TEST_DELETE_ERROR" >&2; test -z "$WALG_TEST_DELETE_ERROR" ;;
@@ -161,6 +162,7 @@ esac
 `), 0700)).To(Succeed())
 		GinkgoT().Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
 		GinkgoT().Setenv("WALG_TEST_DIR", dir)
+		GinkgoT().Setenv("TMPDIR", filepath.Join(dir, "missing"))
 	})
 
 	type testCase struct {
@@ -186,10 +188,11 @@ esac
 			}
 			calls, readErr := os.ReadFile(filepath.Join(dir, "calls"))
 			Expect(readErr).NotTo(HaveOccurred())
+			const configArgs = "--config\x00/etc/wal-g/empty.json\x00"
 			Expect(string(calls)).To(Equal(
-				"backup-mark\x00-i\x00" + backupName + "\x00\n" +
-					"delete\x00target\x00" + backupName + "\x00--confirm\x00\n" +
-					"delete\x00garbage\x00--confirm\x00\n",
+				configArgs + "backup-mark\x00-i\x00" + backupName + "\x00\n" +
+					configArgs + "delete\x00target\x00" + backupName + "\x00--confirm\x00\n" +
+					configArgs + "delete\x00garbage\x00--confirm\x00\n",
 			))
 			if (tc.unmarkError != "" && tc.unmarkError != missingMetadata) || tc.gcError != "" {
 				Expect(logs.String()).To(ContainSubstring(`"level":"error"`))

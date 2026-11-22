@@ -17,6 +17,7 @@ limitations under the License.
 package walg
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
@@ -28,6 +29,7 @@ import (
 
 	"github.com/spf13/viper"
 	"github.com/wal-g/cnpg-plugin-wal-g/api/v1beta1"
+	"github.com/wal-g/cnpg-plugin-wal-g/internal/util/cmd"
 )
 
 type Config struct {
@@ -117,6 +119,15 @@ func NewClientFromBackupConfig(backupConfig *v1beta1.BackupConfigWithSecrets, pg
 // Config returns the underlying Config held by this Client.
 func (c *Client) Config() *Config {
 	return c.config
+}
+
+// The image ships an empty config so WAL-G can use the client's environment
+// without looking up a home directory for the cluster's postgresUID.
+func (c *Client) newCmd(ctx context.Context, args ...string) cmd.Builder {
+	args = append([]string{"--config", "/etc/wal-g/empty.json"}, args...)
+	return cmd.New("wal-g", args...).
+		WithContext(ctx).
+		WithEnv(c.config.ToEnvMap())
 }
 
 func NewConfigFromBackupConfig(backupConfig *v1beta1.BackupConfigWithSecrets, pgMajorVersion int) *Config {
