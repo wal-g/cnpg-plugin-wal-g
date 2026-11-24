@@ -305,6 +305,45 @@ var _ = Describe("BackupConfig RBAC", func() {
 			))
 		})
 
+		It("should include permissions for the S3 session token secret", func() {
+			backupConfigs := []v1beta1.BackupConfig{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "test-backup-config",
+						Namespace: "test-namespace",
+					},
+					Spec: v1beta1.BackupConfigSpec{
+						Storage: v1beta1.StorageConfig{
+							StorageType: v1beta1.StorageTypeS3,
+							S3: &v1beta1.S3StorageConfig{
+								Prefix: "s3://test-bucket/prefix",
+								AccessKeyIDRef: &corev1.SecretKeySelector{
+									LocalObjectReference: corev1.LocalObjectReference{Name: "s3-credentials"},
+									Key:                  "access-key",
+								},
+								AccessKeySecretRef: &corev1.SecretKeySelector{
+									LocalObjectReference: corev1.LocalObjectReference{Name: "s3-credentials"},
+									Key:                  "secret-key",
+								},
+								SessionTokenRef: &corev1.SecretKeySelector{
+									LocalObjectReference: corev1.LocalObjectReference{Name: "s3-session-token"},
+									Key:                  "token",
+								},
+							},
+						},
+					},
+				},
+			}
+
+			BuildRoleForBackupConfigs(role, cluster, backupConfigs)
+
+			secretRule := role.Rules[2]
+			Expect(secretRule.ResourceNames).To(ContainElements(
+				"s3-credentials",
+				"s3-session-token",
+			))
+		})
+
 		It("should include permissions for encryption secrets", func() {
 			backupConfigs := []v1beta1.BackupConfig{
 				{
