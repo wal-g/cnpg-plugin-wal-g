@@ -18,12 +18,15 @@ package controller
 
 import (
 	"context"
+	"time"
 
+	cnpgv1 "github.com/cloudnative-pg/cloudnative-pg/api/v1"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	v1beta1 "github.com/wal-g/cnpg-plugin-wal-g/api/v1beta1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/types"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -295,4 +298,34 @@ var _ = Describe("BackupConfig Controller", func() {
 			Expect(k8sClient.Delete(ctx, resourceNormal)).To(Succeed())
 		})
 	})
+})
+
+var _ = Describe("BackupConfig deletion with dependent Backups", func() {
+	DescribeTable("blocking on a dependent Backup",
+		func(readOnly bool, phase string, blocked bool) {
+			now := metav1.Now()
+			backupConfig := createBackupConfig("source", "default", 0, "", false)
+			backupConfig.Spec.ReadOnly = readOnly
+			backupConfig.Finalizers = []string{v1beta1.BackupConfigFinalizerName}
+			backupConfig.DeletionTimestamp = &now
+			backup := &cnpgv1.Backup{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:            "backup",
+					Namespace:       "default",
+					OwnerReferences: []metav1.OwnerReference{{Kind: "BackupConfig", Name: "source"}},
+				},
+				Status: cnpgv1.BackupStatus{Phase: cnpgv1.BackupPhase(phase)},
+			}
+			fakeClient := setupFakeClient(backupConfig, backup)
+			reconciler := &BackupConfigReconciler{Client: fakeClient, BackupDeletionController: NewBackupDeletionController(fakeClient)}
+
+			result, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: client.ObjectKeyFromObject(backupConfig)})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.RequeueAfter == 30*time.Second).To(Equal(blocked))
+		},
+		Entry("read-only, failed", true, cnpgv1.BackupPhaseFailed, false),
+		Entry("read-only, never started", true, "", false),
+		Entry("read-only, completed", true, cnpgv1.BackupPhaseCompleted, true),
+		Entry("writable, failed", false, cnpgv1.BackupPhaseFailed, true),
+	)
 })

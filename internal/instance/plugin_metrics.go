@@ -180,7 +180,7 @@ func (m MetricsServerImplementation) Collect(
 		}
 	}
 
-	return &metrics.CollectMetricsResult{
+	result := &metrics.CollectMetricsResult{
 		Metrics: []*metrics.CollectMetric{
 			{
 				FqName: firstRecoverabilityPointMetricName,
@@ -210,10 +210,15 @@ func (m MetricsServerImplementation) Collect(
 				FqName: s3ReadAvailabilityMetricName,
 				Value:  s3ReadAvailability,
 			},
-			{
-				FqName: s3WriteAvailabilityMetricName,
-				Value:  s3WriteAvailability,
-			},
 		},
-	}, nil
+	}
+
+	// A read-only BackupConfig is never probed for writes, so a zero here would read as an outage
+	if !backupConfig.Spec.ReadOnly {
+		result.Metrics = append(result.Metrics, &metrics.CollectMetric{
+			FqName: s3WriteAvailabilityMetricName,
+			Value:  s3WriteAvailability,
+		})
+	}
+	return result, nil
 }

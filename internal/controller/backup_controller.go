@@ -81,7 +81,8 @@ func (r *BackupReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 	// Backup is being deleted - need to reconcile related backups annotations and to remove physical wal-g backup
 	if !backup.DeletionTimestamp.IsZero() {
 		// If backup has dependents or is dependent, then its deletion requires to update annotations
-		if err := r.reconcileRelatedBackupsMetadata(ctx, backup); err != nil {
+		// A gone BackupConfig must not block deletion: the deletion controller then only drops the finalizer
+		if err := r.reconcileRelatedBackupsMetadata(ctx, backup); err != nil && !apierrors.IsNotFound(err) {
 			return ctrl.Result{}, err
 		}
 
@@ -240,7 +241,7 @@ func (r *BackupReconciler) reconcileBackupPermanence(ctx context.Context, backup
 	// We assume that all backups passed there are owned by BackupConfig,
 	// so it is enough to check that there's only 1 OwnerReference
 	backupIsManual := len(backup.OwnerReferences) == 1
-	if backupIsManual {
+	if backupIsManual && !backupConfigWithSecrets.Spec.ReadOnly {
 		err = walg.NewClientFromBackupConfig(backupConfigWithSecrets, pgVersion).MarkBackupPermanent(ctx, backup.Status.BackupID)
 	}
 

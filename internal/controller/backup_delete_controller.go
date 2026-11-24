@@ -293,7 +293,7 @@ func (b *BackupDeletionController) deleteWALGBackup(ctx context.Context, backupK
 	}
 
 	// Check if deletion management is disabled for individual backups
-	if backupConfigWithSecrets.Spec.Retention.IgnoreForBackupDeletion {
+	if backupConfigWithSecrets.Spec.Retention.IgnoreForBackupDeletion || backupConfigWithSecrets.Spec.ReadOnly {
 		logger.Info("Deletion management disabled for individual backups, skipping storage cleanup", "backupID", backup.Status.BackupID)
 		return removeBackupFinalizer(ctx, backup, b.Client)
 	}
@@ -340,7 +340,7 @@ func (b *BackupDeletionController) deleteBackupConfig(ctx context.Context, backu
 	})
 
 	// Check if deletion management is disabled for BackupConfig
-	if backupConfig.Spec.Retention.IgnoreForBackupConfigDeletion {
+	if backupConfig.Spec.Retention.IgnoreForBackupConfigDeletion || backupConfig.Spec.ReadOnly {
 		logger.Info("Deletion management disabled for BackupConfig, skipping storage cleanup", "backupConfig", backupConfigKey)
 	} else if writableCondFound && writableCondition.Status == metav1.ConditionFalse {
 		logger.Info("Skipping BackupConfig storage cleanup because storage is inaccessible", "backupConfig", backupConfigKey)

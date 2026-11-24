@@ -467,6 +467,28 @@ var _ = Describe("MetricsServerImplementation", func() {
 				}
 			})
 
+			It("should not report write availability for a read-only BackupConfig", func() {
+				backupConfig.Spec.ReadOnly = true
+				backupConfig.Status.Conditions = []metav1.Condition{
+					{
+						Type:   v1beta1.ConditionTypeStorageReadable,
+						Status: metav1.ConditionTrue,
+					},
+				}
+
+				fakeClient := setupFakeClientForMetrics(backupConfig, cluster)
+				metricsServer = MetricsServerImplementation{Client: fakeClient}
+
+				clusterJSON, err := json.Marshal(cluster)
+				Expect(err).NotTo(HaveOccurred())
+
+				result, err := metricsServer.Collect(ctx, &metrics.CollectMetricsRequest{ClusterDefinition: clusterJSON})
+
+				Expect(err).NotTo(HaveOccurred())
+				Expect(result.Metrics).To(ContainElement(HaveField("FqName", s3ReadAvailabilityMetricName)))
+				Expect(result.Metrics).NotTo(ContainElement(HaveField("FqName", s3WriteAvailabilityMetricName)))
+			})
+
 			It("should return zero when storage conditions are not set", func() {
 				backupConfig.Status.Conditions = []metav1.Condition{}
 

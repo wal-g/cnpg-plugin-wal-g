@@ -80,6 +80,11 @@ func (r *RetentionController) runBackupsRetentionCheck(ctx context.Context) {
 			continue
 		}
 
+		if backupConfig.Spec.ReadOnly {
+			backupConfigLogger.Info("BackupConfig is read-only, skipping retention")
+			continue
+		}
+
 		// Process the BackupConfig
 		if err := r.runRetentionForBackupConfig(logr.NewContext(ctx, backupConfigLogger), backupConfig); err != nil {
 			backupConfigLogger.Error(err, "Failed to process BackupConfig")

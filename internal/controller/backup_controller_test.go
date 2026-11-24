@@ -26,6 +26,7 @@ import (
 	"github.com/wal-g/cnpg-plugin-wal-g/internal/common"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -629,7 +630,37 @@ var _ = Describe("BackupReconciler", func() {
 		})
 	})
 
+	Describe("reconcileBackupPermanence", func() {
+		It("should not mark a manual backup permanent when its BackupConfig is read-only", func() {
+			cluster := createTestCluster("test-cluster", "default")
+			backupConfig, s3Secret := createTestBackupConfig("test-backupconfig", "default")
+			backupConfig.Spec.ReadOnly = true
+			backup := createTestBackup("test-backup", "default", "test-cluster", "base_000000010000000100000001", true)
+			backup.Status.Phase = cnpgv1.BackupPhaseCompleted
+			backup.Labels[v1beta1.BackupPgVersionLabelName] = "14"
+
+			reconciler = &BackupReconciler{Client: setupFakeBackupClient(cluster, backupConfig, s3Secret, backup)}
+
+			// wal-g is not installed in tests, so running backup-mark would fail
+			Expect(reconciler.reconcileBackupPermanence(testCtx, backup)).To(Succeed())
+		})
+	})
+
 	Describe("Deletion Management", func() {
+		It("should remove the finalizer of a deleted backup whose BackupConfig is gone", func() {
+			backup := createTestBackup("test-backup", "default", "test-cluster", "base_000000010000000100000001", true)
+			backup.Finalizers = []string{v1beta1.BackupFinalizerName}
+			backup.DeletionTimestamp = ptr.To(metav1.Now())
+			fakeClient := setupFakeBackupClient(createTestCluster("test-cluster", "default"), backup)
+			reconciler = &BackupReconciler{Client: fakeClient, DeletionController: NewBackupDeletionController(fakeClient)}
+
+			_, err := reconciler.Reconcile(testCtx, reconcile.Request{NamespacedName: client.ObjectKeyFromObject(backup)})
+			Expect(err).NotTo(HaveOccurred())
+
+			err = fakeClient.Get(testCtx, client.ObjectKeyFromObject(backup), &cnpgv1.Backup{})
+			Expect(apierrors.IsNotFound(err)).To(BeTrue())
+		})
+
 		It("should not add finalizer when ignoreForBackupDeletion is true", func() {
 			// Create test objects
 			cluster := createTestCluster("test-cluster", "default")

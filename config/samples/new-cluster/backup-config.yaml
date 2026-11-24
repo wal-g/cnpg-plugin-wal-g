@@ -5,6 +5,7 @@ metadata:
 spec:
   downloadFileRetries: 15  # How many times retry if storage is unavailable (optional, default: 15)
   deltaMaxSteps: 7 # How many incremental backups can be created before creating new full backup (optional, default: 0)
+  readOnly: false  # Set to true to only restore from this storage, e.g. an archive written outside this plugin (optional, default: false)
   storage:
     type: s3  # Type of storage (s3 or gcs)
     s3:       # S3 storage configuration
