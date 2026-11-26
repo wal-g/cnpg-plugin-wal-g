@@ -45,11 +45,22 @@ type GCSStorageConfigWithSecrets struct {
 	ResolvedPrefix string // Resolved value from Prefix or PrefixFrom
 }
 
+// AzureStorageConfigWithSecrets defines Azure-specific configuration with embedded secrets data
+type AzureStorageConfigWithSecrets struct {
+	AzureStorageConfig
+	AccessKey string // Storage account access key, empty if not using Shared Key auth
+	SASToken  string // SAS token, empty if not using SAS auth
+	// Resolved values from references
+	ResolvedPrefix         string // Resolved value from Prefix or PrefixFrom
+	ResolvedStorageAccount string // Resolved value from StorageAccount or StorageAccountFrom
+}
+
 // storageConfigWithSecrets defines object storage configuration extended with secrets data
 type StorageConfigWithSecrets struct {
 	StorageConfig
-	S3  *S3StorageConfigWithSecrets  `json:"s3,omitempty"`  // S3-specific parameters
-	GCS *GCSStorageConfigWithSecrets `json:"gcs,omitempty"` // GCS-specific parameters
+	S3    *S3StorageConfigWithSecrets    `json:"s3,omitempty"`    // S3-specific parameters
+	GCS   *GCSStorageConfigWithSecrets   `json:"gcs,omitempty"`   // GCS-specific parameters
+	Azure *AzureStorageConfigWithSecrets `json:"azure,omitempty"` // Azure-specific parameters
 }
 
 // BackupEncryptionConfigWithSecrets defines encryption configuration with embedded secrets data
@@ -151,10 +162,16 @@ func (b *BackupConfig) makeStorageConfigWithPrefilledSecrets(
 		return StorageConfigWithSecrets{}, err
 	}
 
+	azure, err := b.makeAzureStorageConfigWithPrefilledSecrets(ctx, c)
+	if err != nil {
+		return StorageConfigWithSecrets{}, err
+	}
+
 	return StorageConfigWithSecrets{
 		StorageConfig: *b.Spec.Storage.DeepCopy(),
 		S3:            s3,
 		GCS:           gcs,
+		Azure:         azure,
 	}, nil
 }
 
@@ -263,6 +280,56 @@ func (b *BackupConfig) makeGCSStorageConfigWithPrefilledSecrets(
 		GCSStorageConfig: *gcsConfig,
 		CredentialsData:  string(credentialsData),
 		ResolvedPrefix:   resolvedPrefix,
+	}, nil
+}
+
+func (b *BackupConfig) makeAzureStorageConfigWithPrefilledSecrets(
+	ctx context.Context,
+	c client.Client,
+) (*AzureStorageConfigWithSecrets, error) {
+	if b.Spec.Storage.Azure == nil {
+		return nil, nil
+	}
+
+	azureConfig := b.Spec.Storage.Azure.DeepCopy()
+
+	if azureConfig.AccessKeyRef != nil && azureConfig.SASTokenRef != nil {
+		return nil, fmt.Errorf("cannot specify both accessKey and sasToken")
+	}
+
+	var accessKey, sasToken []byte
+	var err error
+	if azureConfig.AccessKeyRef != nil {
+		accessKey, err = extractValueFromSecret(ctx, c, azureConfig.AccessKeyRef, b.Namespace)
+		if err != nil {
+			return nil, err
+		}
+	}
+	if azureConfig.SASTokenRef != nil {
+		sasToken, err = extractValueFromSecret(ctx, c, azureConfig.SASTokenRef, b.Namespace)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	resolvedPrefix, err := b.resolveStringValue(ctx, c, azureConfig.Prefix, azureConfig.PrefixFrom, "prefix")
+	if err != nil {
+		return nil, err
+	}
+
+	resolvedStorageAccount, err := b.resolveStringValue(
+		ctx, c, azureConfig.StorageAccount, azureConfig.StorageAccountFrom, "storageAccount",
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	return &AzureStorageConfigWithSecrets{
+		AzureStorageConfig:     *azureConfig,
+		AccessKey:              string(accessKey),
+		SASToken:               string(sasToken),
+		ResolvedPrefix:         resolvedPrefix,
+		ResolvedStorageAccount: resolvedStorageAccount,
 	}, nil
 }
 

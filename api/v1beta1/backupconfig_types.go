@@ -109,8 +109,9 @@ type CustomCAReference struct {
 type StorageType string
 
 const (
-	StorageTypeS3  = "s3"
-	StorageTypeGCS = "gcs"
+	StorageTypeS3    = "s3"
+	StorageTypeGCS   = "gcs"
+	StorageTypeAzure = "azure"
 )
 
 // GCSStorageConfig defines Google Cloud Storage-specific configuration for object storage
@@ -130,11 +131,56 @@ type GCSStorageConfig struct {
 	CredentialsSecretRef *corev1.SecretKeySelector `json:"credentialsSecretRef,omitempty"`
 }
 
+// AzureStorageConfig defines Azure Blob Storage-specific configuration for object storage
+type AzureStorageConfig struct {
+	// e.g. azure://container/path/to/folder
+	// Mutually exclusive with PrefixFrom
+	Prefix string `json:"prefix,omitempty"`
+
+	// Reference to get prefix value from Secret or ConfigMap
+	// Mutually exclusive with Prefix
+	// +optional
+	PrefixFrom *ValueFromSource `json:"prefixFrom,omitempty"`
+
+	// Azure storage account name
+	// Mutually exclusive with StorageAccountFrom
+	StorageAccount string `json:"storageAccount,omitempty"`
+
+	// Reference to get storage account name from Secret or ConfigMap
+	// Mutually exclusive with StorageAccount
+	// +optional
+	StorageAccountFrom *ValueFromSource `json:"storageAccountFrom,omitempty"`
+
+	// Reference to a Secret key containing the storage account access key (Shared Key auth).
+	// Mutually exclusive with SASTokenRef.
+	// If neither AccessKeyRef nor SASTokenRef is set, DefaultAzureCredential is used
+	// (e.g. AKS Workload Identity, Managed Identity, or AZURE_CLIENT_ID/AZURE_TENANT_ID/AZURE_CLIENT_SECRET env).
+	// +optional
+	AccessKeyRef *corev1.SecretKeySelector `json:"accessKey,omitempty"`
+
+	// Reference to a Secret key containing a Shared Access Signature (SAS) token.
+	// Mutually exclusive with AccessKeyRef.
+	// +optional
+	SASTokenRef *corev1.SecretKeySelector `json:"sasToken,omitempty"`
+
+	// Azure cloud environment, used to derive the storage endpoint suffix.
+	// Ignored when EndpointSuffix is set. Default is "AzurePublicCloud".
+	// +kubebuilder:validation:Enum=AzurePublicCloud;AzureUSGovernmentCloud;AzureChinaCloud;AzureGermanCloud
+	// +optional
+	EnvironmentName string `json:"environmentName,omitempty"`
+
+	// Storage endpoint suffix, e.g. "core.windows.net". Overrides EnvironmentName.
+	// Blob endpoint is built as https://<storageAccount>.blob.<endpointSuffix>
+	// +optional
+	EndpointSuffix string `json:"endpointSuffix,omitempty"`
+}
+
 // StorageConfig defines object storage configuration for BackupConfig
 type StorageConfig struct {
-	StorageType StorageType       `json:"type"`          // Type of storage to use, currently supported "s3" and "gcs"
-	S3          *S3StorageConfig  `json:"s3,omitempty"`  // S3-specific parameters
-	GCS         *GCSStorageConfig `json:"gcs,omitempty"` // GCS-specific parameters
+	StorageType StorageType         `json:"type"`            // Type of storage to use, currently supported "s3", "gcs" and "azure"
+	S3          *S3StorageConfig    `json:"s3,omitempty"`    // S3-specific parameters
+	GCS         *GCSStorageConfig   `json:"gcs,omitempty"`   // GCS-specific parameters
+	Azure       *AzureStorageConfig `json:"azure,omitempty"` // Azure Blob Storage-specific parameters
 }
 
 // BackupConfigSpec defines the desired state of BackupConfig.

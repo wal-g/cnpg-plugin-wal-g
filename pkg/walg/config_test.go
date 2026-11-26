@@ -841,4 +841,111 @@ var _ = Describe("WAL-G Config Integration Tests", func() {
 			Expect(walgConfig.WalgGSPrefix).NotTo(ContainSubstring("//16"))
 		})
 	})
+
+	Context("Azure storage configuration", func() {
+		newAzureBackupConfig := func(azure *v1beta1.AzureStorageConfig) *v1beta1.BackupConfig {
+			return &v1beta1.BackupConfig{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-backup-config",
+					Namespace: namespace,
+				},
+				Spec: v1beta1.BackupConfigSpec{
+					Storage: v1beta1.StorageConfig{
+						StorageType: v1beta1.StorageTypeAzure,
+						Azure:       azure,
+					},
+				},
+			}
+		}
+
+		secretRef := func(key string) *corev1.SecretKeySelector {
+			return &corev1.SecretKeySelector{
+				LocalObjectReference: corev1.LocalObjectReference{Name: "azure-credentials"},
+				Key:                  key,
+			}
+		}
+
+		BeforeEach(func() {
+			azureSecret := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "azure-credentials",
+					Namespace: namespace,
+				},
+				Data: map[string][]byte{
+					"accessKey":      []byte("test-access-key"),
+					"sasToken":       []byte("sv=2022-11-02&sig=abc"),
+					"storageAccount": []byte("secretaccount"),
+				},
+			}
+
+			fakeClient = fake.NewClientBuilder().
+				WithScheme(scheme).
+				WithObjects(azureSecret).
+				Build()
+		})
+
+		It("should generate correct wal-g config with access key auth", func() {
+			backupConfig := newAzureBackupConfig(&v1beta1.AzureStorageConfig{
+				Prefix:          "azure://test-container/direct-prefix/",
+				StorageAccount:  "directaccount",
+				AccessKeyRef:    secretRef("accessKey"),
+				EnvironmentName: "AzureUSGovernmentCloud",
+			})
+
+			configWithSecrets, err := backupConfig.PrefetchSecretsData(ctx, fakeClient)
+			Expect(err).NotTo(HaveOccurred())
+
+			walgConfig := NewConfigFromBackupConfig(configWithSecrets, 16)
+
+			Expect(walgConfig.WalgAzPrefix).To(Equal("azure://test-container/direct-prefix/16"))
+			Expect(walgConfig.AzureStorageAccount).To(Equal("directaccount"))
+			Expect(walgConfig.AzureStorageAccessKey).To(Equal("test-access-key"))
+			Expect(walgConfig.AzureStorageSasToken).To(BeEmpty())
+
+			envMap := walgConfig.ToEnvMap()
+			Expect(envMap).To(HaveKeyWithValue("WALG_AZ_PREFIX", "azure://test-container/direct-prefix/16"))
+			Expect(envMap).To(HaveKeyWithValue("AZURE_STORAGE_ACCOUNT", "directaccount"))
+			Expect(envMap).To(HaveKeyWithValue("AZURE_STORAGE_ACCESS_KEY", "test-access-key"))
+			Expect(envMap).To(HaveKeyWithValue("AZURE_ENVIRONMENT_NAME", "AzureUSGovernmentCloud"))
+			Expect(envMap).NotTo(HaveKey("AZURE_STORAGE_SAS_TOKEN"))
+			Expect(envMap).NotTo(HaveKey("AZURE_ENDPOINT_SUFFIX"))
+			Expect(envMap).NotTo(HaveKey("AWS_ACCESS_KEY_ID"))
+			Expect(envMap).NotTo(HaveKey("WALE_S3_PREFIX"))
+			Expect(envMap).NotTo(HaveKey("WALG_GS_PREFIX"))
+		})
+
+		It("should generate correct wal-g config with SAS token auth and storage account from Secret", func() {
+			backupConfig := newAzureBackupConfig(&v1beta1.AzureStorageConfig{
+				Prefix:             "azure://test-container/prefix",
+				StorageAccountFrom: &v1beta1.ValueFromSource{SecretKeyRef: secretRef("storageAccount")},
+				SASTokenRef:        secretRef("sasToken"),
+				EndpointSuffix:     "core.example.net",
+			})
+
+			configWithSecrets, err := backupConfig.PrefetchSecretsData(ctx, fakeClient)
+			Expect(err).NotTo(HaveOccurred())
+
+			envMap := NewConfigFromBackupConfig(configWithSecrets, 15).ToEnvMap()
+			Expect(envMap).To(HaveKeyWithValue("WALG_AZ_PREFIX", "azure://test-container/prefix/15"))
+			Expect(envMap).To(HaveKeyWithValue("AZURE_STORAGE_ACCOUNT", "secretaccount"))
+			Expect(envMap).To(HaveKeyWithValue("AZURE_STORAGE_SAS_TOKEN", "sv=2022-11-02&sig=abc"))
+			Expect(envMap).To(HaveKeyWithValue("AZURE_ENDPOINT_SUFFIX", "core.example.net"))
+			Expect(envMap).NotTo(HaveKey("AZURE_STORAGE_ACCESS_KEY"))
+		})
+
+		It("should omit credentials when relying on DefaultAzureCredential", func() {
+			backupConfig := newAzureBackupConfig(&v1beta1.AzureStorageConfig{
+				Prefix:         "azure://test-container/prefix",
+				StorageAccount: "directaccount",
+			})
+
+			configWithSecrets, err := backupConfig.PrefetchSecretsData(ctx, fakeClient)
+			Expect(err).NotTo(HaveOccurred())
+
+			envMap := NewConfigFromBackupConfig(configWithSecrets, 17).ToEnvMap()
+			Expect(envMap).To(HaveKeyWithValue("AZURE_STORAGE_ACCOUNT", "directaccount"))
+			Expect(envMap).NotTo(HaveKey("AZURE_STORAGE_ACCESS_KEY"))
+			Expect(envMap).NotTo(HaveKey("AZURE_STORAGE_SAS_TOKEN"))
+		})
+	})
 })

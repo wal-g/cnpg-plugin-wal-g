@@ -158,6 +158,29 @@ func collectSecretsAndConfigMapsNamesFromBackupConfig(config *v1beta1.BackupConf
 		}
 	}
 
+	if config.Spec.Storage.StorageType == v1beta1.StorageTypeAzure {
+		azureConfig := config.Spec.Storage.Azure
+
+		if azureConfig.AccessKeyRef != nil {
+			usedSecretNames = append(usedSecretNames, azureConfig.AccessKeyRef.Name)
+		}
+		if azureConfig.SASTokenRef != nil {
+			usedSecretNames = append(usedSecretNames, azureConfig.SASTokenRef.Name)
+		}
+
+		for _, valueFrom := range []*v1beta1.ValueFromSource{azureConfig.PrefixFrom, azureConfig.StorageAccountFrom} {
+			if valueFrom == nil {
+				continue
+			}
+			if valueFrom.SecretKeyRef != nil {
+				usedSecretNames = append(usedSecretNames, valueFrom.SecretKeyRef.Name)
+			}
+			if valueFrom.ConfigMapKeyRef != nil {
+				usedConfigMapNames = append(usedConfigMapNames, valueFrom.ConfigMapKeyRef.Name)
+			}
+		}
+	}
+
 	// Add encryption secrets to the list of secrets that need permissions
 	if config.Spec.Encryption.Method != "" && config.Spec.Encryption.Method != "none" {
 		encryptionSecretName := v1beta1.GetBackupConfigEncryptionSecretName(config)

@@ -208,6 +208,196 @@ spec:
               storage:
                 description: Backups storage configuration
                 properties:
+                  azure:
+                    description: AzureStorageConfig defines Azure Blob Storage-specific
+                      configuration for object storage
+                    properties:
+                      accessKey:
+                        description: |-
+                          Reference to a Secret key containing the storage account access key (Shared Key auth).
+                          Mutually exclusive with SASTokenRef.
+                          If neither AccessKeyRef nor SASTokenRef is set, DefaultAzureCredential is used
+                          (e.g. AKS Workload Identity, Managed Identity, or AZURE_CLIENT_ID/AZURE_TENANT_ID/AZURE_CLIENT_SECRET env).
+                        properties:
+                          key:
+                            description: The key of the secret to select from.  Must
+                              be a valid secret key.
+                            type: string
+                          name:
+                            default: ""
+                            description: |-
+                              Name of the referent.
+                              This field is effectively required, but due to backwards compatibility is
+                              allowed to be empty. Instances of this type with an empty value here are
+                              almost certainly wrong.
+                              More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                            type: string
+                          optional:
+                            description: Specify whether the Secret or its key must
+                              be defined
+                            type: boolean
+                        required:
+                        - key
+                        type: object
+                        x-kubernetes-map-type: atomic
+                      endpointSuffix:
+                        description: |-
+                          Storage endpoint suffix, e.g. "core.windows.net". Overrides EnvironmentName.
+                          Blob endpoint is built as https://<storageAccount>.blob.<endpointSuffix>
+                        type: string
+                      environmentName:
+                        description: |-
+                          Azure cloud environment, used to derive the storage endpoint suffix.
+                          Ignored when EndpointSuffix is set. Default is "AzurePublicCloud".
+                        enum:
+                        - AzurePublicCloud
+                        - AzureUSGovernmentCloud
+                        - AzureChinaCloud
+                        - AzureGermanCloud
+                        type: string
+                      prefix:
+                        description: |-
+                          e.g. azure://container/path/to/folder
+                          Mutually exclusive with PrefixFrom
+                        type: string
+                      prefixFrom:
+                        description: |-
+                          Reference to get prefix value from Secret or ConfigMap
+                          Mutually exclusive with Prefix
+                        properties:
+                          configMapKeyRef:
+                            description: Reference to a key in a ConfigMap
+                            properties:
+                              key:
+                                description: The key to select.
+                                type: string
+                              name:
+                                default: ""
+                                description: |-
+                                  Name of the referent.
+                                  This field is effectively required, but due to backwards compatibility is
+                                  allowed to be empty. Instances of this type with an empty value here are
+                                  almost certainly wrong.
+                                  More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                                type: string
+                              optional:
+                                description: Specify whether the ConfigMap or its
+                                  key must be defined
+                                type: boolean
+                            required:
+                            - key
+                            type: object
+                            x-kubernetes-map-type: atomic
+                          secretKeyRef:
+                            description: Reference to a key in a Secret
+                            properties:
+                              key:
+                                description: The key of the secret to select from.  Must
+                                  be a valid secret key.
+                                type: string
+                              name:
+                                default: ""
+                                description: |-
+                                  Name of the referent.
+                                  This field is effectively required, but due to backwards compatibility is
+                                  allowed to be empty. Instances of this type with an empty value here are
+                                  almost certainly wrong.
+                                  More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                                type: string
+                              optional:
+                                description: Specify whether the Secret or its key
+                                  must be defined
+                                type: boolean
+                            required:
+                            - key
+                            type: object
+                            x-kubernetes-map-type: atomic
+                        type: object
+                      sasToken:
+                        description: |-
+                          Reference to a Secret key containing a Shared Access Signature (SAS) token.
+                          Mutually exclusive with AccessKeyRef.
+                        properties:
+                          key:
+                            description: The key of the secret to select from.  Must
+                              be a valid secret key.
+                            type: string
+                          name:
+                            default: ""
+                            description: |-
+                              Name of the referent.
+                              This field is effectively required, but due to backwards compatibility is
+                              allowed to be empty. Instances of this type with an empty value here are
+                              almost certainly wrong.
+                              More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                            type: string
+                          optional:
+                            description: Specify whether the Secret or its key must
+                              be defined
+                            type: boolean
+                        required:
+                        - key
+                        type: object
+                        x-kubernetes-map-type: atomic
+                      storageAccount:
+                        description: |-
+                          Azure storage account name
+                          Mutually exclusive with StorageAccountFrom
+                        type: string
+                      storageAccountFrom:
+                        description: |-
+                          Reference to get storage account name from Secret or ConfigMap
+                          Mutually exclusive with StorageAccount
+                        properties:
+                          configMapKeyRef:
+                            description: Reference to a key in a ConfigMap
+                            properties:
+                              key:
+                                description: The key to select.
+                                type: string
+                              name:
+                                default: ""
+                                description: |-
+                                  Name of the referent.
+                                  This field is effectively required, but due to backwards compatibility is
+                                  allowed to be empty. Instances of this type with an empty value here are
+                                  almost certainly wrong.
+                                  More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                                type: string
+                              optional:
+                                description: Specify whether the ConfigMap or its
+                                  key must be defined
+                                type: boolean
+                            required:
+                            - key
+                            type: object
+                            x-kubernetes-map-type: atomic
+                          secretKeyRef:
+                            description: Reference to a key in a Secret
+                            properties:
+                              key:
+                                description: The key of the secret to select from.  Must
+                                  be a valid secret key.
+                                type: string
+                              name:
+                                default: ""
+                                description: |-
+                                  Name of the referent.
+                                  This field is effectively required, but due to backwards compatibility is
+                                  allowed to be empty. Instances of this type with an empty value here are
+                                  almost certainly wrong.
+                                  More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                                type: string
+                              optional:
+                                description: Specify whether the Secret or its key
+                                  must be defined
+                                type: boolean
+                            required:
+                            - key
+                            type: object
+                            x-kubernetes-map-type: atomic
+                        type: object
+                    type: object
                   gcs:
                     description: GCSStorageConfig defines Google Cloud Storage-specific
                       configuration for object storage

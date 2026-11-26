@@ -779,6 +779,171 @@ var _ = Describe("BackupConfig Secrets", func() {
 		})
 	})
 
+	Context("makeAzureStorageConfigWithPrefilledSecrets", func() {
+		newAzureBackupConfig := func(azure *AzureStorageConfig) *BackupConfig {
+			return &BackupConfig{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-backup-config",
+					Namespace: namespace,
+				},
+				Spec: BackupConfigSpec{
+					Storage: StorageConfig{
+						StorageType: StorageTypeAzure,
+						Azure:       azure,
+					},
+				},
+			}
+		}
+
+		secretRef := func(key string) *corev1.SecretKeySelector {
+			return &corev1.SecretKeySelector{
+				LocalObjectReference: corev1.LocalObjectReference{Name: "test-secret"},
+				Key:                  key,
+			}
+		}
+
+		BeforeEach(func() {
+			testSecret := &corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-secret",
+					Namespace: namespace,
+				},
+				Data: map[string][]byte{
+					"accessKey":      []byte("test-access-key"),
+					"sasToken":       []byte("sv=2022-11-02&sig=abc"),
+					"prefix":         []byte("azure://test-container/secret-prefix"),
+					"storageAccount": []byte("secretaccount"),
+				},
+			}
+
+			testConfigMap := &corev1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-configmap",
+					Namespace: namespace,
+				},
+				Data: map[string]string{
+					"prefix":         "azure://test-container/cm-prefix",
+					"storageAccount": "cmaccount",
+				},
+			}
+
+			fakeClient = fake.NewClientBuilder().
+				WithScheme(scheme).
+				WithObjects(testSecret, testConfigMap).
+				Build()
+		})
+
+		It("should resolve direct values and access key", func() {
+			backupConfig := newAzureBackupConfig(&AzureStorageConfig{
+				Prefix:          "azure://test-container/direct-prefix",
+				StorageAccount:  "directaccount",
+				AccessKeyRef:    secretRef("accessKey"),
+				EnvironmentName: "AzureChinaCloud",
+			})
+
+			azureConfig, err := backupConfig.makeAzureStorageConfigWithPrefilledSecrets(ctx, fakeClient)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(azureConfig).NotTo(BeNil())
+			Expect(azureConfig.ResolvedPrefix).To(Equal("azure://test-container/direct-prefix"))
+			Expect(azureConfig.ResolvedStorageAccount).To(Equal("directaccount"))
+			Expect(azureConfig.AccessKey).To(Equal("test-access-key"))
+			Expect(azureConfig.SASToken).To(BeEmpty())
+			Expect(azureConfig.EnvironmentName).To(Equal("AzureChinaCloud"))
+		})
+
+		It("should resolve SAS token", func() {
+			backupConfig := newAzureBackupConfig(&AzureStorageConfig{
+				Prefix:         "azure://test-container/direct-prefix",
+				StorageAccount: "directaccount",
+				SASTokenRef:    secretRef("sasToken"),
+			})
+
+			azureConfig, err := backupConfig.makeAzureStorageConfigWithPrefilledSecrets(ctx, fakeClient)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(azureConfig.SASToken).To(Equal("sv=2022-11-02&sig=abc"))
+			Expect(azureConfig.AccessKey).To(BeEmpty())
+		})
+
+		It("should resolve prefix and storage account from Secret references", func() {
+			backupConfig := newAzureBackupConfig(&AzureStorageConfig{
+				PrefixFrom:         &ValueFromSource{SecretKeyRef: secretRef("prefix")},
+				StorageAccountFrom: &ValueFromSource{SecretKeyRef: secretRef("storageAccount")},
+			})
+
+			azureConfig, err := backupConfig.makeAzureStorageConfigWithPrefilledSecrets(ctx, fakeClient)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(azureConfig.ResolvedPrefix).To(Equal("azure://test-container/secret-prefix"))
+			Expect(azureConfig.ResolvedStorageAccount).To(Equal("secretaccount"))
+			// No credentials: rely on DefaultAzureCredential
+			Expect(azureConfig.AccessKey).To(BeEmpty())
+			Expect(azureConfig.SASToken).To(BeEmpty())
+		})
+
+		It("should resolve prefix and storage account from ConfigMap references", func() {
+			cmRef := func(key string) *ValueFromSource {
+				return &ValueFromSource{ConfigMapKeyRef: &corev1.ConfigMapKeySelector{
+					LocalObjectReference: corev1.LocalObjectReference{Name: "test-configmap"},
+					Key:                  key,
+				}}
+			}
+			backupConfig := newAzureBackupConfig(&AzureStorageConfig{
+				PrefixFrom:         cmRef("prefix"),
+				StorageAccountFrom: cmRef("storageAccount"),
+			})
+
+			azureConfig, err := backupConfig.makeAzureStorageConfigWithPrefilledSecrets(ctx, fakeClient)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(azureConfig.ResolvedPrefix).To(Equal("azure://test-container/cm-prefix"))
+			Expect(azureConfig.ResolvedStorageAccount).To(Equal("cmaccount"))
+		})
+
+		It("should return nil when Azure config is nil", func() {
+			azureConfig, err := newAzureBackupConfig(nil).makeAzureStorageConfigWithPrefilledSecrets(ctx, fakeClient)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(azureConfig).To(BeNil())
+		})
+
+		It("should return error when both accessKey and sasToken are provided", func() {
+			backupConfig := newAzureBackupConfig(&AzureStorageConfig{
+				Prefix:         "azure://test-container/direct-prefix",
+				StorageAccount: "directaccount",
+				AccessKeyRef:   secretRef("accessKey"),
+				SASTokenRef:    secretRef("sasToken"),
+			})
+
+			_, err := backupConfig.makeAzureStorageConfigWithPrefilledSecrets(ctx, fakeClient)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("cannot specify both accessKey and sasToken"))
+		})
+
+		It("should return error when both storageAccount and storageAccountFrom are provided", func() {
+			backupConfig := newAzureBackupConfig(&AzureStorageConfig{
+				Prefix:             "azure://test-container/direct-prefix",
+				StorageAccount:     "directaccount",
+				StorageAccountFrom: &ValueFromSource{SecretKeyRef: secretRef("storageAccount")},
+			})
+
+			_, err := backupConfig.makeAzureStorageConfigWithPrefilledSecrets(ctx, fakeClient)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("cannot specify both storageAccount and storageAccountFrom"))
+		})
+
+		It("should return error when access key secret does not exist", func() {
+			backupConfig := newAzureBackupConfig(&AzureStorageConfig{
+				Prefix:         "azure://test-container/direct-prefix",
+				StorageAccount: "directaccount",
+				AccessKeyRef: &corev1.SecretKeySelector{
+					LocalObjectReference: corev1.LocalObjectReference{Name: "non-existent-secret"},
+					Key:                  "accessKey",
+				},
+			})
+
+			_, err := backupConfig.makeAzureStorageConfigWithPrefilledSecrets(ctx, fakeClient)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("while getting secret non-existent-secret"))
+		})
+	})
+
 	Context("PrefetchSecretsData", func() {
 		var (
 			backupConfig  *BackupConfig

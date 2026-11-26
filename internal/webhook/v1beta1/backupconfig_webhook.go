@@ -88,6 +88,7 @@ func (v *BackupConfigCustomValidator) validateBackupConfig(backupconfig *v1beta1
 		v.validateStorage,
 		v.validateS3MutualExclusivity,
 		v.validateGCSMutualExclusivity,
+		v.validateAzure,
 	}
 
 	var allWarnings admission.Warnings
@@ -121,6 +122,10 @@ func (v *BackupConfigCustomValidator) validateStorage(backupconfig *v1beta1.Back
 	if backupconfig.Spec.Storage.StorageType == v1beta1.StorageTypeGCS &&
 		backupconfig.Spec.Storage.GCS == nil {
 		return admission.Warnings{}, fmt.Errorf("failed to get GCS-specific configuration for object storage")
+	}
+	if backupconfig.Spec.Storage.StorageType == v1beta1.StorageTypeAzure &&
+		backupconfig.Spec.Storage.Azure == nil {
+		return admission.Warnings{}, fmt.Errorf("failed to get Azure-specific configuration for object storage")
 	}
 	return nil, nil
 }
@@ -178,6 +183,43 @@ func (v *BackupConfigCustomValidator) validateGCSMutualExclusivity(backupconfig 
 	}
 
 	if err := v.validateValueFromSource(gcsConfig.PrefixFrom, "prefixFrom"); err != nil {
+		return admission.Warnings{}, err
+	}
+
+	return nil, nil
+}
+
+// validateAzure validates required fields and mutual exclusivity constraints for Azure configuration
+func (v *BackupConfigCustomValidator) validateAzure(backupconfig *v1beta1.BackupConfig) (admission.Warnings, error) {
+	if backupconfig.Spec.Storage.Azure == nil {
+		return nil, nil
+	}
+
+	azureConfig := backupconfig.Spec.Storage.Azure
+
+	if azureConfig.Prefix != "" && azureConfig.PrefixFrom != nil {
+		return admission.Warnings{}, fmt.Errorf("cannot specify both prefix and prefixFrom")
+	}
+
+	if azureConfig.StorageAccount != "" && azureConfig.StorageAccountFrom != nil {
+		return admission.Warnings{}, fmt.Errorf("cannot specify both storageAccount and storageAccountFrom")
+	}
+
+	// wal-g refuses to start without a storage account, so reject early
+	if azureConfig.StorageAccount == "" && azureConfig.StorageAccountFrom == nil {
+		return admission.Warnings{}, fmt.Errorf("either storageAccount or storageAccountFrom must be specified")
+	}
+
+	// wal-g would silently prefer the access key, so make the ambiguity explicit
+	if azureConfig.AccessKeyRef != nil && azureConfig.SASTokenRef != nil {
+		return admission.Warnings{}, fmt.Errorf("cannot specify both accessKey and sasToken")
+	}
+
+	if err := v.validateValueFromSource(azureConfig.PrefixFrom, "prefixFrom"); err != nil {
+		return admission.Warnings{}, err
+	}
+
+	if err := v.validateValueFromSource(azureConfig.StorageAccountFrom, "storageAccountFrom"); err != nil {
 		return admission.Warnings{}, err
 	}
 

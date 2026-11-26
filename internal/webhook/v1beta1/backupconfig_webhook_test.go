@@ -148,4 +148,103 @@ var _ = Describe("BackupConfig Webhook", func() {
 		})
 	})
 
+	Context("Azure storage validation", func() {
+		var ctx context.Context
+
+		secretRef := func(name, key string) *corev1.SecretKeySelector {
+			return &corev1.SecretKeySelector{
+				LocalObjectReference: corev1.LocalObjectReference{Name: name},
+				Key:                  key,
+			}
+		}
+
+		BeforeEach(func() {
+			ctx = context.Background()
+			obj.Spec.Storage.StorageType = cnpgextensionsv1beta1.StorageTypeAzure
+		})
+
+		It("Should deny creation when Azure storage type is set but Azure config is missing", func() {
+			obj.Spec.Storage.Azure = nil
+			_, err := validator.ValidateCreate(ctx, obj)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("failed to get Azure-specific configuration"))
+		})
+
+		It("Should admit creation with direct values and access key", func() {
+			obj.Spec.Storage.Azure = &cnpgextensionsv1beta1.AzureStorageConfig{
+				Prefix:         "azure://test-container/prefix",
+				StorageAccount: "account",
+				AccessKeyRef:   secretRef("azure-creds", "accessKey"),
+			}
+			_, err := validator.ValidateCreate(ctx, obj)
+			Expect(err).NotTo(HaveOccurred())
+		})
+
+		It("Should admit creation without credentials (DefaultAzureCredential)", func() {
+			obj.Spec.Storage.Azure = &cnpgextensionsv1beta1.AzureStorageConfig{
+				Prefix: "azure://test-container/prefix",
+				StorageAccountFrom: &cnpgextensionsv1beta1.ValueFromSource{
+					SecretKeyRef: secretRef("azure-config", "storageAccount"),
+				},
+			}
+			_, err := validator.ValidateCreate(ctx, obj)
+			Expect(err).NotTo(HaveOccurred())
+		})
+
+		It("Should deny creation when storage account is missing", func() {
+			obj.Spec.Storage.Azure = &cnpgextensionsv1beta1.AzureStorageConfig{
+				Prefix: "azure://test-container/prefix",
+			}
+			_, err := validator.ValidateCreate(ctx, obj)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("either storageAccount or storageAccountFrom must be specified"))
+		})
+
+		It("Should deny creation when both storageAccount and storageAccountFrom are specified", func() {
+			obj.Spec.Storage.Azure = &cnpgextensionsv1beta1.AzureStorageConfig{
+				Prefix:         "azure://test-container/prefix",
+				StorageAccount: "account",
+				StorageAccountFrom: &cnpgextensionsv1beta1.ValueFromSource{
+					SecretKeyRef: secretRef("azure-config", "storageAccount"),
+				},
+			}
+			_, err := validator.ValidateCreate(ctx, obj)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("cannot specify both storageAccount and storageAccountFrom"))
+		})
+
+		It("Should deny creation when both prefix and prefixFrom are specified", func() {
+			obj.Spec.Storage.Azure = &cnpgextensionsv1beta1.AzureStorageConfig{
+				Prefix:         "azure://test-container/prefix",
+				PrefixFrom:     &cnpgextensionsv1beta1.ValueFromSource{SecretKeyRef: secretRef("azure-config", "prefix")},
+				StorageAccount: "account",
+			}
+			_, err := validator.ValidateCreate(ctx, obj)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("cannot specify both prefix and prefixFrom"))
+		})
+
+		It("Should deny creation when both accessKey and sasToken are specified", func() {
+			obj.Spec.Storage.Azure = &cnpgextensionsv1beta1.AzureStorageConfig{
+				Prefix:         "azure://test-container/prefix",
+				StorageAccount: "account",
+				AccessKeyRef:   secretRef("azure-creds", "accessKey"),
+				SASTokenRef:    secretRef("azure-creds", "sasToken"),
+			}
+			_, err := validator.ValidateCreate(ctx, obj)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("cannot specify both accessKey and sasToken"))
+		})
+
+		It("Should deny creation when storageAccountFrom specifies neither secretKeyRef nor configMapKeyRef", func() {
+			obj.Spec.Storage.Azure = &cnpgextensionsv1beta1.AzureStorageConfig{
+				Prefix:             "azure://test-container/prefix",
+				StorageAccountFrom: &cnpgextensionsv1beta1.ValueFromSource{},
+			}
+			_, err := validator.ValidateCreate(ctx, obj)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("storageAccountFrom must specify either secretKeyRef or configMapKeyRef"))
+		})
+	})
+
 })

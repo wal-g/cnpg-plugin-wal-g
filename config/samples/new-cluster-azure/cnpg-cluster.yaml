@@ -1,0 +1,43 @@
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: cluster-example
+spec:
+  instances: 3
+  plugins:
+  - name: cnpg-extensions.yandex.cloud      # Should always be "cnpg-extensions.yandex.cloud" for wal-g plugin
+    isWALArchiver: true                     # Set to true to enable continuous WAL archiving
+    parameters:
+      backupConfig: example-backup-config   # Name of BackupConfig used to create backups
+  storage:
+    size: 1Gi
+  # Uncomment to authenticate via AKS Workload Identity instead of accessKey/sasToken.
+  # NOTE: the plugin's own Deployment (in cnpg-system) also runs wal-g for retention,
+  # backup deletion and status checks, so it needs the same label and an annotated
+  # ServiceAccount whose identity has access to the storage account, plus a federated
+  # credential for subject system:serviceaccount:cnpg-system:cnpg-plugin-wal-g-controller-manager
+  # (the name used by the static manifest and by Helm release "cnpg-plugin-wal-g").
+  # With Helm:
+  #   --set-string podLabels.azure\.workload\.identity/use=true
+  #   --set-string serviceAccount.annotations.azure\.workload\.identity/client-id=<MANAGED_IDENTITY_CLIENT_ID>
+  # inheritedMetadata:
+  #   labels:
+  #     azure.workload.identity/use: "true"
+  # serviceAccountTemplate:
+  #   metadata:
+  #     annotations:
+  #       azure.workload.identity/client-id: <MANAGED_IDENTITY_CLIENT_ID>
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: ScheduledBackup
+metadata:
+  name: backup-example
+spec:
+  schedule: "0 */15 * * * *"                # Each 15 minutes create backup
+  backupOwnerReference: self                # Important: use "self" to make BackupConfig retention work!
+  cluster:
+    name: cluster-example                   # Name of cluster to create backups from
+  method: plugin                            # Should always be "plugin" to make use wal-g plugin
+  pluginConfiguration:
+    name: cnpg-extensions.yandex.cloud      # Should always be "cnpg-extensions.yandex.cloud" for wal-g plugin
+  immediate: true                           # Create Backup immediately after ScheduledBackup creation
