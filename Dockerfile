@@ -5,7 +5,7 @@
 FROM docker.io/golang:1.26-trixie AS walg-builder
 ARG TARGETOS
 ARG TARGETARCH
-ARG WALG_VERSION=v3.0.8
+ARG WALG_VERSION=v3.0.9
 ARG WALG_REPO=https://github.com/wal-g/wal-g
 
 # build arguments for wal-g
