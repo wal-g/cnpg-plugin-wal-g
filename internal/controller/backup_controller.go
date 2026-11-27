@@ -92,7 +92,10 @@ func (r *BackupReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 				RequeueAfter: 3 * time.Minute,
 			}, nil
 		}
-		return ctrl.Result{}, nil
+		// Check back after the deletion had time to finish: while the finalizer is still
+		// there (the deletion failed, timed out or waits for dependent backups), the next
+		// reconcile enqueues it again. Once the Backup is gone, Get above returns NotFound.
+		return ctrl.Result{RequeueAfter: DeletionRetryInterval}, nil
 	}
 
 	// Set owner reference to BackupConfig
